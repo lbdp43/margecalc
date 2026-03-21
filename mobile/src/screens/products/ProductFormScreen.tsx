@@ -5,6 +5,7 @@ import {
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
 import {
@@ -341,12 +342,12 @@ export function ProductFormScreen({ route, navigation }: Props) {
 
             <View style={styles.scanButtons}>
               <TouchableOpacity style={styles.scanBtn} onPress={() => pickImage(true)}>
-                <Text style={styles.scanBtnIcon}>📷</Text>
+                <Ionicons name="camera-outline" size={36} color={colors.white} />
                 <Text style={styles.scanBtnText}>Prendre une photo</Text>
               </TouchableOpacity>
 
               <TouchableOpacity style={styles.scanBtn} onPress={() => pickImage(false)}>
-                <Text style={styles.scanBtnIcon}>🖼️</Text>
+                <Ionicons name="images-outline" size={36} color={colors.white} />
                 <Text style={styles.scanBtnText}>Galerie</Text>
               </TouchableOpacity>
             </View>
@@ -624,9 +625,6 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.lg,
     alignItems: 'center',
     gap: spacing.sm,
-  },
-  scanBtnIcon: {
-    fontSize: 32,
   },
   scanBtnText: {
     ...typography.bodySmall,

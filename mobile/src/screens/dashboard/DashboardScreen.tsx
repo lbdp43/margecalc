@@ -141,6 +141,9 @@ export function DashboardScreen() {
                   <Text style={[styles.productMarginText, { color: MARGIN_COLOR_MAP[p.computed.colorCode] }]}>
                     {formatPercent(p.computed.marginPercent)}
                   </Text>
+                  <Text style={styles.productSellingPrice}>
+                    {formatPrice(p.computed.sellingPriceTTC)}
+                  </Text>
                 </View>
                 <Ionicons name="chevron-forward" size={16} color={colors.grayMedium} />
               </View>
@@ -255,6 +258,12 @@ const styles = StyleSheet.create({
   productMarginText: {
     ...typography.body,
     fontWeight: '700',
+  },
+  productSellingPrice: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    textAlign: 'right',
+    marginTop: 1,
   },
   // Servings table
   servingsTable: {

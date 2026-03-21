@@ -2,11 +2,13 @@ import React, { useState, useCallback } from 'react';
 import { View, Text, StyleSheet, TextInput, Alert, ActivityIndicator } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Product, ServingType, ServingMarginResult, calculateServingMargin, MARGIN_COLOR_MAP } from '@margebar/shared';
 import { ScreenWrapper } from '../../components/ui/ScreenWrapper';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
 import * as servingService from '../../services/serving.service';
+import * as productService from '../../services/product.service';
 import { api } from '../../services/api';
 import { colors, spacing, borderRadius, typography } from '../../theme';
 
@@ -20,6 +22,16 @@ export function ProductDetailScreen({ route, navigation }: Props) {
   const [prices, setPrices] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const queryClient = useQueryClient();
+
+  const deleteMutation = useMutation({
+    mutationFn: () => productService.deleteProduct(productId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['products'] });
+      navigation.navigate('ProductList');
+    },
+    onError: () => Alert.alert('Erreur', 'Impossible de supprimer le produit'),
+  });
 
   useFocusEffect(
     useCallback(() => {
@@ -191,6 +203,17 @@ export function ProductDetailScreen({ route, navigation }: Props) {
         variant="outline"
         style={styles.editBtn}
       />
+
+      <Button
+        title="Supprimer le produit"
+        onPress={() => Alert.alert('Supprimer', `Supprimer "${product.name}" ?`, [
+          { text: 'Annuler', style: 'cancel' },
+          { text: 'Supprimer', style: 'destructive', onPress: () => deleteMutation.mutate() },
+        ])}
+        variant="outline"
+        style={styles.deleteBtn}
+        loading={deleteMutation.isPending}
+      />
     </ScreenWrapper>
   );
 }
@@ -306,5 +329,9 @@ const styles = StyleSheet.create({
   },
   editBtn: {
     marginTop: spacing.sm,
+  },
+  deleteBtn: {
+    marginTop: spacing.sm,
+    borderColor: colors.marginRed,
   },
 });

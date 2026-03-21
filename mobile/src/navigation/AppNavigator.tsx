@@ -82,7 +82,16 @@ export function AppNavigator() {
       })}
     >
       <Tab.Screen name="Tableau de bord" component={DashboardScreen} />
-      <Tab.Screen name="Produits" component={ProductsNavigator} />
+      <Tab.Screen
+        name="Produits"
+        component={ProductsNavigator}
+        listeners={({ navigation }) => ({
+          tabPress: (e) => {
+            e.preventDefault();
+            navigation.navigate('Produits', { screen: 'ProductList' });
+          },
+        })}
+      />
       <Tab.Screen
         name="Scanner"
         component={EmptyScreen}
