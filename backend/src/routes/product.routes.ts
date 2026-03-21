@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { authenticate } from '../middleware/auth';
 import * as productService from '../services/product.service';
+import { CreateProductInput } from '@margebar/shared';
 
 const router = Router();
 
@@ -42,7 +43,7 @@ router.get('/:id', async (req: Request, res: Response) => {
 
 router.post('/', async (req: Request, res: Response) => {
   try {
-    const data = createSchema.parse(req.body);
+    const data = createSchema.parse(req.body) as CreateProductInput;
     const product = await productService.createProduct(req.user!.userId, data);
     res.status(201).json(product);
   } catch (err: any) {
@@ -53,7 +54,7 @@ router.post('/', async (req: Request, res: Response) => {
 
 router.put('/:id', async (req: Request, res: Response) => {
   try {
-    const data = createSchema.partial().parse(req.body);
+    const data = createSchema.partial().parse(req.body) as Partial<CreateProductInput>;
     const product = await productService.updateProduct(req.params.id, req.user!.userId, data);
     res.json(product);
   } catch (err: any) {
