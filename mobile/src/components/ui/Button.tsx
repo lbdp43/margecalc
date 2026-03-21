@@ -5,7 +5,7 @@ import { colors, spacing, borderRadius, typography } from '../../theme';
 interface ButtonProps {
   title: string;
   onPress: () => void;
-  variant?: 'primary' | 'secondary' | 'outline';
+  variant?: 'primary' | 'secondary' | 'outline' | 'danger';
   loading?: boolean;
   disabled?: boolean;
   style?: ViewStyle;
@@ -22,9 +22,9 @@ export function Button({ title, onPress, variant = 'primary', loading, disabled,
       activeOpacity={0.7}
     >
       {loading ? (
-        <ActivityIndicator color={variant === 'outline' ? colors.primary : colors.textLight} />
+        <ActivityIndicator color={variant === 'outline' ? colors.primary : variant === 'danger' ? colors.marginRed : colors.textLight} />
       ) : (
-        <Text style={[styles.text, variant === 'outline' && styles.textOutline]}>
+        <Text style={[styles.text, variant === 'outline' && styles.textOutline, variant === 'danger' && styles.textDanger]}>
           {title}
         </Text>
       )}
@@ -52,6 +52,11 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: colors.primary,
   },
+  danger: {
+    backgroundColor: 'transparent',
+    borderWidth: 2,
+    borderColor: colors.marginRed,
+  },
   disabled: {
     opacity: 0.5,
   },
@@ -61,5 +66,8 @@ const styles = StyleSheet.create({
   },
   textOutline: {
     color: colors.primary,
+  },
+  textDanger: {
+    color: colors.marginRed,
   },
 });

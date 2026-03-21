@@ -206,11 +206,11 @@ export function ProductDetailScreen({ route, navigation }: Props) {
 
       <Button
         title="Supprimer le produit"
-        onPress={() => Alert.alert('Supprimer', `Supprimer "${product.name}" ?`, [
-          { text: 'Annuler', style: 'cancel' },
-          { text: 'Supprimer', style: 'destructive', onPress: () => deleteMutation.mutate() },
-        ])}
-        variant="outline"
+        onPress={() => {
+          const confirmed = window.confirm(`Supprimer "${product.name}" ?`);
+          if (confirmed) deleteMutation.mutate();
+        }}
+        variant="danger"
         style={styles.deleteBtn}
         loading={deleteMutation.isPending}
       />
