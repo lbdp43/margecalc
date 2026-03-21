@@ -238,9 +238,39 @@ export function ProductFormScreen({ route, navigation }: Props) {
         />
       </View>
 
-      <View style={styles.halfInput}>
+      {/* Dose de service avec presets */}
+      <View style={styles.containerSection}>
+        <Text style={styles.sectionLabel}>Dose de service *</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.presetScroll}>
+          {[
+            { label: '🥃 Shot', cl: 3 },
+            { label: '🥃 Verre', cl: 5 },
+            { label: '🍷 Vin', cl: 12 },
+            { label: '🍺 Demi', cl: 25 },
+            { label: '🍺 Pinte', cl: 50 },
+            ...(currentContainerVol > 0 ? [{ label: '🍾 Entier', cl: currentContainerVol }] : []),
+          ].map((preset) => (
+            <TouchableOpacity
+              key={preset.label}
+              style={[
+                styles.presetBtn,
+                parseLocaleFloat(doseVolume) === preset.cl && styles.presetBtnActive,
+              ]}
+              onPress={() => setDoseVolume(String(preset.cl))}
+            >
+              <Text
+                style={[
+                  styles.presetBtnText,
+                  parseLocaleFloat(doseVolume) === preset.cl && styles.presetBtnTextActive,
+                ]}
+              >
+                {preset.label} ({preset.cl} cl)
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
         <Input
-          label="Dose de service *"
+          label=""
           value={doseVolume}
           onChangeText={setDoseVolume}
           keyboardType="decimal-pad"
