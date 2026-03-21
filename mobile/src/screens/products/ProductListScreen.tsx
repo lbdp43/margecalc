@@ -53,14 +53,12 @@ export function ProductListScreen({ navigation }: Props) {
 
   return (
     <ScreenWrapper scrollable={false}>
-      {/* Header */}
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.title}>Mes produits</Text>
-          <Text style={styles.count}>
-            {count} produit{count !== 1 ? 's' : ''}
-          </Text>
-        </View>
+      {/* Dark header */}
+      <View style={styles.darkHeader}>
+        <Text style={styles.title}>Mes produits</Text>
+        <Text style={styles.count}>
+          {count} produit{count !== 1 ? 's' : ''}
+        </Text>
       </View>
 
       {/* Category pills */}
@@ -162,16 +160,25 @@ export function ProductListScreen({ navigation }: Props) {
 }
 
 const styles = StyleSheet.create({
-  header: {
-    marginBottom: spacing.lg,
+  darkHeader: {
+    backgroundColor: colors.primary,
+    marginHorizontal: -spacing.md,
+    marginTop: -spacing.md,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.lg,
+    borderBottomLeftRadius: borderRadius.xl,
+    borderBottomRightRadius: borderRadius.xl,
+    marginBottom: spacing.md,
+    ...shadows.md,
   },
   title: {
     ...typography.h1,
-    color: colors.text,
+    color: colors.textLight,
   },
   count: {
     ...typography.bodySmall,
-    color: colors.textSecondary,
+    color: 'rgba(255,255,255,0.6)',
     marginTop: 2,
   },
   list: {

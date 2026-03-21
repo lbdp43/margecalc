@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Alert, ScrollView } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigation } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -7,14 +7,21 @@ import { Ionicons } from '@expo/vector-icons';
 import {
   ProductWithMargin,
   formatPercent, formatPrice, MARGIN_COLOR_MAP,
+  calculateServingMargin, CONTAINER_PRESETS,
 } from '@margebar/shared';
 import { ScreenWrapper } from '../../components/ui/ScreenWrapper';
-import { Card } from '../../components/ui/Card';
 import * as productService from '../../services/product.service';
 import { useAuthStore } from '../../store/auth.store';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 
 const WELCOME_DISMISSED_KEY = 'margebar_welcome_dismissed';
+
+function getContainerLabel(volumeCl: number): string {
+  const preset = CONTAINER_PRESETS.find((p) => p.volumeCl === volumeCl);
+  if (preset) return preset.label;
+  if (volumeCl >= 100) return `${(volumeCl / 100).toFixed(volumeCl % 100 === 0 ? 0 : 1)} L`;
+  return `${volumeCl} cl`;
+}
 
 export function DashboardScreen() {
   const user = useAuthStore((s) => s.user);
@@ -61,71 +68,98 @@ export function DashboardScreen() {
     ? products.reduce((sum, p) => sum + p.computed.marginPercent, 0) / products.length
     : 0;
 
-  const renderRankItem = (p: ProductWithMargin, index: number, badgeColor: string) => (
-    <TouchableOpacity key={p.id} activeOpacity={0.7} onPress={() => navigateToProduct(p.id)}>
-      <View style={styles.rankCard}>
-        <View style={styles.rankRow}>
-          <View style={[styles.rankBadge, { backgroundColor: badgeColor }]}>
-            <Text style={styles.rankNumber}>{index + 1}</Text>
-          </View>
-          <View style={styles.rankInfo}>
-            <Text style={styles.rankName} numberOfLines={1}>{p.name}</Text>
-            <Text style={styles.rankDetail}>
-              Achat {formatPrice(p.purchasePriceHT)} HT · Vente {formatPrice(p.computed.sellingPriceTTC)} TTC
-            </Text>
-          </View>
-          <View style={styles.rankMargin}>
-            <Text style={[styles.rankMarginText, { color: MARGIN_COLOR_MAP[p.computed.colorCode] }]}>
+  const renderProductCard = (p: ProductWithMargin) => {
+    const servings = p.servings || [];
+    const accent = MARGIN_COLOR_MAP[p.computed.colorCode];
+
+    return (
+      <TouchableOpacity key={p.id} activeOpacity={0.7} onPress={() => navigateToProduct(p.id)}>
+        <View style={styles.productCard}>
+          {/* Header: name + indicator bar + margin + chevron */}
+          <View style={styles.productHeader}>
+            <View style={[styles.productIndicator, { backgroundColor: accent }]} />
+            <View style={styles.productTitleWrap}>
+              <Text style={styles.productName} numberOfLines={1}>{p.name}</Text>
+              <Text style={styles.productSubtitle}>
+                Achat : {formatPrice(p.purchasePriceHT)} HT · {getContainerLabel(p.containerVolumeCl)}
+              </Text>
+            </View>
+            <Text style={[styles.productMargin, { color: accent }]}>
               {formatPercent(p.computed.marginPercent)}
             </Text>
-            <Text style={styles.rankCoeff}>x{p.computed.coefficient.toFixed(1)}</Text>
+            <Ionicons name="chevron-forward" size={18} color={colors.tabBarInactive} />
           </View>
-        </View>
-        {p.servings && p.servings.length > 0 && (
-          <View style={styles.rankServings}>
-            {p.servings.map((s) => (
-              <View key={s.id} style={styles.servingChip}>
-                <Text style={styles.servingChipText}>
-                  {s.servingType?.icon} {s.servingType?.name} {formatPrice(s.sellingPriceTTC)}
-                </Text>
+
+          {/* Servings table */}
+          {servings.length > 0 && (
+            <View style={styles.servingsTable}>
+              {/* Table header */}
+              <View style={styles.tableHeaderRow}>
+                <Text style={[styles.tableHeader, { flex: 2 }]}>SERVICE</Text>
+                <Text style={[styles.tableHeader, { flex: 1.2, textAlign: 'right' }]}>PRIX TTC</Text>
+                <Text style={[styles.tableHeader, { flex: 1.2, textAlign: 'right' }]}>MARGE</Text>
+                <Text style={[styles.tableHeader, { flex: 1, textAlign: 'right' }]}>COEFF</Text>
               </View>
-            ))}
-          </View>
-        )}
-      </View>
-    </TouchableOpacity>
-  );
+              {/* Table rows */}
+              {servings.map((s) => {
+                const margin = calculateServingMargin(
+                  p.purchasePriceHT,
+                  p.containerVolumeCl,
+                  p.tvaRate,
+                  s.servingType,
+                  s.sellingPriceTTC,
+                );
+                const rowColor = MARGIN_COLOR_MAP[margin.colorCode];
+                return (
+                  <View key={s.id} style={styles.tableRow}>
+                    <View style={{ flex: 2 }}>
+                      <Text style={styles.servingName}>{s.servingType.name}</Text>
+                      <Text style={styles.servingVolume}>{s.servingType.volumeCl} cl</Text>
+                    </View>
+                    <Text style={[styles.tableCell, { flex: 1.2, textAlign: 'right' }]}>
+                      {formatPrice(s.sellingPriceTTC)}
+                    </Text>
+                    <Text style={[styles.tableCellBold, { flex: 1.2, textAlign: 'right', color: rowColor }]}>
+                      {formatPercent(margin.marginPercent)}
+                    </Text>
+                    <Text style={[styles.tableCell, { flex: 1, textAlign: 'right' }]}>
+                      x {margin.servingsPerContainer > 0
+                        ? (margin.sellingPriceHT / margin.costPerServingHT).toFixed(1)
+                        : '-'}
+                    </Text>
+                  </View>
+                );
+              })}
+            </View>
+          )}
+        </View>
+      </TouchableOpacity>
+    );
+  };
 
   return (
     <ScreenWrapper>
       {/* Hero Header */}
       <View style={styles.heroCard}>
         <View style={styles.heroContent}>
-          <Text style={styles.heroGreeting}>Bonjour 👋</Text>
-          <Text style={styles.heroTitle}>
-            {user?.businessName || 'Mon établissement'}
+          <Text style={styles.heroGreeting}>
+            {user?.businessName?.toUpperCase() || 'MON ÉTABLISSEMENT'}
           </Text>
+          <Text style={styles.heroTitle}>Tableau de bord</Text>
         </View>
-
-        {welcomeVisible && !loadingPref && (
-          <View style={styles.heroDivider} />
-        )}
 
         {welcomeVisible && !loadingPref && (
           <View style={styles.welcomeSection}>
             <TouchableOpacity style={styles.closeBtn} onPress={handleDismiss}>
               <Ionicons name="close" size={14} color={colors.textLight} />
             </TouchableOpacity>
-            <View style={styles.welcomeIconRow}>
-              <Ionicons name="information-circle-outline" size={18} color="rgba(255,255,255,0.8)" />
-              <Text style={styles.welcomeTitle}>Bienvenue sur MargeBar</Text>
-            </View>
+            <Text style={styles.welcomeTitle}>Bienvenue sur MargeBar</Text>
             <Text style={styles.welcomeText}>
               Calculez vos marges sur chaque produit : spiritueux, vins, bières, softs...
               Ajoutez vos produits, choisissez votre méthode de calcul et visualisez votre rentabilité.
             </Text>
             <Text style={styles.welcomePrivacy}>
-              🔒 Vos données sont privées et vous appartiennent.
+              Vos données sont privées et vous appartiennent. Aucun accès administrateur à vos produits ou résultats.
             </Text>
           </View>
         )}
@@ -134,66 +168,24 @@ export function DashboardScreen() {
       {/* Stats Row */}
       <View style={styles.statsRow}>
         <View style={styles.statCard}>
-          <View style={styles.statIconContainer}>
-            <Ionicons name="cube-outline" size={22} color={colors.accent} />
-          </View>
+          <Ionicons name="cube-outline" size={20} color={colors.primary} />
           <Text style={styles.statValue}>{products.length}</Text>
           <Text style={styles.statLabel}>Produits</Text>
         </View>
         <View style={styles.statCard}>
-          <View style={styles.statIconContainer}>
-            <Ionicons name="trending-up-outline" size={22} color={colors.accent} />
-          </View>
+          <Ionicons name="trending-up-outline" size={20} color={colors.primary} />
           <Text style={styles.statValue}>{formatPercent(avgMargin)}</Text>
           <Text style={styles.statLabel}>Marge moyenne</Text>
         </View>
       </View>
 
-      {products.length > 0 && (
-        <>
-          {/* Top 5 rentabilité */}
-          <View style={styles.sectionHeader}>
-            <Ionicons name="trophy-outline" size={18} color={colors.marginGreen} />
-            <Text style={styles.sectionTitle}>Top 5 rentabilité</Text>
-          </View>
-          <View style={styles.sectionCard}>
-            {sorted.slice(0, 5).map((p, index) => (
-              <React.Fragment key={p.id}>
-                {index > 0 && <View style={styles.listDivider} />}
-                {renderRankItem(p, index, colors.marginGreen)}
-              </React.Fragment>
-            ))}
-          </View>
-
-          {/* Flop 5 rentabilité */}
-          {sorted.length > 1 && (
-            <>
-              <View style={[styles.sectionHeader, { marginTop: spacing.lg }]}>
-                <Ionicons name="arrow-down-circle-outline" size={18} color={colors.marginRed} />
-                <Text style={styles.sectionTitle}>Flop 5 rentabilité</Text>
-              </View>
-              <View style={styles.sectionCard}>
-                {[...sorted].reverse().slice(0, Math.min(5, sorted.length)).filter((p) => !sorted.slice(0, 5).find((t) => t.id === p.id)).map((p, index) => (
-                  <React.Fragment key={p.id}>
-                    {index > 0 && <View style={styles.listDivider} />}
-                    {renderRankItem(p, index, colors.marginRed)}
-                  </React.Fragment>
-                ))}
-              </View>
-            </>
-          )}
-        </>
-      )}
+      {/* All products with serving tables */}
+      {sorted.map((p) => renderProductCard(p))}
 
       {products.length === 0 && !loadingPref && (
         <View style={styles.emptyState}>
-          <View style={styles.emptyIconCircle}>
-            <Ionicons name="analytics-outline" size={40} color={colors.accent} />
-          </View>
-          <Text style={styles.emptyTitle}>Aucun produit</Text>
-          <Text style={styles.emptyText}>
-            Ajoutez des produits pour voir vos statistiques de rentabilité
-          </Text>
+          <Ionicons name="analytics-outline" size={48} color={colors.tabBarInactive} />
+          <Text style={styles.emptyText}>Ajoutez des produits pour voir vos statistiques</Text>
         </View>
       )}
     </ScreenWrapper>
@@ -201,7 +193,6 @@ export function DashboardScreen() {
 }
 
 const styles = StyleSheet.create({
-  /* ── Hero Header ────────────────────────────────────────── */
   heroCard: {
     backgroundColor: colors.primary,
     borderRadius: borderRadius.xl,
@@ -215,22 +206,17 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.md,
   },
   heroGreeting: {
-    ...typography.bodySmall,
-    color: 'rgba(255,255,255,0.75)',
+    ...typography.caption,
+    color: 'rgba(255,255,255,0.6)',
+    letterSpacing: 1,
     marginBottom: spacing.xs,
   },
   heroTitle: {
     ...typography.h1,
     color: colors.textLight,
   },
-  heroDivider: {
-    height: 1,
-    backgroundColor: 'rgba(255,255,255,0.12)',
-    marginHorizontal: spacing.lg,
-  },
-
-  /* ── Welcome (inside hero) ──────────────────────────────── */
   welcomeSection: {
+    backgroundColor: 'rgba(255,255,255,0.08)',
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
     position: 'relative',
@@ -247,31 +233,25 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     zIndex: 1,
   },
-  welcomeIconRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-    marginBottom: spacing.sm,
-  },
   welcomeTitle: {
-    ...typography.bodySmall,
+    ...typography.body,
     fontWeight: '700',
     color: colors.textLight,
-  },
-  welcomeText: {
-    ...typography.caption,
-    color: 'rgba(255,255,255,0.85)',
-    lineHeight: 18,
     marginBottom: spacing.sm,
     paddingRight: spacing.xl,
   },
+  welcomeText: {
+    ...typography.bodySmall,
+    color: 'rgba(255,255,255,0.85)',
+    lineHeight: 20,
+    marginBottom: spacing.sm,
+  },
   welcomePrivacy: {
     ...typography.caption,
-    color: 'rgba(255,255,255,0.6)',
+    color: 'rgba(255,255,255,0.5)',
+    fontStyle: 'italic',
     lineHeight: 16,
   },
-
-  /* ── Stats Row ──────────────────────────────────────────── */
   statsRow: {
     flexDirection: 'row',
     gap: spacing.md,
@@ -280,151 +260,116 @@ const styles = StyleSheet.create({
   statCard: {
     flex: 1,
     alignItems: 'center',
-    backgroundColor: colors.surface,
+    backgroundColor: colors.cardBackground,
     borderRadius: borderRadius.lg,
-    paddingVertical: spacing.lg,
-    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
     ...shadows.sm,
   },
-  statIconContainer: {
-    width: 44,
-    height: 44,
-    borderRadius: borderRadius.md,
-    backgroundColor: colors.light,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: spacing.sm,
-  },
   statValue: {
-    ...typography.h1,
-    color: colors.accent,
-    marginBottom: 2,
+    ...typography.h2,
+    color: colors.primary,
+    marginTop: spacing.xs,
   },
   statLabel: {
     ...typography.caption,
     color: colors.textSecondary,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
+    marginTop: 2,
   },
 
-  /* ── Section Headers ────────────────────────────────────── */
-  sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    marginBottom: spacing.sm,
-  },
-  sectionTitle: {
-    ...typography.h3,
-    color: colors.text,
-  },
-
-  /* ── Section Card (wrapping list) ───────────────────────── */
-  sectionCard: {
+  /* Product cards with serving table */
+  productCard: {
     backgroundColor: colors.cardBackground,
     borderRadius: borderRadius.lg,
+    marginBottom: spacing.md,
     overflow: 'hidden',
     ...shadows.sm,
   },
-  listDivider: {
-    height: 1,
-    backgroundColor: colors.border,
-    marginHorizontal: spacing.md,
-  },
-
-  /* ── Rank Items ─────────────────────────────────────────── */
-  rankCard: {
+  productHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingVertical: spacing.md,
     paddingHorizontal: spacing.md,
   },
-  rankRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  rankBadge: {
-    width: 32,
+  productIndicator: {
+    width: 4,
     height: 32,
-    borderRadius: borderRadius.full,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: spacing.md,
-    ...shadows.sm,
+    borderRadius: 2,
+    marginRight: spacing.sm + 2,
   },
-  rankNumber: {
-    ...typography.bodySmall,
-    fontWeight: '800',
-    color: colors.textLight,
-  },
-  rankInfo: {
+  productTitleWrap: {
     flex: 1,
     marginRight: spacing.sm,
   },
-  rankName: {
+  productName: {
     ...typography.body,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  productSubtitle: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  productMargin: {
+    ...typography.h3,
+    fontWeight: '800',
+    marginRight: spacing.xs,
+  },
+
+  /* Servings table */
+  servingsTable: {
+    paddingHorizontal: spacing.md,
+    paddingBottom: spacing.md,
+  },
+  tableHeaderRow: {
+    flexDirection: 'row',
+    paddingVertical: spacing.xs + 2,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    marginBottom: spacing.xs,
+  },
+  tableHeader: {
+    ...typography.caption,
+    color: colors.tabBarInactive,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    fontSize: 10,
+  },
+  tableRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: spacing.sm,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
+  },
+  servingName: {
+    ...typography.bodySmall,
     fontWeight: '600',
     color: colors.text,
   },
-  rankDetail: {
+  servingVolume: {
     ...typography.caption,
     color: colors.textSecondary,
-    marginTop: 2,
+    fontSize: 11,
   },
-  rankMargin: {
-    alignItems: 'flex-end',
+  tableCell: {
+    ...typography.bodySmall,
+    color: colors.text,
   },
-  rankMarginText: {
-    ...typography.h3,
-    fontWeight: '800',
-  },
-  rankCoeff: {
-    ...typography.caption,
-    color: colors.textSecondary,
-    marginTop: 2,
+  tableCellBold: {
+    ...typography.bodySmall,
+    fontWeight: '700',
   },
 
-  /* ── Servings Chips ─────────────────────────────────────── */
-  rankServings: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.xs,
-    marginTop: spacing.sm,
-    marginLeft: 32 + spacing.md,
-  },
-  servingChip: {
-    backgroundColor: colors.surface,
-    borderRadius: borderRadius.full,
-    paddingHorizontal: spacing.sm + 2,
-    paddingVertical: spacing.xs,
-  },
-  servingChipText: {
-    ...typography.caption,
-    color: colors.textSecondary,
-  },
-
-  /* ── Empty State ────────────────────────────────────────── */
   emptyState: {
     alignItems: 'center',
     paddingTop: spacing.xxl,
-    paddingHorizontal: spacing.xl,
-    gap: spacing.sm,
-  },
-  emptyIconCircle: {
-    width: 80,
-    height: 80,
-    borderRadius: borderRadius.full,
-    backgroundColor: colors.surface,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: spacing.sm,
-  },
-  emptyTitle: {
-    ...typography.h3,
-    color: colors.text,
+    gap: spacing.md,
   },
   emptyText: {
     ...typography.body,
-    color: colors.textSecondary,
+    color: colors.tabBarInactive,
     textAlign: 'center',
-    lineHeight: 22,
   },
 });

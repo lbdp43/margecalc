@@ -1,7 +1,18 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
-import { ProductWithMargin, formatPrice, formatPercent, MARGIN_COLOR_MAP } from '@margebar/shared';
+import { Ionicons } from '@expo/vector-icons';
+import {
+  ProductWithMargin, formatPrice, formatPercent, MARGIN_COLOR_MAP,
+  calculateServingMargin, CONTAINER_PRESETS,
+} from '@margebar/shared';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
+
+function getContainerLabel(volumeCl: number): string {
+  const preset = CONTAINER_PRESETS.find((p) => p.volumeCl === volumeCl);
+  if (preset) return preset.label;
+  if (volumeCl >= 100) return `${(volumeCl / 100).toFixed(volumeCl % 100 === 0 ? 0 : 1)} L`;
+  return `${volumeCl} cl`;
+}
 
 interface ProductCardProps {
   product: ProductWithMargin;
@@ -15,59 +26,62 @@ export function ProductCard({ product, onPress }: ProductCardProps) {
   return (
     <TouchableOpacity onPress={onPress} activeOpacity={0.7} style={styles.pressable}>
       <View style={styles.card}>
-        {/* Left color indicator */}
-        <View style={[styles.indicator, { backgroundColor: accent }]} />
-
-        <View style={styles.content}>
-          {/* Top section: product info + margin badge */}
-          <View style={styles.topRow}>
-            <View style={styles.info}>
-              <Text style={styles.name} numberOfLines={1}>
-                {product.name}
-              </Text>
-              <Text style={styles.detail}>
-                Achat : {formatPrice(product.purchasePriceHT)} HT
-              </Text>
-              <Text style={styles.detail}>
-                x{product.computed.coefficient.toFixed(1)} · {formatPrice(product.computed.marginPerDoseHT)}/dose
-              </Text>
-            </View>
-
-            {/* Margin badge */}
-            <View style={styles.marginSection}>
-              <View style={[styles.marginBadge, { backgroundColor: accent + '18' }]}>
-                <Text style={[styles.marginPercent, { color: accent }]}>
-                  {formatPercent(product.computed.marginPercent)}
-                </Text>
-              </View>
-              <View style={[styles.priceBadge, { backgroundColor: accent }]}>
-                <Text style={styles.priceText}>
-                  {formatPrice(product.computed.sellingPriceTTC)}
-                </Text>
-              </View>
-            </View>
+        {/* Header */}
+        <View style={styles.header}>
+          <View style={[styles.indicator, { backgroundColor: accent }]} />
+          <View style={styles.headerInfo}>
+            <Text style={styles.name} numberOfLines={1}>{product.name}</Text>
+            <Text style={styles.subtitle}>
+              Achat : {formatPrice(product.purchasePriceHT)} HT · {getContainerLabel(product.containerVolumeCl)}
+            </Text>
           </View>
+          <Text style={[styles.marginText, { color: accent }]}>
+            {formatPercent(product.computed.marginPercent)}
+          </Text>
+          <Ionicons name="chevron-forward" size={16} color={colors.tabBarInactive} />
+        </View>
 
-          {/* Servings pills */}
-          {servings.length > 0 && (
-            <View style={styles.servingsRow}>
-              {servings.map((s) => (
-                <View key={s.id} style={styles.servingChip}>
-                  <Text style={styles.servingEmoji}>
-                    {s.servingType?.icon || '🍷'}
-                  </Text>
-                  <Text style={styles.servingChipText}>
-                    {s.servingType?.name}
-                  </Text>
-                  <View style={styles.servingPriceDot} />
-                  <Text style={styles.servingPrice}>
+        {/* Serving table */}
+        {servings.length > 0 && (
+          <View style={styles.tableWrap}>
+            <View style={styles.tableHeaderRow}>
+              <Text style={[styles.tableHeader, { flex: 2 }]}>SERVICE</Text>
+              <Text style={[styles.tableHeader, { flex: 1.2, textAlign: 'right' }]}>PRIX TTC</Text>
+              <Text style={[styles.tableHeader, { flex: 1.2, textAlign: 'right' }]}>MARGE</Text>
+              <Text style={[styles.tableHeader, { flex: 1, textAlign: 'right' }]}>COEFF</Text>
+            </View>
+            {servings.map((s) => {
+              const margin = calculateServingMargin(
+                product.purchasePriceHT,
+                product.containerVolumeCl,
+                product.tvaRate,
+                s.servingType,
+                s.sellingPriceTTC,
+              );
+              const rowColor = MARGIN_COLOR_MAP[margin.colorCode];
+              const coeff = margin.costPerServingHT > 0
+                ? (margin.sellingPriceHT / margin.costPerServingHT).toFixed(1)
+                : '-';
+              return (
+                <View key={s.id} style={styles.tableRow}>
+                  <View style={{ flex: 2 }}>
+                    <Text style={styles.servingName}>{s.servingType.name}</Text>
+                    <Text style={styles.servingVol}>{s.servingType.volumeCl} cl</Text>
+                  </View>
+                  <Text style={[styles.cell, { flex: 1.2, textAlign: 'right' }]}>
                     {formatPrice(s.sellingPriceTTC)}
                   </Text>
+                  <Text style={[styles.cellBold, { flex: 1.2, textAlign: 'right', color: rowColor }]}>
+                    {formatPercent(margin.marginPercent)}
+                  </Text>
+                  <Text style={[styles.cell, { flex: 1, textAlign: 'right' }]}>
+                    x {coeff}
+                  </Text>
                 </View>
-              ))}
-            </View>
-          )}
-        </View>
+              );
+            })}
+          </View>
+        )}
       </View>
     </TouchableOpacity>
   );
@@ -75,104 +89,86 @@ export function ProductCard({ product, onPress }: ProductCardProps) {
 
 const styles = StyleSheet.create({
   pressable: {
-    marginBottom: spacing.sm + 4,
+    marginBottom: spacing.md,
   },
   card: {
-    flexDirection: 'row',
     backgroundColor: colors.cardBackground,
     borderRadius: borderRadius.lg,
     overflow: 'hidden',
-    ...shadows.md,
+    ...shadows.sm,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.md,
   },
   indicator: {
-    width: 5,
-    alignSelf: 'stretch',
+    width: 4,
+    height: 32,
+    borderRadius: 2,
+    marginRight: spacing.sm + 2,
   },
-  content: {
+  headerInfo: {
     flex: 1,
-    padding: spacing.lg,
-    paddingLeft: spacing.md + 4,
-  },
-  topRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-  },
-  info: {
-    flex: 1,
-    marginRight: spacing.md,
-    paddingTop: 2,
+    marginRight: spacing.sm,
   },
   name: {
-    ...typography.h3,
+    ...typography.body,
+    fontWeight: '700',
     color: colors.text,
-    marginBottom: 4,
   },
-  detail: {
-    ...typography.bodySmall,
+  subtitle: {
+    ...typography.caption,
     color: colors.textSecondary,
     marginTop: 2,
   },
-  marginSection: {
-    alignItems: 'center',
-    gap: spacing.xs + 2,
-  },
-  marginBadge: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderRadius: borderRadius.md,
-    alignItems: 'center',
-    minWidth: 72,
-  },
-  marginPercent: {
-    fontSize: 20,
+  marginText: {
+    ...typography.h3,
     fontWeight: '800',
-    letterSpacing: -0.3,
+    marginRight: spacing.xs,
   },
-  priceBadge: {
-    paddingHorizontal: spacing.sm + 4,
-    paddingVertical: spacing.xs + 2,
-    borderRadius: borderRadius.full,
+  tableWrap: {
+    paddingHorizontal: spacing.md,
+    paddingBottom: spacing.md,
   },
-  priceText: {
-    ...typography.caption,
-    fontWeight: '700',
-    color: colors.textLight,
-  },
-  servingsRow: {
+  tableHeaderRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.sm,
-    marginTop: spacing.md,
-    paddingTop: spacing.md,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.border,
+    paddingVertical: spacing.xs + 2,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    marginBottom: spacing.xs,
   },
-  servingChip: {
+  tableHeader: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: colors.tabBarInactive,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  tableRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.surface,
-    paddingHorizontal: spacing.sm + 4,
-    paddingVertical: spacing.xs + 2,
-    borderRadius: borderRadius.full,
-    gap: 4,
+    paddingVertical: spacing.sm,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
   },
-  servingEmoji: {
-    fontSize: 14,
-  },
-  servingChipText: {
-    ...typography.caption,
-    color: colors.text,
+  servingName: {
+    ...typography.bodySmall,
     fontWeight: '600',
+    color: colors.text,
   },
-  servingPriceDot: {
-    width: 3,
-    height: 3,
-    borderRadius: 1.5,
-    backgroundColor: colors.textSecondary,
-  },
-  servingPrice: {
+  servingVol: {
     ...typography.caption,
     color: colors.textSecondary,
-    fontWeight: '600',
+    fontSize: 11,
+  },
+  cell: {
+    ...typography.bodySmall,
+    color: colors.text,
+  },
+  cellBold: {
+    ...typography.bodySmall,
+    fontWeight: '700',
   },
 });
