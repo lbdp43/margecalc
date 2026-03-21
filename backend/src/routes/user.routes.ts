@@ -9,6 +9,7 @@ const updateSchema = z.object({
   businessName: z.string().optional(),
   isAutoEntrepreneur: z.boolean().optional(),
   defaultTvaRate: z.number().min(0).max(1).optional(),
+  defaultContainerVolumeCl: z.number().positive().optional(),
 });
 
 router.use(authenticate);

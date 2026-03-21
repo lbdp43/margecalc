@@ -1,8 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, Alert, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, Alert, ScrollView, TouchableOpacity } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { MarginMode, TVA_RATES, Category } from '@margebar/shared';
+import {
+  MarginMode,
+  TVA_RATES,
+  Category,
+  CONTAINER_PRESETS,
+  parseLocaleFloat,
+} from '@margebar/shared';
 import { ScreenWrapper } from '../../components/ui/ScreenWrapper';
 import { Input } from '../../components/ui/Input';
 import { Button } from '../../components/ui/Button';
@@ -19,14 +25,26 @@ type Props = NativeStackScreenProps<any, 'ProductForm'>;
 
 export function ProductFormScreen({ route, navigation }: Props) {
   const productId = route.params?.productId;
+  const scanData = route.params?.scanData as {
+    name?: string;
+    categoryId?: string;
+    containerVolumeCl?: number;
+    estimatedPriceHT?: number;
+  } | undefined;
   const isEditing = !!productId;
   const queryClient = useQueryClient();
   const user = useAuthStore((s) => s.user);
 
-  const [name, setName] = useState('');
-  const [categoryId, setCategoryId] = useState('');
-  const [purchasePrice, setPurchasePrice] = useState('');
-  const [containerVolume, setContainerVolume] = useState('');
+  const defaultContainer = user?.defaultContainerVolumeCl || 70;
+
+  const [name, setName] = useState(scanData?.name || '');
+  const [categoryId, setCategoryId] = useState(scanData?.categoryId || '');
+  const [purchasePrice, setPurchasePrice] = useState(
+    scanData?.estimatedPriceHT ? String(scanData.estimatedPriceHT) : ''
+  );
+  const [containerVolume, setContainerVolume] = useState(
+    scanData?.containerVolumeCl ? String(scanData.containerVolumeCl) : String(defaultContainer)
+  );
   const [doseVolume, setDoseVolume] = useState('');
   const [marginMode, setMarginMode] = useState<MarginMode>(MarginMode.FIX_SELLING_PRICE);
   const [sellingPrice, setSellingPrice] = useState('');
@@ -69,13 +87,13 @@ export function ProductFormScreen({ route, navigation }: Props) {
   }, [categories, categoryId]);
 
   const marginResult = useMarginCalculator({
-    purchasePriceHT: parseFloat(purchasePrice) || 0,
-    containerVolumeCl: parseFloat(containerVolume) || 0,
-    doseVolumeCl: parseFloat(doseVolume) || 0,
+    purchasePriceHT: parseLocaleFloat(purchasePrice) || 0,
+    containerVolumeCl: parseLocaleFloat(containerVolume) || 0,
+    doseVolumeCl: parseLocaleFloat(doseVolume) || 0,
     marginMode,
-    sellingPriceTTC: marginMode === MarginMode.FIX_SELLING_PRICE ? parseFloat(sellingPrice) || undefined : undefined,
-    targetMarginPercent: marginMode === MarginMode.FIX_TARGET_MARGIN ? parseFloat(targetMargin) || undefined : undefined,
-    coefficient: marginMode === MarginMode.FIX_COEFFICIENT ? parseFloat(coefficient) || undefined : undefined,
+    sellingPriceTTC: marginMode === MarginMode.FIX_SELLING_PRICE ? parseLocaleFloat(sellingPrice) || undefined : undefined,
+    targetMarginPercent: marginMode === MarginMode.FIX_TARGET_MARGIN ? parseLocaleFloat(targetMargin) || undefined : undefined,
+    coefficient: marginMode === MarginMode.FIX_COEFFICIENT ? parseLocaleFloat(coefficient) || undefined : undefined,
     tvaRate,
   });
 
@@ -84,13 +102,13 @@ export function ProductFormScreen({ route, navigation }: Props) {
       const data = {
         name,
         categoryId,
-        purchasePriceHT: parseFloat(purchasePrice),
-        containerVolumeCl: parseFloat(containerVolume),
-        doseVolumeCl: parseFloat(doseVolume),
+        purchasePriceHT: parseLocaleFloat(purchasePrice),
+        containerVolumeCl: parseLocaleFloat(containerVolume),
+        doseVolumeCl: parseLocaleFloat(doseVolume),
         marginMode,
-        sellingPriceTTC: marginMode === MarginMode.FIX_SELLING_PRICE ? parseFloat(sellingPrice) : undefined,
-        targetMarginPercent: marginMode === MarginMode.FIX_TARGET_MARGIN ? parseFloat(targetMargin) : undefined,
-        coefficient: marginMode === MarginMode.FIX_COEFFICIENT ? parseFloat(coefficient) : undefined,
+        sellingPriceTTC: marginMode === MarginMode.FIX_SELLING_PRICE ? parseLocaleFloat(sellingPrice) : undefined,
+        targetMarginPercent: marginMode === MarginMode.FIX_TARGET_MARGIN ? parseLocaleFloat(targetMargin) : undefined,
+        coefficient: marginMode === MarginMode.FIX_COEFFICIENT ? parseLocaleFloat(coefficient) : undefined,
         tvaRate,
         supplier: supplier || undefined,
       };
@@ -129,8 +147,21 @@ export function ProductFormScreen({ route, navigation }: Props) {
       Alert.alert('Erreur', 'Veuillez remplir tous les champs obligatoires');
       return;
     }
+    const pp = parseLocaleFloat(purchasePrice);
+    const cv = parseLocaleFloat(containerVolume);
+    const dv = parseLocaleFloat(doseVolume);
+    if (isNaN(pp) || isNaN(cv) || isNaN(dv)) {
+      Alert.alert('Erreur', 'Vérifiez les valeurs numériques');
+      return;
+    }
     saveMutation.mutate();
   };
+
+  const handleContainerPreset = (volumeCl: number) => {
+    setContainerVolume(String(volumeCl));
+  };
+
+  const currentContainerVol = parseLocaleFloat(containerVolume);
 
   const tvaOptions = [
     { label: '20%', value: TVA_RATES.RATE_20 },
@@ -173,27 +204,49 @@ export function ProductFormScreen({ route, navigation }: Props) {
         suffix="€"
       />
 
-      <View style={styles.row}>
-        <View style={styles.halfInput}>
-          <Input
-            label="Volume contenant *"
-            value={containerVolume}
-            onChangeText={setContainerVolume}
-            keyboardType="decimal-pad"
-            placeholder="70"
-            suffix="cl"
-          />
-        </View>
-        <View style={styles.halfInput}>
-          <Input
-            label="Dose de service *"
-            value={doseVolume}
-            onChangeText={setDoseVolume}
-            keyboardType="decimal-pad"
-            placeholder="4"
-            suffix="cl"
-          />
-        </View>
+      {/* Container volume with presets */}
+      <View style={styles.containerSection}>
+        <Text style={styles.sectionLabel}>Volume du contenant *</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.presetScroll}>
+          {CONTAINER_PRESETS.map((preset) => (
+            <TouchableOpacity
+              key={preset.volumeCl}
+              style={[
+                styles.presetBtn,
+                currentContainerVol === preset.volumeCl && styles.presetBtnActive,
+              ]}
+              onPress={() => handleContainerPreset(preset.volumeCl)}
+            >
+              <Text
+                style={[
+                  styles.presetBtnText,
+                  currentContainerVol === preset.volumeCl && styles.presetBtnTextActive,
+                ]}
+              >
+                {preset.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+        <Input
+          label=""
+          value={containerVolume}
+          onChangeText={setContainerVolume}
+          keyboardType="decimal-pad"
+          placeholder="70"
+          suffix="cl"
+        />
+      </View>
+
+      <View style={styles.halfInput}>
+        <Input
+          label="Dose de service *"
+          value={doseVolume}
+          onChangeText={setDoseVolume}
+          keyboardType="decimal-pad"
+          placeholder="4"
+          suffix="cl"
+        />
       </View>
 
       {!user?.isAutoEntrepreneur && (
@@ -299,12 +352,40 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     minHeight: 36,
   },
+  containerSection: {
+    marginBottom: spacing.sm,
+  },
+  presetScroll: {
+    flexDirection: 'row',
+    marginBottom: spacing.sm,
+  },
+  presetBtn: {
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    borderRadius: borderRadius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    marginRight: spacing.sm,
+    backgroundColor: colors.inputBackground,
+  },
+  presetBtnActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  presetBtnText: {
+    ...typography.bodySmall,
+    fontWeight: '600',
+    color: colors.textSecondary,
+  },
+  presetBtnTextActive: {
+    color: colors.white,
+  },
+  halfInput: {
+    marginBottom: spacing.sm,
+  },
   row: {
     flexDirection: 'row',
     gap: spacing.md,
-  },
-  halfInput: {
-    flex: 1,
   },
   tvaRow: {
     marginBottom: spacing.md,

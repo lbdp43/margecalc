@@ -1,18 +1,21 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, Switch, Alert } from 'react-native';
-import { TVA_RATES } from '@margebar/shared';
+import { View, Text, StyleSheet, Switch, Alert, TouchableOpacity, ScrollView } from 'react-native';
+import { TVA_RATES, CONTAINER_PRESETS } from '@margebar/shared';
 import { ScreenWrapper } from '../../components/ui/ScreenWrapper';
 import { Input } from '../../components/ui/Input';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
 import { useAuthStore } from '../../store/auth.store';
 import { api } from '../../services/api';
-import { colors, spacing, typography } from '../../theme';
+import { colors, spacing, borderRadius, typography } from '../../theme';
 
 export function SettingsScreen() {
   const { user, setAuth, logout } = useAuthStore();
   const [businessName, setBusinessName] = useState(user?.businessName || '');
   const [isAutoEntrepreneur, setIsAutoEntrepreneur] = useState(user?.isAutoEntrepreneur || false);
+  const [defaultContainerVolumeCl, setDefaultContainerVolumeCl] = useState(
+    user?.defaultContainerVolumeCl || 70
+  );
   const [saving, setSaving] = useState(false);
 
   const handleSave = async () => {
@@ -22,6 +25,7 @@ export function SettingsScreen() {
         businessName: businessName || null,
         isAutoEntrepreneur,
         defaultTvaRate: isAutoEntrepreneur ? 0 : TVA_RATES.RATE_20,
+        defaultContainerVolumeCl,
       });
       const token = useAuthStore.getState().token!;
       setAuth(token, res.data);
@@ -71,6 +75,34 @@ export function SettingsScreen() {
         </View>
       </Card>
 
+      <Card style={styles.section}>
+        <Text style={styles.sectionTitle}>Contenant par défaut</Text>
+        <Text style={styles.sectionDesc}>
+          Volume du contenant pré-sélectionné lors de l'ajout d'un produit
+        </Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.presetScroll}>
+          {CONTAINER_PRESETS.map((preset) => (
+            <TouchableOpacity
+              key={preset.volumeCl}
+              style={[
+                styles.presetBtn,
+                defaultContainerVolumeCl === preset.volumeCl && styles.presetBtnActive,
+              ]}
+              onPress={() => setDefaultContainerVolumeCl(preset.volumeCl)}
+            >
+              <Text
+                style={[
+                  styles.presetBtnText,
+                  defaultContainerVolumeCl === preset.volumeCl && styles.presetBtnTextActive,
+                ]}
+              >
+                {preset.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      </Card>
+
       <Button title="Enregistrer" onPress={handleSave} loading={saving} />
 
       <Button
@@ -97,6 +129,11 @@ const styles = StyleSheet.create({
   sectionTitle: {
     ...typography.h3,
     color: colors.text,
+    marginBottom: spacing.sm,
+  },
+  sectionDesc: {
+    ...typography.caption,
+    color: colors.textSecondary,
     marginBottom: spacing.md,
   },
   email: {
@@ -121,6 +158,30 @@ const styles = StyleSheet.create({
     ...typography.caption,
     color: colors.textSecondary,
     marginTop: 2,
+  },
+  presetScroll: {
+    flexDirection: 'row',
+  },
+  presetBtn: {
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    borderRadius: borderRadius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    marginRight: spacing.sm,
+    backgroundColor: colors.inputBackground,
+  },
+  presetBtnActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  presetBtnText: {
+    ...typography.bodySmall,
+    fontWeight: '600',
+    color: colors.textSecondary,
+  },
+  presetBtnTextActive: {
+    color: colors.white,
   },
   logoutBtn: {
     marginTop: spacing.md,

@@ -4,6 +4,7 @@ export interface User {
   businessName: string | null;
   isAutoEntrepreneur: boolean;
   defaultTvaRate: number;
+  defaultContainerVolumeCl: number;
   createdAt: string;
   updatedAt: string;
 }

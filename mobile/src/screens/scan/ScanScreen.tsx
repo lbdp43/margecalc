@@ -1,0 +1,237 @@
+import React, { useState } from 'react';
+import { View, Text, StyleSheet, Alert, Image, ActivityIndicator } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
+import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { useQuery } from '@tanstack/react-query';
+import { Category, CONTAINER_PRESETS } from '@margebar/shared';
+import { ScreenWrapper } from '../../components/ui/ScreenWrapper';
+import { Button } from '../../components/ui/Button';
+import { Card } from '../../components/ui/Card';
+import * as scanService from '../../services/scan.service';
+import * as categoryService from '../../services/category.service';
+import { colors, spacing, borderRadius, typography } from '../../theme';
+
+type Props = NativeStackScreenProps<any, 'Scan'>;
+
+export function ScanScreen({ navigation }: Props) {
+  const [imageUri, setImageUri] = useState<string | null>(null);
+  const [scanning, setScanning] = useState(false);
+  const [result, setResult] = useState<scanService.ScanResult | null>(null);
+
+  const { data: categories = [] } = useQuery<Category[]>({
+    queryKey: ['categories'],
+    queryFn: categoryService.getCategories,
+  });
+
+  const pickImage = async (useCamera: boolean) => {
+    const permission = useCamera
+      ? await ImagePicker.requestCameraPermissionsAsync()
+      : await ImagePicker.requestMediaLibraryPermissionsAsync();
+
+    if (!permission.granted) {
+      Alert.alert('Permission requise', 'Autorisez l\'accès à la caméra/galerie');
+      return;
+    }
+
+    const pickerFn = useCamera ? ImagePicker.launchCameraAsync : ImagePicker.launchImageLibraryAsync;
+    const picked = await pickerFn({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      quality: 0.7,
+      base64: true,
+    });
+
+    if (picked.canceled || !picked.assets?.[0]) return;
+
+    const asset = picked.assets[0];
+    setImageUri(asset.uri);
+    setResult(null);
+
+    if (!asset.base64) {
+      Alert.alert('Erreur', 'Impossible de lire l\'image');
+      return;
+    }
+
+    setScanning(true);
+    try {
+      const scanResult = await scanService.scanBottle(asset.base64);
+      setResult(scanResult);
+    } catch (err: any) {
+      Alert.alert('Erreur', err.response?.data?.error || 'Impossible d\'analyser l\'image');
+    } finally {
+      setScanning(false);
+    }
+  };
+
+  const handleUseResult = () => {
+    if (!result) return;
+
+    // Find matching category
+    const matchedCategory = categories.find((c) => c.slug === result.category);
+
+    navigation.navigate('Produits', {
+      screen: 'ProductForm',
+      params: {
+        scanData: {
+          name: result.name,
+          categoryId: matchedCategory?.id || categories[0]?.id,
+          containerVolumeCl: result.containerVolumeCl,
+          estimatedPriceHT: result.estimatedPriceHT,
+        },
+      },
+    });
+  };
+
+  const getContainerLabel = (cl: number | null) => {
+    if (!cl) return 'Non détecté';
+    const preset = CONTAINER_PRESETS.find((p) => p.volumeCl === cl);
+    return preset ? preset.label : `${cl} cl`;
+  };
+
+  return (
+    <ScreenWrapper>
+      <Text style={styles.title}>Scanner un produit</Text>
+      <Text style={styles.subtitle}>
+        Prenez en photo une bouteille ou une facture pour remplir automatiquement les informations
+      </Text>
+
+      <View style={styles.buttonRow}>
+        <Button
+          title="📷 Prendre une photo"
+          onPress={() => pickImage(true)}
+          style={styles.actionBtn}
+        />
+        <Button
+          title="🖼️ Galerie"
+          onPress={() => pickImage(false)}
+          variant="outline"
+          style={styles.actionBtn}
+        />
+      </View>
+
+      {imageUri && (
+        <Card style={styles.previewCard}>
+          <Image source={{ uri: imageUri }} style={styles.preview} resizeMode="contain" />
+        </Card>
+      )}
+
+      {scanning && (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={styles.loadingText}>Analyse en cours...</Text>
+        </View>
+      )}
+
+      {result && !scanning && (
+        <Card style={styles.resultCard}>
+          <Text style={styles.resultTitle}>Produit reconnu</Text>
+
+          <View style={styles.resultRow}>
+            <Text style={styles.resultLabel}>Nom</Text>
+            <Text style={styles.resultValue}>{result.name}</Text>
+          </View>
+
+          <View style={styles.resultRow}>
+            <Text style={styles.resultLabel}>Catégorie</Text>
+            <Text style={styles.resultValue}>{result.category}</Text>
+          </View>
+
+          <View style={styles.resultRow}>
+            <Text style={styles.resultLabel}>Volume</Text>
+            <Text style={styles.resultValue}>{getContainerLabel(result.containerVolumeCl)}</Text>
+          </View>
+
+          {result.estimatedPriceHT && (
+            <View style={styles.resultRow}>
+              <Text style={styles.resultLabel}>Prix HT estimé</Text>
+              <Text style={styles.resultValue}>{result.estimatedPriceHT.toFixed(2)} €</Text>
+            </View>
+          )}
+
+          <View style={styles.resultRow}>
+            <Text style={styles.resultLabel}>Confiance</Text>
+            <Text style={[
+              styles.resultValue,
+              { color: result.confidence >= 0.7 ? colors.marginGreen : result.confidence >= 0.4 ? colors.marginOrange : colors.marginRed },
+            ]}>
+              {Math.round(result.confidence * 100)}%
+            </Text>
+          </View>
+
+          <Button
+            title="Utiliser ces informations"
+            onPress={handleUseResult}
+            style={styles.useBtn}
+          />
+        </Card>
+      )}
+    </ScreenWrapper>
+  );
+}
+
+const styles = StyleSheet.create({
+  title: {
+    ...typography.h1,
+    color: colors.primary,
+    marginBottom: spacing.xs,
+  },
+  subtitle: {
+    ...typography.bodySmall,
+    color: colors.textSecondary,
+    marginBottom: spacing.lg,
+  },
+  buttonRow: {
+    flexDirection: 'row',
+    gap: spacing.md,
+    marginBottom: spacing.lg,
+  },
+  actionBtn: {
+    flex: 1,
+  },
+  previewCard: {
+    marginBottom: spacing.md,
+    padding: spacing.sm,
+    alignItems: 'center',
+  },
+  preview: {
+    width: '100%',
+    height: 250,
+    borderRadius: borderRadius.sm,
+  },
+  loadingContainer: {
+    alignItems: 'center',
+    padding: spacing.lg,
+  },
+  loadingText: {
+    ...typography.body,
+    color: colors.textSecondary,
+    marginTop: spacing.md,
+  },
+  resultCard: {
+    marginBottom: spacing.md,
+  },
+  resultTitle: {
+    ...typography.h3,
+    color: colors.primary,
+    marginBottom: spacing.md,
+  },
+  resultRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  resultLabel: {
+    ...typography.bodySmall,
+    color: colors.textSecondary,
+  },
+  resultValue: {
+    ...typography.body,
+    fontWeight: '600',
+    color: colors.text,
+  },
+  useBtn: {
+    marginTop: spacing.md,
+  },
+});
