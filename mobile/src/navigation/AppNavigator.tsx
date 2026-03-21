@@ -11,6 +11,7 @@ import { ProductFormScreen } from '../screens/products/ProductFormScreen';
 import { InvoiceScanScreen } from '../screens/products/InvoiceScanScreen';
 import { SettingsScreen } from '../screens/settings/SettingsScreen';
 import { colors, shadows } from '../theme';
+import { CurvedTabBar } from '../components/ui/CurvedTabBar';
 
 const Tab = createBottomTabNavigator();
 const ProductStack = createAppStackNavigator();
@@ -96,6 +97,7 @@ const TAB_ICONS: Record<string, { focused: string; default: string }> = {
 export function AppNavigator() {
   return (
     <Tab.Navigator
+      tabBar={(props) => <CurvedTabBar {...props} />}
       screenOptions={({ route }) => ({
         headerShown: false,
         tabBarIcon: ({ focused, color }) => {
@@ -106,19 +108,6 @@ export function AppNavigator() {
         },
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.tabBarInactive,
-        tabBarStyle: {
-          backgroundColor: colors.white,
-          borderTopWidth: 0,
-          paddingBottom: 6,
-          paddingTop: 6,
-          height: 64,
-          ...shadows.lg,
-        },
-        tabBarLabelStyle: {
-          fontSize: 11,
-          fontWeight: '600',
-          marginTop: 2,
-        },
       })}
     >
       <Tab.Screen name="Tableau de bord" component={DashboardScreen} />
