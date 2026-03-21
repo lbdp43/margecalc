@@ -3,8 +3,9 @@ import { View, Text, StyleSheet, Switch, Alert, TouchableOpacity, ScrollView, Te
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { TVA_RATES, CONTAINER_PRESETS, ServingType, DEFAULT_MARGIN_THRESHOLDS, Category } from '@margebar/shared';
+import { TVA_RATES, CONTAINER_PRESETS, ServingType, DEFAULT_MARGIN_THRESHOLDS, Category, CustomContainer } from '@margebar/shared';
 import { ScreenWrapper } from '../../components/ui/ScreenWrapper';
+import { DecorativeCurve } from '../../components/ui/DecorativeCurve';
 import { Input } from '../../components/ui/Input';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
@@ -12,6 +13,7 @@ import { useAuthStore } from '../../store/auth.store';
 import { api } from '../../services/api';
 import * as servingService from '../../services/serving.service';
 import * as categoryService from '../../services/category.service';
+import * as containerService from '../../services/container.service';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 
 export function SettingsScreen() {
@@ -39,10 +41,19 @@ export function SettingsScreen() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [newCategoryName, setNewCategoryName] = useState('');
 
+  // Containers
+  const [containers, setContainers] = useState<CustomContainer[]>([]);
+  const [newContainerName, setNewContainerName] = useState('');
+  const [newContainerVolume, setNewContainerVolume] = useState('');
+  const [editingContainerId, setEditingContainerId] = useState<string | null>(null);
+  const [editContainerName, setEditContainerName] = useState('');
+  const [editContainerVolume, setEditContainerVolume] = useState('');
+
   useFocusEffect(
     useCallback(() => {
       loadServingTypes();
       loadCategories();
+      loadContainers();
       AsyncStorage.getItem('margebar_margin_thresholds').then((val) => {
         if (val) {
           const parsed = JSON.parse(val);
@@ -145,6 +156,72 @@ export function SettingsScreen() {
     }
   };
 
+  // Container handlers
+  const loadContainers = async () => {
+    try {
+      const list = await containerService.getContainers();
+      setContainers(list);
+    } catch {}
+  };
+
+  const handleAddContainer = async () => {
+    const vol = parseFloat(newContainerVolume.replace(',', '.'));
+    if (!newContainerName.trim() || isNaN(vol) || vol <= 0) {
+      Alert.alert('Erreur', 'Entrez un nom et un volume valide');
+      return;
+    }
+    try {
+      await containerService.createContainer(newContainerName.trim(), vol);
+      setNewContainerName('');
+      setNewContainerVolume('');
+      loadContainers();
+    } catch {
+      Alert.alert('Erreur', 'Impossible de créer le contenant');
+    }
+  };
+
+  const handleEditContainer = async (id: string) => {
+    const vol = parseFloat(editContainerVolume.replace(',', '.'));
+    if (!editContainerName.trim() || isNaN(vol) || vol <= 0) {
+      Alert.alert('Erreur', 'Entrez un nom et un volume valide');
+      return;
+    }
+    try {
+      await containerService.updateContainer(id, {
+        name: editContainerName.trim(),
+        volumeCl: vol,
+      });
+      setEditingContainerId(null);
+      loadContainers();
+    } catch {
+      Alert.alert('Erreur', 'Impossible de modifier');
+    }
+  };
+
+  const handleDeleteContainer = (id: string, name: string) => {
+    Alert.alert('Supprimer', `Supprimer "${name}" ?`, [
+      { text: 'Annuler', style: 'cancel' },
+      {
+        text: 'Supprimer',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await containerService.deleteContainer(id);
+            loadContainers();
+          } catch {
+            Alert.alert('Erreur', 'Impossible de supprimer');
+          }
+        },
+      },
+    ]);
+  };
+
+  const startEditContainer = (c: CustomContainer) => {
+    setEditingContainerId(c.id);
+    setEditContainerName(c.name);
+    setEditContainerVolume(String(c.volumeCl));
+  };
+
   const handleSave = async () => {
     setSaving(true);
     try {
@@ -177,6 +254,7 @@ export function SettingsScreen() {
 
   return (
     <ScreenWrapper>
+      <DecorativeCurve variant="top" />
       <Text style={styles.title}>Paramètres</Text>
 
       {/* Mon établissement */}
@@ -269,53 +347,113 @@ export function SettingsScreen() {
         </View>
       </View>
 
-      {/* Contenant par défaut */}
+      {/* Contenants */}
       <View style={styles.sectionCard}>
         <View style={styles.sectionHeader}>
           <View style={styles.sectionAccent} />
-          <Text style={styles.sectionTitle}>Contenant par défaut</Text>
+          <Text style={styles.sectionTitle}>Contenants</Text>
         </View>
         <View style={styles.sectionBody}>
           <Text style={styles.sectionDesc}>
-            Volume du contenant pré-sélectionné lors de l'ajout d'un produit
+            Gérez vos contenants d'achat (bouteille, fût, BIB...). Le contenant par défaut est pré-sélectionné lors de l'ajout d'un produit.
           </Text>
+
+          {/* Default container selector */}
+          <Text style={styles.subLabel}>Contenant par défaut</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.presetScroll}>
-            {CONTAINER_PRESETS.map((preset) => (
+            {containers.map((c) => (
               <TouchableOpacity
-                key={preset.volumeCl}
+                key={c.id}
                 style={[
                   styles.presetBtn,
-                  defaultContainerVolumeCl === preset.volumeCl && styles.presetBtnActive,
+                  defaultContainerVolumeCl === c.volumeCl && styles.presetBtnActive,
                 ]}
-                onPress={() => setDefaultContainerVolumeCl(preset.volumeCl)}
+                onPress={() => setDefaultContainerVolumeCl(c.volumeCl)}
               >
                 <Text
                   style={[
                     styles.presetBtnText,
-                    defaultContainerVolumeCl === preset.volumeCl && styles.presetBtnTextActive,
+                    defaultContainerVolumeCl === c.volumeCl && styles.presetBtnTextActive,
                   ]}
                 >
-                  {preset.label}
+                  {c.name}
                 </Text>
               </TouchableOpacity>
             ))}
           </ScrollView>
-          <View style={styles.customContainerRow}>
-            <View style={styles.customContainerInputWrap}>
-              <Ionicons name="resize-outline" size={16} color={colors.textSecondary} style={{ marginRight: spacing.sm }} />
-              <TextInput
-                style={styles.customContainerInput}
-                value={String(defaultContainerVolumeCl)}
-                onChangeText={(v) => {
-                  const vol = parseFloat(v.replace(',', '.'));
-                  if (!isNaN(vol) && vol > 0) setDefaultContainerVolumeCl(vol);
-                }}
-                keyboardType="numeric"
-                placeholder="Volume personnalisé"
-                placeholderTextColor={colors.textSecondary}
-              />
-              <Text style={styles.customContainerUnit}>cl</Text>
+
+          {/* Container list with edit/delete */}
+          <Text style={[styles.subLabel, { marginTop: spacing.md }]}>Vos contenants</Text>
+          {containers.map((c) => (
+            <View key={c.id} style={styles.servingMiniCard}>
+              {editingContainerId === c.id ? (
+                <View style={styles.servingEditRow}>
+                  <TextInput
+                    style={[styles.servingInput, { flex: 2 }]}
+                    value={editContainerName}
+                    onChangeText={setEditContainerName}
+                    placeholder="Nom"
+                    placeholderTextColor={colors.textSecondary}
+                  />
+                  <TextInput
+                    style={[styles.servingInput, { flex: 1 }]}
+                    value={editContainerVolume}
+                    onChangeText={setEditContainerVolume}
+                    keyboardType="numeric"
+                    placeholder="cl"
+                    placeholderTextColor={colors.textSecondary}
+                  />
+                  <TouchableOpacity onPress={() => handleEditContainer(c.id)} style={styles.iconBtn}>
+                    <Ionicons name="checkmark-circle" size={24} color={colors.accent} />
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => setEditingContainerId(null)} style={styles.iconBtn}>
+                    <Ionicons name="close-circle" size={24} color={colors.marginRed} />
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <>
+                  <View style={styles.servingInfo}>
+                    <View style={styles.servingIconBadge}>
+                      <Ionicons name="cube-outline" size={20} color={colors.accent} />
+                    </View>
+                    <View style={styles.servingTextBlock}>
+                      <Text style={styles.servingName}>{c.name}</Text>
+                      <Text style={styles.servingVolume}>{c.volumeCl} cl</Text>
+                    </View>
+                  </View>
+                  <View style={styles.servingActions}>
+                    <TouchableOpacity onPress={() => startEditContainer(c)} style={styles.iconBtnSmall}>
+                      <Ionicons name="pencil-outline" size={18} color={colors.textSecondary} />
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => handleDeleteContainer(c.id, c.name)} style={styles.iconBtnSmall}>
+                      <Ionicons name="trash-outline" size={18} color={colors.marginRed} />
+                    </TouchableOpacity>
+                  </View>
+                </>
+              )}
             </View>
+          ))}
+
+          {/* Add new container */}
+          <View style={styles.addRow}>
+            <TextInput
+              style={[styles.addInput, { flex: 2 }]}
+              value={newContainerName}
+              onChangeText={setNewContainerName}
+              placeholder="Nom (ex: Bouteille 1L)"
+              placeholderTextColor={colors.textSecondary}
+            />
+            <TextInput
+              style={[styles.addInput, { flex: 1 }]}
+              value={newContainerVolume}
+              onChangeText={setNewContainerVolume}
+              keyboardType="numeric"
+              placeholder="cl"
+              placeholderTextColor={colors.textSecondary}
+            />
+            <TouchableOpacity onPress={handleAddContainer} style={styles.addBtn}>
+              <Ionicons name="add" size={22} color={colors.textLight} />
+            </TouchableOpacity>
           </View>
         </View>
       </View>
@@ -507,6 +645,14 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
     lineHeight: 18,
   },
+  subLabel: {
+    ...typography.caption,
+    fontWeight: '700',
+    color: colors.text,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: spacing.sm,
+  },
 
   // Email
   emailRow: {
@@ -622,30 +768,6 @@ const styles = StyleSheet.create({
   presetBtnTextActive: {
     color: colors.textLight,
   },
-  customContainerRow: {
-    marginTop: spacing.sm,
-  },
-  customContainerInputWrap: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.surface,
-    borderRadius: borderRadius.md,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-  },
-  customContainerInput: {
-    flex: 1,
-    ...typography.bodySmall,
-    color: colors.text,
-    paddingVertical: spacing.xs,
-  },
-  customContainerUnit: {
-    ...typography.bodySmall,
-    fontWeight: '700',
-    color: colors.textSecondary,
-    marginLeft: spacing.xs,
-  },
-
   // Serving types
   servingMiniCard: {
     flexDirection: 'row',

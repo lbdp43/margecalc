@@ -10,6 +10,7 @@ import {
   calculateServingMargin, CONTAINER_PRESETS,
 } from '@margebar/shared';
 import { ScreenWrapper } from '../../components/ui/ScreenWrapper';
+import { DecorativeCurve } from '../../components/ui/DecorativeCurve';
 import * as productService from '../../services/product.service';
 import { useAuthStore } from '../../store/auth.store';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
@@ -178,6 +179,9 @@ export function DashboardScreen() {
           <Text style={styles.statLabel}>Marge moyenne</Text>
         </View>
       </View>
+
+      {/* Decorative curve between stats and products */}
+      <DecorativeCurve variant="middle" />
 
       {/* All products with serving tables */}
       {sorted.map((p) => renderProductCard(p))}

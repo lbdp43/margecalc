@@ -84,6 +84,16 @@ export interface CreateProductInput {
   imageUrl?: string;
 }
 
+// --- Custom Containers (contenants) ---
+
+export interface CustomContainer {
+  id: string;
+  userId: string;
+  name: string;
+  volumeCl: number;
+  sortOrder: number;
+}
+
 // --- Serving Types (types de service) ---
 
 export interface ServingType {

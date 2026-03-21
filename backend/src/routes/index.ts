@@ -5,6 +5,7 @@ import categoryRoutes from './category.routes';
 import userRoutes from './user.routes';
 import scanRoutes from './scan.routes';
 import servingRoutes from './serving.routes';
+import containerRoutes from './container.routes';
 import productServingRoutes from './productServing.routes';
 
 const router = Router();
@@ -16,5 +17,6 @@ router.use('/categories', categoryRoutes);
 router.use('/users', userRoutes);
 router.use('/scan', scanRoutes);
 router.use('/servings', servingRoutes);
+router.use('/containers', containerRoutes);
 
 export default router;
