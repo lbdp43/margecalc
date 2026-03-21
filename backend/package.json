@@ -20,6 +20,9 @@
     "jsonwebtoken": "^9.0.2",
     "zod": "^3.22.0"
   },
+  "prisma": {
+    "schema": "prisma/schema.prisma"
+  },
   "devDependencies": {
     "@types/bcrypt": "^5.0.2",
     "@types/cors": "^2.8.17",
