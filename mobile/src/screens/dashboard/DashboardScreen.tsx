@@ -4,10 +4,14 @@ import { useQuery } from '@tanstack/react-query';
 import { useNavigation } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
-import { ProductWithMargin, formatPercent, MARGIN_COLOR_MAP } from '@margebar/shared';
+import {
+  ProductWithMargin, ServingMarginResult,
+  formatPercent, formatPrice, MARGIN_COLOR_MAP,
+} from '@margebar/shared';
 import { ScreenWrapper } from '../../components/ui/ScreenWrapper';
 import { Card } from '../../components/ui/Card';
 import * as productService from '../../services/product.service';
+import * as servingService from '../../services/serving.service';
 import { useAuthStore } from '../../store/auth.store';
 import { colors, spacing, borderRadius, typography } from '../../theme';
 
@@ -23,6 +27,7 @@ export function DashboardScreen() {
 
   const [welcomeVisible, setWelcomeVisible] = useState(true);
   const [loadingPref, setLoadingPref] = useState(true);
+  const [allServings, setAllServings] = useState<Record<string, ServingMarginResult[]>>({});
 
   useEffect(() => {
     AsyncStorage.getItem(WELCOME_DISMISSED_KEY).then((val) => {
@@ -30,6 +35,25 @@ export function DashboardScreen() {
       setLoadingPref(false);
     });
   }, []);
+
+  // Load servings for all products
+  useEffect(() => {
+    if (products.length === 0) return;
+    const loadAll = async () => {
+      const entries: [string, ServingMarginResult[]][] = await Promise.all(
+        products.map(async (p) => {
+          try {
+            const servings = await servingService.getProductServings(p.id);
+            return [p.id, servings] as [string, ServingMarginResult[]];
+          } catch {
+            return [p.id, []] as [string, ServingMarginResult[]];
+          }
+        })
+      );
+      setAllServings(Object.fromEntries(entries));
+    };
+    loadAll();
+  }, [products]);
 
   const handleDismiss = useCallback(() => {
     setWelcomeVisible(false);
@@ -54,8 +78,6 @@ export function DashboardScreen() {
   };
 
   const sorted = [...products].sort((a, b) => b.computed.marginPercent - a.computed.marginPercent);
-  const top5 = sorted.slice(0, 5);
-  const bottom5 = sorted.slice(-5).reverse();
 
   const avgMargin = products.length > 0
     ? products.reduce((sum, p) => sum + p.computed.marginPercent, 0) / products.length
@@ -97,53 +119,64 @@ export function DashboardScreen() {
         </Card>
       </View>
 
-      {products.length > 0 && (
-        <>
-          <View style={styles.sectionHeader}>
-            <Ionicons name="arrow-up-circle-outline" size={18} color={colors.marginGreen} />
-            <Text style={styles.sectionTitle}>Top rentabilité</Text>
-          </View>
-          <Card style={styles.rankCard}>
-            {top5.map((p, idx) => (
-              <TouchableOpacity
-                key={p.id}
-                style={[styles.rankItem, idx === top5.length - 1 && styles.rankItemLast]}
-                onPress={() => navigateToProduct(p.id)}
-                activeOpacity={0.6}
-              >
-                <View style={[styles.rankDot, { backgroundColor: MARGIN_COLOR_MAP[p.computed.colorCode] }]} />
-                <Text style={styles.rankName} numberOfLines={1}>{p.name}</Text>
-                <Text style={[styles.rankMargin, { color: MARGIN_COLOR_MAP[p.computed.colorCode] }]}>
-                  {formatPercent(p.computed.marginPercent)}
-                </Text>
-                <Ionicons name="chevron-forward" size={14} color={colors.grayMedium} />
-              </TouchableOpacity>
-            ))}
-          </Card>
+      {sorted.map((p) => {
+        const servings = allServings[p.id] || [];
 
-          <View style={styles.sectionHeader}>
-            <Ionicons name="arrow-down-circle-outline" size={18} color={colors.marginOrange} />
-            <Text style={styles.sectionTitle}>Marges les plus faibles</Text>
-          </View>
-          <Card style={styles.rankCard}>
-            {bottom5.map((p, idx) => (
-              <TouchableOpacity
-                key={p.id}
-                style={[styles.rankItem, idx === bottom5.length - 1 && styles.rankItemLast]}
-                onPress={() => navigateToProduct(p.id)}
-                activeOpacity={0.6}
-              >
-                <View style={[styles.rankDot, { backgroundColor: MARGIN_COLOR_MAP[p.computed.colorCode] }]} />
-                <Text style={styles.rankName} numberOfLines={1}>{p.name}</Text>
-                <Text style={[styles.rankMargin, { color: MARGIN_COLOR_MAP[p.computed.colorCode] }]}>
-                  {formatPercent(p.computed.marginPercent)}
-                </Text>
-                <Ionicons name="chevron-forward" size={14} color={colors.grayMedium} />
-              </TouchableOpacity>
-            ))}
-          </Card>
-        </>
-      )}
+        return (
+          <TouchableOpacity
+            key={p.id}
+            activeOpacity={0.7}
+            onPress={() => navigateToProduct(p.id)}
+          >
+            <Card style={styles.productCard}>
+              <View style={styles.productHeader}>
+                <View style={[styles.productIndicator, { backgroundColor: MARGIN_COLOR_MAP[p.computed.colorCode] }]} />
+                <View style={styles.productInfo}>
+                  <Text style={styles.productName} numberOfLines={1}>{p.name}</Text>
+                  <Text style={styles.productPrice}>
+                    Achat : {formatPrice(p.purchasePriceHT)} HT
+                  </Text>
+                </View>
+                <View style={styles.productMarginBadge}>
+                  <Text style={[styles.productMarginText, { color: MARGIN_COLOR_MAP[p.computed.colorCode] }]}>
+                    {formatPercent(p.computed.marginPercent)}
+                  </Text>
+                </View>
+                <Ionicons name="chevron-forward" size={16} color={colors.grayMedium} />
+              </View>
+
+              {servings.length > 0 && (
+                <View style={styles.servingsTable}>
+                  <View style={styles.servingsHeader}>
+                    <Text style={[styles.servingsHeaderCell, styles.servingsNameCell]}>Service</Text>
+                    <Text style={styles.servingsHeaderCell}>Prix TTC</Text>
+                    <Text style={styles.servingsHeaderCell}>Marge</Text>
+                    <Text style={styles.servingsHeaderCell}>Coeff</Text>
+                  </View>
+                  {servings.map((s) => {
+                    const coeff = s.costPerServingHT > 0
+                      ? s.sellingPriceHT / s.costPerServingHT
+                      : 0;
+                    return (
+                      <View key={s.servingType.id} style={styles.servingsRow}>
+                        <View style={styles.servingsNameCell}>
+                          <Text style={styles.servingName}>{s.servingType.name}</Text>
+                          <Text style={styles.servingVol}>{s.servingType.volumeCl} cl</Text>
+                        </View>
+                        <Text style={styles.servingCell}>{formatPrice(s.sellingPriceTTC)}</Text>
+                        <Text style={[styles.servingCell, styles.servingCellBold, { color: MARGIN_COLOR_MAP[s.colorCode] }]}>
+                          {formatPercent(s.marginPercent)}
+                        </Text>
+                        <Text style={styles.servingCell}>x{coeff.toFixed(1)}</Text>
+                      </View>
+                    );
+                  })}
+                </View>
+              )}
+            </Card>
+          </TouchableOpacity>
+        );
+      })}
 
       {products.length === 0 && !loadingPref && (
         <View style={styles.emptyState}>
@@ -189,46 +222,88 @@ const styles = StyleSheet.create({
     ...typography.caption,
     color: colors.textSecondary,
   },
-  sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
+  // Product cards
+  productCard: {
     marginBottom: spacing.sm,
   },
-  sectionTitle: {
+  productHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  productIndicator: {
+    width: 4,
+    height: 36,
+    borderRadius: 2,
+    marginRight: spacing.sm,
+  },
+  productInfo: {
+    flex: 1,
+  },
+  productName: {
     ...typography.body,
     fontWeight: '600',
     color: colors.text,
   },
-  rankCard: {
-    marginBottom: spacing.lg,
+  productPrice: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    marginTop: 1,
   },
-  rankItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: spacing.sm + 2,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  rankItemLast: {
-    borderBottomWidth: 0,
-  },
-  rankDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+  productMarginBadge: {
     marginRight: spacing.sm,
   },
-  rankName: {
-    ...typography.bodySmall,
+  productMarginText: {
+    ...typography.body,
+    fontWeight: '700',
+  },
+  // Servings table
+  servingsTable: {
+    marginTop: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    paddingTop: spacing.sm,
+  },
+  servingsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: spacing.xs,
+  },
+  servingsHeaderCell: {
+    ...typography.caption,
+    color: colors.grayMedium,
+    fontSize: 10,
+    textTransform: 'uppercase',
+    textAlign: 'center',
     flex: 1,
+  },
+  servingsNameCell: {
+    flex: 1.5,
+    textAlign: 'left',
+  },
+  servingsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 3,
+  },
+  servingName: {
+    ...typography.caption,
+    fontWeight: '600',
     color: colors.text,
   },
-  rankMargin: {
-    ...typography.bodySmall,
-    fontWeight: '700',
-    marginRight: spacing.xs,
+  servingVol: {
+    fontSize: 10,
+    color: colors.grayMedium,
   },
+  servingCell: {
+    ...typography.caption,
+    color: colors.text,
+    textAlign: 'center',
+    flex: 1,
+  },
+  servingCellBold: {
+    fontWeight: '700',
+  },
+  // Welcome
   welcomeCard: {
     marginBottom: spacing.lg,
     backgroundColor: colors.primary,
