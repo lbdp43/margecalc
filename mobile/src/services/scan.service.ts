@@ -9,6 +9,8 @@ export interface ScanResult {
 }
 
 export async function scanBottle(imageBase64: string): Promise<ScanResult> {
-  const res = await api.post<ScanResult>('/scan/bottle', { imageBase64 });
+  const res = await api.post<ScanResult>('/scan/bottle', { imageBase64 }, {
+    timeout: 90000,
+  });
   return res.data;
 }

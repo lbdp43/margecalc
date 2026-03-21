@@ -35,68 +35,87 @@ Contenants standards: ${CONTAINER_PRESETS.map(p => p.label).join(', ')}
 Sois précis sur le nom. Si c'est un spiritueux, indique la marque et le type (ex: "Absolut Vodka", "Havana Club 3 ans").
 Si tu ne reconnais pas le produit, mets confidence à 0.`;
 
-  const response = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-    },
-    body: JSON.stringify({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 500,
-      messages: [
-        {
-          role: 'user',
-          content: [
-            {
-              type: 'image',
-              source: {
-                type: 'base64',
-                media_type: 'image/jpeg',
-                data: imageBase64,
-              },
-            },
-            {
-              type: 'text',
-              text: prompt,
-            },
-          ],
-        },
-      ],
-    }),
-  });
+  console.log('[SCAN] Envoi image à Claude Vision API...');
 
-  if (!response.ok) {
-    const err = await response.text();
-    throw new Error(`Erreur API vision: ${response.status} - ${err}`);
-  }
-
-  const data = (await response.json()) as { content?: Array<{ text?: string }> };
-  const text = data.content?.[0]?.text || '';
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 60000);
 
   try {
-    // Extract JSON from response (handle markdown code blocks)
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) throw new Error('Pas de JSON dans la réponse');
-    const parsed = JSON.parse(jsonMatch[0]);
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 500,
+        messages: [
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'image',
+                source: {
+                  type: 'base64',
+                  media_type: 'image/jpeg',
+                  data: imageBase64,
+                },
+              },
+              {
+                type: 'text',
+                text: prompt,
+              },
+            ],
+          },
+        ],
+      }),
+      signal: controller.signal,
+    });
 
-    return {
-      name: parsed.name || 'Produit non reconnu',
-      category: parsed.category || 'spiritueux',
-      containerVolumeCl: parsed.containerVolumeCl || null,
-      estimatedPriceHT: parsed.estimatedPriceHT || null,
-      confidence: parsed.confidence || 0,
-      raw: text,
-    };
-  } catch {
-    return {
-      name: 'Produit non reconnu',
-      category: 'spiritueux',
-      containerVolumeCl: null,
-      estimatedPriceHT: null,
-      confidence: 0,
-      raw: text,
-    };
+    clearTimeout(timeout);
+
+    if (!response.ok) {
+      const err = await response.text();
+      console.error(`[SCAN] Erreur API: ${response.status} - ${err}`);
+      throw new Error(`Erreur API vision: ${response.status} - ${err}`);
+    }
+
+    const data = (await response.json()) as { content?: Array<{ text?: string }> };
+    const text = data.content?.[0]?.text || '';
+    console.log('[SCAN] Réponse reçue:', text.substring(0, 200));
+
+    try {
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) throw new Error('Pas de JSON dans la réponse');
+      const parsed = JSON.parse(jsonMatch[0]);
+
+      return {
+        name: parsed.name || 'Produit non reconnu',
+        category: parsed.category || 'spiritueux',
+        containerVolumeCl: parsed.containerVolumeCl || null,
+        estimatedPriceHT: parsed.estimatedPriceHT || null,
+        confidence: parsed.confidence || 0,
+        raw: text,
+      };
+    } catch {
+      console.warn('[SCAN] Parsing JSON échoué, réponse brute:', text);
+      return {
+        name: 'Produit non reconnu',
+        category: 'spiritueux',
+        containerVolumeCl: null,
+        estimatedPriceHT: null,
+        confidence: 0,
+        raw: text,
+      };
+    }
+  } catch (err: any) {
+    clearTimeout(timeout);
+    if (err.name === 'AbortError') {
+      console.error('[SCAN] Timeout après 60s');
+      throw new Error('L\'analyse a pris trop de temps. Réessayez avec une photo plus nette.');
+    }
+    throw err;
   }
 }

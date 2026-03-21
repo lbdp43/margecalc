@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, Alert, Image, ActivityIndicator } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
+import * as ImageManipulator from 'expo-image-manipulator';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useQuery } from '@tanstack/react-query';
 import { Category, CONTAINER_PRESETS } from '@margebar/shared';
@@ -36,8 +37,7 @@ export function ScanScreen({ navigation }: Props) {
     const pickerFn = useCamera ? ImagePicker.launchCameraAsync : ImagePicker.launchImageLibraryAsync;
     const picked = await pickerFn({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      quality: 0.7,
-      base64: true,
+      quality: 0.8,
     });
 
     if (picked.canceled || !picked.assets?.[0]) return;
@@ -45,18 +45,29 @@ export function ScanScreen({ navigation }: Props) {
     const asset = picked.assets[0];
     setImageUri(asset.uri);
     setResult(null);
-
-    if (!asset.base64) {
-      Alert.alert('Erreur', 'Impossible de lire l\'image');
-      return;
-    }
-
     setScanning(true);
+
     try {
-      const scanResult = await scanService.scanBottle(asset.base64);
+      // Compress and resize image before sending to API
+      const compressed = await ImageManipulator.manipulateAsync(
+        asset.uri,
+        [{ resize: { width: 1024 } }],
+        { compress: 0.6, format: ImageManipulator.SaveFormat.JPEG, base64: true }
+      );
+
+      if (!compressed.base64) {
+        Alert.alert('Erreur', 'Impossible de lire l\'image');
+        setScanning(false);
+        return;
+      }
+
+      const scanResult = await scanService.scanBottle(compressed.base64);
       setResult(scanResult);
     } catch (err: any) {
-      Alert.alert('Erreur', err.response?.data?.error || 'Impossible d\'analyser l\'image');
+      const message = err.response?.data?.error
+        || err.message
+        || 'Impossible d\'analyser l\'image';
+      Alert.alert('Erreur de scan', message);
     } finally {
       setScanning(false);
     }
