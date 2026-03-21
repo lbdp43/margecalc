@@ -6,7 +6,7 @@ import { DashboardScreen } from '../screens/dashboard/DashboardScreen';
 import { ProductListScreen } from '../screens/products/ProductListScreen';
 import { ProductDetailScreen } from '../screens/products/ProductDetailScreen';
 import { ProductFormScreen } from '../screens/products/ProductFormScreen';
-import { ScanScreen } from '../screens/scan/ScanScreen';
+// ScanScreen is now integrated into ProductFormScreen
 import { SettingsScreen } from '../screens/settings/SettingsScreen';
 import { colors } from '../theme';
 
@@ -49,7 +49,7 @@ export function AppNavigator() {
     >
       <Tab.Screen name="Dashboard" component={DashboardScreen} options={{ title: 'Dashboard' }} />
       <Tab.Screen name="Produits" component={ProductsNavigator} />
-      <Tab.Screen name="Scanner" component={ScanScreen} />
+      {/* Scanner intégré dans ProductForm - plus d'onglet séparé */}
       <Tab.Screen name="Paramètres" component={SettingsScreen} />
     </Tab.Navigator>
   );
