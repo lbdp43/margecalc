@@ -30,6 +30,24 @@ export function DashboardScreen() {
       </Text>
       <Text style={styles.title}>Tableau de bord</Text>
 
+      {products.length === 0 && (
+        <Card style={styles.welcomeCard}>
+          <Text style={styles.welcomeTitle}>Bienvenue sur MargeBar !</Text>
+          <Text style={styles.welcomeText}>
+            MargeBar t'aide a calculer tes marges sur chaque produit que tu vends : spiritueux, vins, bieres, softs...
+          </Text>
+          <Text style={styles.welcomeText}>
+            Ajoute tes produits avec leur prix d'achat et leur contenant, choisis ta methode de calcul (prix de vente, marge cible ou coefficient), et visualise instantanement ta rentabilite par verre et par bouteille.
+          </Text>
+          <Text style={styles.welcomeText}>
+            Tu peux aussi scanner une bouteille en photo pour remplir automatiquement les informations.
+          </Text>
+          <Text style={styles.welcomePrivacy}>
+            Tes donnees sont privees et t'appartiennent. Aucun administrateur n'a acces a tes produits, tes prix ou tes resultats. Chaque compte est totalement independant et confidentiel.
+          </Text>
+        </Card>
+      )}
+
       <View style={styles.statsRow}>
         <Card style={styles.statCard}>
           <Text style={styles.statValue}>{products.length}</Text>
@@ -125,5 +143,29 @@ const styles = StyleSheet.create({
   rankMargin: {
     ...typography.body,
     fontWeight: '700',
+  },
+  welcomeCard: {
+    marginBottom: spacing.lg,
+    backgroundColor: colors.primary,
+  },
+  welcomeTitle: {
+    ...typography.h2,
+    color: colors.white,
+    marginBottom: spacing.md,
+  },
+  welcomeText: {
+    ...typography.bodySmall,
+    color: colors.white,
+    opacity: 0.9,
+    marginBottom: spacing.sm,
+    lineHeight: 20,
+  },
+  welcomePrivacy: {
+    ...typography.bodySmall,
+    color: colors.white,
+    opacity: 0.85,
+    marginTop: spacing.sm,
+    fontStyle: 'italic',
+    lineHeight: 20,
   },
 });
