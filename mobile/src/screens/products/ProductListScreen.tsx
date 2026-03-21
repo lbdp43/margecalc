@@ -65,7 +65,7 @@ export function ProductListScreen({ navigation }: Props) {
             <View style={styles.empty}>
               <Ionicons name="cube-outline" size={48} color={colors.grayMedium} />
               <Text style={styles.emptyText}>Aucun produit</Text>
-              <Text style={styles.emptySubtext}>Appuyez sur + pour ajouter votre premier produit</Text>
+              <Text style={styles.emptySubtext}>Scannez une bouteille ou appuyez sur + pour commencer</Text>
             </View>
           }
         />

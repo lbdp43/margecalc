@@ -1,6 +1,8 @@
 import React from 'react';
+import { View, TouchableOpacity, StyleSheet } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createAppStackNavigator } from './createStack';
+import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { DashboardScreen } from '../screens/dashboard/DashboardScreen';
 import { ProductListScreen } from '../screens/products/ProductListScreen';
@@ -22,6 +24,32 @@ function ProductsNavigator() {
   );
 }
 
+function ScanTabButton() {
+  const navigation = useNavigation<any>();
+
+  return (
+    <View style={scanStyles.wrapper}>
+      <TouchableOpacity
+        style={scanStyles.button}
+        activeOpacity={0.8}
+        onPress={() => {
+          navigation.navigate('Produits', {
+            screen: 'ProductForm',
+            params: {},
+          });
+        }}
+      >
+        <Ionicons name="scan" size={26} color={colors.white} />
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+// Placeholder screen (never rendered, tab press is intercepted)
+function EmptyScreen() {
+  return <View />;
+}
+
 const TAB_ICONS: Record<string, { focused: string; default: string }> = {
   'Tableau de bord': { focused: 'stats-chart', default: 'stats-chart-outline' },
   'Produits': { focused: 'grid', default: 'grid-outline' },
@@ -33,8 +61,9 @@ export function AppNavigator() {
     <Tab.Navigator
       screenOptions={({ route }) => ({
         headerShown: false,
-        tabBarIcon: ({ focused, color, size }) => {
-          const icons = TAB_ICONS[route.name] || { focused: 'ellipse', default: 'ellipse-outline' };
+        tabBarIcon: ({ focused, color }) => {
+          const icons = TAB_ICONS[route.name];
+          if (!icons) return null;
           const iconName = focused ? icons.focused : icons.default;
           return <Ionicons name={iconName as any} size={22} color={color} />;
         },
@@ -44,7 +73,7 @@ export function AppNavigator() {
           backgroundColor: colors.white,
           borderTopColor: colors.border,
           paddingBottom: 4,
-          height: 56,
+          height: 60,
         },
         tabBarLabelStyle: {
           fontSize: 11,
@@ -54,7 +83,37 @@ export function AppNavigator() {
     >
       <Tab.Screen name="Tableau de bord" component={DashboardScreen} />
       <Tab.Screen name="Produits" component={ProductsNavigator} />
+      <Tab.Screen
+        name="Scanner"
+        component={EmptyScreen}
+        options={{
+          tabBarLabel: () => null,
+          tabBarButton: () => <ScanTabButton />,
+        }}
+      />
       <Tab.Screen name="Réglages" component={SettingsScreen} />
     </Tab.Navigator>
   );
 }
+
+const scanStyles = StyleSheet.create({
+  wrapper: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 64,
+    top: -8,
+  },
+  button: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+});
