@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, Alert, ScrollView, TouchableOpacity, TextInput } from 'react-native';
+import React, { useState, useEffect, useMemo } from 'react';
+import { View, Text, StyleSheet, Alert, ScrollView, TouchableOpacity } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
@@ -19,6 +19,7 @@ import { ScreenWrapper } from '../../components/ui/ScreenWrapper';
 import { Input } from '../../components/ui/Input';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
+import { PriceSlider } from '../../components/ui/PriceSlider';
 import { useAuthStore } from '../../store/auth.store';
 import * as productService from '../../services/product.service';
 import * as categoryService from '../../services/category.service';
@@ -26,6 +27,8 @@ import * as servingService from '../../services/serving.service';
 import { colors, spacing, borderRadius, typography } from '../../theme';
 
 type Props = NativeStackScreenProps<any, 'ProductForm'>;
+
+type ServingMode = 'price' | 'margin' | 'coefficient';
 
 export function ProductFormScreen({ route, navigation }: Props) {
   const productId = route.params?.productId;
@@ -51,8 +54,13 @@ export function ProductFormScreen({ route, navigation }: Props) {
   );
   const [tvaRate, setTvaRate] = useState(user?.isAutoEntrepreneur ? 0 : TVA_RATES.RATE_20);
   const [supplier, setSupplier] = useState('');
-  // Prices per serving type: { servingTypeId: "3,50" }
-  const [prices, setPrices] = useState<Record<string, string>>({});
+
+  // Which serving types are enabled
+  const [enabledServings, setEnabledServings] = useState<Set<string>>(new Set());
+  // Selling price TTC per serving type (the computed value from slider)
+  const [servingPrices, setServingPrices] = useState<Record<string, number>>({});
+  // Margin mode per serving type
+  const [servingModes, setServingModes] = useState<Record<string, ServingMode>>({});
 
   const { data: categories = [] } = useQuery<Category[]>({
     queryKey: ['categories'],
@@ -70,7 +78,6 @@ export function ProductFormScreen({ route, navigation }: Props) {
     enabled: isEditing,
   });
 
-  // Load existing servings when editing
   const { data: existingServings } = useQuery({
     queryKey: ['productServings', productId],
     queryFn: () => servingService.getProductServings(productId!),
@@ -88,14 +95,16 @@ export function ProductFormScreen({ route, navigation }: Props) {
     }
   }, [existingProduct]);
 
-  // Pre-fill prices from existing servings
   useEffect(() => {
     if (existingServings && existingServings.length > 0) {
-      const priceMap: Record<string, string> = {};
+      const enabled = new Set<string>();
+      const prices: Record<string, number> = {};
       for (const s of existingServings) {
-        priceMap[s.servingType.id] = s.sellingPriceTTC.toFixed(2).replace('.', ',');
+        enabled.add(s.servingType.id);
+        prices[s.servingType.id] = s.sellingPriceTTC;
       }
-      setPrices(priceMap);
+      setEnabledServings(enabled);
+      setServingPrices(prices);
     }
   }, [existingServings]);
 
@@ -108,12 +117,33 @@ export function ProductFormScreen({ route, navigation }: Props) {
   const currentContainerVol = parseLocaleFloat(containerVolume) || 0;
   const currentPurchasePrice = parseLocaleFloat(purchasePrice) || 0;
 
-  // Calculate margin for a serving type in real-time
+  const toggleServing = (id: string) => {
+    setEnabledServings((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const setServingMode = (servingId: string, mode: ServingMode) => {
+    setServingModes((prev) => ({ ...prev, [servingId]: mode }));
+  };
+
+  // Compute cost per serving for a given serving type
+  const getCostPerServing = (st: ServingType): number => {
+    if (currentContainerVol <= 0 || st.volumeCl <= 0) return 0;
+    const servingsPerContainer = currentContainerVol / st.volumeCl;
+    return currentPurchasePrice / servingsPerContainer;
+  };
+
+  // Get margin result for a serving type
   const getServingMargin = (st: ServingType): ServingMarginResult | null => {
-    const raw = prices[st.id];
-    if (!raw) return null;
-    const price = parseLocaleFloat(raw);
-    if (isNaN(price) || price <= 0 || currentContainerVol <= 0 || currentPurchasePrice < 0) return null;
+    const price = servingPrices[st.id];
+    if (!price || price <= 0 || currentContainerVol <= 0 || currentPurchasePrice < 0) return null;
     try {
       return calculateServingMargin(currentPurchasePrice, currentContainerVol, tvaRate, st, price);
     } catch {
@@ -121,21 +151,99 @@ export function ProductFormScreen({ route, navigation }: Props) {
     }
   };
 
+  // Update price from slider based on current mode
+  const handleSliderChange = (st: ServingType, sliderValue: number, mode: ServingMode) => {
+    const costHT = getCostPerServing(st);
+    let priceTTC: number;
+
+    switch (mode) {
+      case 'price':
+        priceTTC = sliderValue;
+        break;
+      case 'margin': {
+        // margin% → selling price
+        const marginPct = sliderValue;
+        if (marginPct >= 100) return;
+        const sellingPriceHT = costHT / (1 - marginPct / 100);
+        priceTTC = sellingPriceHT * (1 + tvaRate);
+        break;
+      }
+      case 'coefficient': {
+        const coeff = sliderValue;
+        const sellingPriceHT = costHT * coeff;
+        priceTTC = sellingPriceHT * (1 + tvaRate);
+        break;
+      }
+    }
+
+    setServingPrices((prev) => ({ ...prev, [st.id]: Math.round(priceTTC * 100) / 100 }));
+  };
+
+  // Get slider value from current price based on mode
+  const getSliderValue = (st: ServingType, mode: ServingMode): number => {
+    const price = servingPrices[st.id] || 0;
+    const costHT = getCostPerServing(st);
+
+    switch (mode) {
+      case 'price':
+        return price;
+      case 'margin': {
+        if (price <= 0) return 0;
+        const sellingHT = price / (1 + tvaRate);
+        if (sellingHT <= 0) return 0;
+        return ((sellingHT - costHT) / sellingHT) * 100;
+      }
+      case 'coefficient': {
+        if (costHT <= 0) return 1;
+        const sellingHT = price / (1 + tvaRate);
+        return sellingHT / costHT;
+      }
+    }
+  };
+
+  // Get slider config based on mode and cost
+  const getSliderConfig = (st: ServingType, mode: ServingMode) => {
+    const costHT = getCostPerServing(st);
+    const costTTC = costHT * (1 + tvaRate);
+
+    switch (mode) {
+      case 'price':
+        return {
+          min: Math.max(0.1, Math.floor(costTTC * 10) / 10),
+          max: Math.max(costTTC * 8, 20),
+          step: 0.1,
+          formatLabel: (v: number) => `${v.toFixed(1)} €`,
+        };
+      case 'margin':
+        return {
+          min: 0,
+          max: 95,
+          step: 1,
+          formatLabel: (v: number) => `${v.toFixed(0)} %`,
+        };
+      case 'coefficient':
+        return {
+          min: 1,
+          max: 10,
+          step: 0.1,
+          formatLabel: (v: number) => `x ${v.toFixed(1)}`,
+        };
+    }
+  };
+
   const saveMutation = useMutation({
     mutationFn: async () => {
-      // Collect valid servings
-      const servings = Object.entries(prices)
-        .map(([servingTypeId, raw]) => ({
+      const servings = Array.from(enabledServings)
+        .map((servingTypeId) => ({
           servingTypeId,
-          sellingPriceTTC: parseLocaleFloat(raw),
+          sellingPriceTTC: servingPrices[servingTypeId] || 0,
         }))
-        .filter((s) => !isNaN(s.sellingPriceTTC) && s.sellingPriceTTC > 0);
+        .filter((s) => s.sellingPriceTTC > 0);
 
       if (servings.length === 0) {
-        throw new Error('Entrez au moins un prix de vente');
+        throw new Error('Sélectionnez au moins un type de service et ajustez le prix');
       }
 
-      // Find the first serving to use as default dose
       const firstServing = servings[0];
       const firstServingType = servingTypes.find((st) => st.id === firstServing.servingTypeId);
       const doseVolumeCl = firstServingType?.volumeCl || 5;
@@ -162,9 +270,7 @@ export function ProductFormScreen({ route, navigation }: Props) {
         savedProductId = created.id;
       }
 
-      // Save servings
       await servingService.upsertProductServings(savedProductId, servings);
-
       return savedProductId;
     },
     onSuccess: () => {
@@ -195,20 +301,10 @@ export function ProductFormScreen({ route, navigation }: Props) {
 
   const handleSave = () => {
     if (!name || !purchasePrice || !containerVolume) {
-      Alert.alert('Erreur', 'Veuillez remplir le nom, le prix d\'achat et le volume du contenant');
-      return;
-    }
-    const pp = parseLocaleFloat(purchasePrice);
-    const cv = parseLocaleFloat(containerVolume);
-    if (isNaN(pp) || isNaN(cv)) {
-      Alert.alert('Erreur', 'Vérifiez les valeurs numériques');
+      Alert.alert('Erreur', 'Remplissez le nom, le prix d\'achat et le volume');
       return;
     }
     saveMutation.mutate();
-  };
-
-  const handleContainerPreset = (volumeCl: number) => {
-    setContainerVolume(String(volumeCl));
   };
 
   const tvaOptions = [
@@ -217,17 +313,18 @@ export function ProductFormScreen({ route, navigation }: Props) {
     { label: '5,5%', value: TVA_RATES.RATE_5_5 },
   ];
 
-  // Count servings with prices
-  const filledServings = Object.values(prices).filter((v) => {
-    const n = parseLocaleFloat(v);
-    return !isNaN(n) && n > 0;
-  }).length;
+  const hasValidProduct = name && currentPurchasePrice > 0 && currentContainerVol > 0;
+  const modeLabels: { mode: ServingMode; label: string }[] = [
+    { mode: 'price', label: 'Prix' },
+    { mode: 'margin', label: 'Marge' },
+    { mode: 'coefficient', label: 'Coeff' },
+  ];
 
   return (
     <ScreenWrapper>
       <Text style={styles.title}>{isEditing ? 'Modifier le produit' : 'Nouveau produit'}</Text>
 
-      {/* === SECTION 1: Produit === */}
+      {/* === Produit === */}
       <Input
         label="Nom du produit *"
         value={name}
@@ -237,7 +334,7 @@ export function ProductFormScreen({ route, navigation }: Props) {
 
       <View style={styles.categoryRow}>
         <Text style={styles.sectionLabel}>Catégorie *</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoryScroll}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
           {categories.map((cat) => (
             <Button
               key={cat.id}
@@ -259,9 +356,9 @@ export function ProductFormScreen({ route, navigation }: Props) {
         suffix="€"
       />
 
-      {/* === SECTION 2: Contenant === */}
-      <View style={styles.containerSection}>
-        <Text style={styles.sectionLabel}>Volume du contenant *</Text>
+      {/* === Contenant === */}
+      <View style={styles.section}>
+        <Text style={styles.sectionLabel}>Contenant *</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.presetScroll}>
           {CONTAINER_PRESETS.map((preset) => (
             <TouchableOpacity
@@ -270,7 +367,7 @@ export function ProductFormScreen({ route, navigation }: Props) {
                 styles.presetBtn,
                 currentContainerVol === preset.volumeCl && styles.presetBtnActive,
               ]}
-              onPress={() => handleContainerPreset(preset.volumeCl)}
+              onPress={() => setContainerVolume(String(preset.volumeCl))}
             >
               <Text
                 style={[
@@ -293,7 +390,7 @@ export function ProductFormScreen({ route, navigation }: Props) {
         />
       </View>
 
-      {/* === SECTION 3: TVA === */}
+      {/* === TVA === */}
       {!user?.isAutoEntrepreneur && (
         <View style={styles.tvaRow}>
           <Text style={styles.sectionLabel}>TVA</Text>
@@ -315,87 +412,140 @@ export function ProductFormScreen({ route, navigation }: Props) {
         label="Fournisseur"
         value={supplier}
         onChangeText={setSupplier}
-        placeholder="Nom du fournisseur (optionnel)"
+        placeholder="Optionnel"
       />
 
-      {/* === SECTION 4: Prix de vente par service === */}
-      <Card style={styles.servingSection}>
-        <Text style={styles.servingSectionTitle}>Prix de vente par service</Text>
-        <Text style={styles.servingSectionDesc}>
-          Entrez le prix TTC pour chaque type de service que vous proposez
-        </Text>
+      {/* === Services (contenants de vente) === */}
+      {hasValidProduct && (
+        <>
+          <Text style={styles.sectionTitle}>Comment vendez-vous ce produit ?</Text>
+          <Text style={styles.sectionDesc}>
+            Sélectionnez vos types de service et ajustez le prix avec le curseur
+          </Text>
 
-        {servingTypes.map((st) => {
-          const margin = getServingMargin(st);
-          const nbServings = currentContainerVol > 0 ? currentContainerVol / st.volumeCl : 0;
+          {/* Toggle serving types */}
+          <View style={styles.servingToggles}>
+            {servingTypes.map((st) => {
+              const isOn = enabledServings.has(st.id);
+              return (
+                <TouchableOpacity
+                  key={st.id}
+                  style={[styles.servingToggle, isOn && styles.servingToggleActive]}
+                  onPress={() => toggleServing(st.id)}
+                >
+                  <Text style={[styles.servingToggleText, isOn && styles.servingToggleTextActive]}>
+                    {st.icon} {st.name}
+                  </Text>
+                  <Text style={[styles.servingToggleVol, isOn && styles.servingToggleTextActive]}>
+                    {st.volumeCl} cl
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
 
-          return (
-            <View key={st.id} style={styles.servingBlock}>
-              <View style={styles.servingHeader}>
-                <Text style={styles.servingName}>
-                  {st.icon} {st.name}
-                </Text>
-                <Text style={styles.servingMeta}>
-                  {st.volumeCl} cl{nbServings > 0 ? ` · ${nbServings.toFixed(1)} / contenant` : ''}
-                </Text>
-              </View>
+          {/* Slider + margin for each enabled serving */}
+          {servingTypes
+            .filter((st) => enabledServings.has(st.id))
+            .map((st) => {
+              const mode = servingModes[st.id] || 'price';
+              const margin = getServingMargin(st);
+              const sliderValue = getSliderValue(st, mode);
+              const config = getSliderConfig(st, mode);
+              const nbServings = currentContainerVol / st.volumeCl;
+              const accentColor = margin
+                ? MARGIN_COLOR_MAP[margin.colorCode]
+                : colors.primary;
 
-              <View style={styles.priceRow}>
-                <Text style={styles.priceLabel}>Prix TTC</Text>
-                <View style={styles.priceInputWrap}>
-                  <TextInput
-                    style={styles.priceInput}
-                    value={prices[st.id] || ''}
-                    onChangeText={(v) => setPrices((prev) => ({ ...prev, [st.id]: v }))}
-                    keyboardType="decimal-pad"
-                    placeholder="0,00"
-                    placeholderTextColor={colors.grayMedium}
+              return (
+                <Card key={st.id} style={styles.servingCard}>
+                  <View style={styles.servingCardHeader}>
+                    <Text style={styles.servingCardName}>
+                      {st.icon} {st.name} ({st.volumeCl} cl)
+                    </Text>
+                    <Text style={styles.servingCardMeta}>
+                      {nbServings.toFixed(1)} / contenant
+                    </Text>
+                  </View>
+
+                  {/* Mode tabs */}
+                  <View style={styles.modeTabs}>
+                    {modeLabels.map((m) => (
+                      <TouchableOpacity
+                        key={m.mode}
+                        style={[styles.modeTab, mode === m.mode && styles.modeTabActive]}
+                        onPress={() => setServingMode(st.id, m.mode)}
+                      >
+                        <Text
+                          style={[
+                            styles.modeTabText,
+                            mode === m.mode && styles.modeTabTextActive,
+                          ]}
+                        >
+                          {m.label}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+
+                  {/* Slider */}
+                  <PriceSlider
+                    min={config.min}
+                    max={config.max}
+                    step={config.step}
+                    value={isNaN(sliderValue) ? config.min : Math.max(config.min, Math.min(config.max, sliderValue))}
+                    onValueChange={(v) => handleSliderChange(st, v, mode)}
+                    formatLabel={config.formatLabel}
+                    accentColor={accentColor}
                   />
-                  <Text style={styles.priceCurrency}>€</Text>
-                </View>
-              </View>
 
-              {margin && (
-                <View style={styles.marginGrid}>
-                  <View style={styles.marginItem}>
-                    <Text style={styles.marginLabel}>Coût</Text>
-                    <Text style={styles.marginValue}>{formatPrice(margin.costPerServingHT)}</Text>
-                  </View>
-                  <View style={styles.marginItem}>
-                    <Text style={styles.marginLabel}>Marge</Text>
-                    <Text style={[styles.marginValueBig, { color: MARGIN_COLOR_MAP[margin.colorCode] }]}>
-                      {formatPercent(margin.marginPercent)}
-                    </Text>
-                  </View>
-                  <View style={styles.marginItem}>
-                    <Text style={styles.marginLabel}>Gain/dose</Text>
-                    <Text style={[styles.marginValue, { color: MARGIN_COLOR_MAP[margin.colorCode] }]}>
-                      {formatPrice(margin.marginPerServingHT)}
-                    </Text>
-                  </View>
-                  <View style={styles.marginItem}>
-                    <Text style={styles.marginLabel}>Gain/contenant</Text>
-                    <Text style={[styles.marginValue, { color: MARGIN_COLOR_MAP[margin.colorCode] }]}>
-                      {formatPrice(margin.marginPerContainer)}
-                    </Text>
-                  </View>
-                </View>
-              )}
-            </View>
-          );
-        })}
-      </Card>
+                  {/* Results */}
+                  {margin && (
+                    <View style={styles.resultRow}>
+                      <View style={styles.resultItem}>
+                        <Text style={styles.resultLabel}>Prix TTC</Text>
+                        <Text style={styles.resultValue}>
+                          {formatPrice(margin.sellingPriceTTC)}
+                        </Text>
+                      </View>
+                      <View style={styles.resultItem}>
+                        <Text style={styles.resultLabel}>Marge</Text>
+                        <Text
+                          style={[
+                            styles.resultValueBig,
+                            { color: accentColor },
+                          ]}
+                        >
+                          {formatPercent(margin.marginPercent)}
+                        </Text>
+                      </View>
+                      <View style={styles.resultItem}>
+                        <Text style={styles.resultLabel}>Gain/dose</Text>
+                        <Text style={[styles.resultValue, { color: accentColor }]}>
+                          {formatPrice(margin.marginPerServingHT)}
+                        </Text>
+                      </View>
+                      <View style={styles.resultItem}>
+                        <Text style={styles.resultLabel}>Gain total</Text>
+                        <Text style={[styles.resultValue, { color: accentColor }]}>
+                          {formatPrice(margin.marginPerContainer)}
+                        </Text>
+                      </View>
+                    </View>
+                  )}
+                </Card>
+              );
+            })}
+        </>
+      )}
 
-      <Button
-        title={isEditing ? 'Enregistrer' : 'Ajouter le produit'}
-        onPress={handleSave}
-        loading={saveMutation.isPending}
-      />
-
-      {filledServings > 0 && (
-        <Text style={styles.servingCount}>
-          {filledServings} type{filledServings > 1 ? 's' : ''} de service configuré{filledServings > 1 ? 's' : ''}
-        </Text>
+      {enabledServings.size > 0 && (
+        <Button
+          title={isEditing ? 'Enregistrer' : 'Ajouter le produit'}
+          onPress={handleSave}
+          loading={saveMutation.isPending}
+          style={styles.saveBtn}
+        />
       )}
 
       {isEditing && (
@@ -424,11 +574,19 @@ const styles = StyleSheet.create({
     color: colors.text,
     marginBottom: spacing.sm,
   },
-  categoryRow: {
+  sectionTitle: {
+    ...typography.h3,
+    color: colors.text,
+    marginTop: spacing.md,
+    marginBottom: spacing.xs,
+  },
+  sectionDesc: {
+    ...typography.caption,
+    color: colors.textSecondary,
     marginBottom: spacing.md,
   },
-  categoryScroll: {
-    flexDirection: 'row',
+  categoryRow: {
+    marginBottom: spacing.md,
   },
   categoryBtn: {
     marginRight: spacing.sm,
@@ -436,7 +594,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     minHeight: 36,
   },
-  containerSection: {
+  section: {
     marginBottom: spacing.sm,
   },
   presetScroll: {
@@ -476,79 +634,91 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     minHeight: 36,
   },
-  // Serving section
-  servingSection: {
+  // Serving toggles
+  servingToggles: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
     marginBottom: spacing.md,
-    marginTop: spacing.sm,
   },
-  servingSectionTitle: {
-    ...typography.h3,
+  servingToggle: {
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    borderRadius: borderRadius.sm,
+    borderWidth: 2,
+    borderColor: colors.border,
+    backgroundColor: colors.inputBackground,
+    alignItems: 'center',
+    minWidth: 90,
+  },
+  servingToggleActive: {
+    borderColor: colors.primary,
+    backgroundColor: colors.light,
+  },
+  servingToggleText: {
+    ...typography.bodySmall,
+    fontWeight: '600',
+    color: colors.textSecondary,
+  },
+  servingToggleTextActive: {
+    color: colors.primary,
+  },
+  servingToggleVol: {
+    ...typography.caption,
+    color: colors.grayMedium,
+    marginTop: 2,
+  },
+  // Serving card with slider
+  servingCard: {
+    marginBottom: spacing.md,
+  },
+  servingCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.sm,
+  },
+  servingCardName: {
+    ...typography.body,
+    fontWeight: '700',
     color: colors.text,
+  },
+  servingCardMeta: {
+    ...typography.caption,
+    color: colors.textSecondary,
+  },
+  // Mode tabs
+  modeTabs: {
+    flexDirection: 'row',
+    backgroundColor: colors.inputBackground,
+    borderRadius: borderRadius.sm,
+    padding: 2,
     marginBottom: spacing.xs,
   },
-  servingSectionDesc: {
+  modeTab: {
+    flex: 1,
+    paddingVertical: spacing.xs + 2,
+    alignItems: 'center',
+    borderRadius: borderRadius.sm - 2,
+  },
+  modeTabActive: {
+    backgroundColor: colors.primary,
+  },
+  modeTabText: {
     ...typography.caption,
-    color: colors.textSecondary,
-    marginBottom: spacing.md,
-  },
-  servingBlock: {
-    paddingVertical: spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  servingHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: spacing.sm,
-  },
-  servingName: {
-    ...typography.body,
     fontWeight: '600',
-    color: colors.text,
-  },
-  servingMeta: {
-    ...typography.caption,
     color: colors.textSecondary,
   },
-  priceRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: spacing.sm,
+  modeTabTextActive: {
+    color: colors.textLight,
   },
-  priceLabel: {
-    ...typography.bodySmall,
-    color: colors.textSecondary,
-  },
-  priceInputWrap: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  priceInput: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: borderRadius.sm,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
-    width: 80,
-    textAlign: 'right',
-    ...typography.body,
-    fontWeight: '600',
-    color: colors.text,
-    backgroundColor: colors.inputBackground,
-  },
-  priceCurrency: {
-    ...typography.body,
-    color: colors.textSecondary,
-    marginLeft: spacing.xs,
-  },
-  marginGrid: {
+  // Results
+  resultRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: spacing.sm,
   },
-  marginItem: {
+  resultItem: {
     flex: 1,
     minWidth: '40%',
     backgroundColor: colors.inputBackground,
@@ -556,25 +726,22 @@ const styles = StyleSheet.create({
     padding: spacing.sm,
     alignItems: 'center',
   },
-  marginLabel: {
+  resultLabel: {
     ...typography.caption,
     color: colors.textSecondary,
     marginBottom: 2,
   },
-  marginValue: {
+  resultValue: {
     ...typography.bodySmall,
     fontWeight: '600',
     color: colors.text,
   },
-  marginValueBig: {
+  resultValueBig: {
     ...typography.h3,
     fontWeight: '700',
   },
-  servingCount: {
-    ...typography.caption,
-    color: colors.textSecondary,
-    textAlign: 'center',
-    marginTop: spacing.sm,
+  saveBtn: {
+    marginTop: spacing.md,
   },
   deleteBtn: {
     marginTop: spacing.sm,
