@@ -153,8 +153,9 @@ export function DashboardScreen() {
                   <View style={styles.servingsHeader}>
                     <Text style={[styles.servingsHeaderCell, styles.servingsNameCell]}>Service</Text>
                     <Text style={styles.servingsHeaderCell}>Prix TTC</Text>
-                    <Text style={styles.servingsHeaderCell}>Marge</Text>
                     <Text style={styles.servingsHeaderCell}>Coeff</Text>
+                    <Text style={styles.servingsHeaderCell}>Marge</Text>
+                    <Text style={styles.servingsHeaderCell}>Gain/dose</Text>
                   </View>
                   {servings.map((s) => {
                     const coeff = s.costPerServingHT > 0
@@ -167,10 +168,15 @@ export function DashboardScreen() {
                           <Text style={styles.servingVol}>{s.servingType.volumeCl} cl</Text>
                         </View>
                         <Text style={styles.servingCell}>{formatPrice(s.sellingPriceTTC)}</Text>
-                        <Text style={[styles.servingCell, styles.servingCellBold, { color: MARGIN_COLOR_MAP[s.colorCode] }]}>
+                        <Text style={[styles.servingCell, styles.servingCellBold, { color: colors.primary }]}>
+                          x{coeff.toFixed(1)}
+                        </Text>
+                        <Text style={[styles.servingCell, { color: MARGIN_COLOR_MAP[s.colorCode] }]}>
                           {formatPercent(s.marginPercent)}
                         </Text>
-                        <Text style={styles.servingCell}>x{coeff.toFixed(1)}</Text>
+                        <Text style={[styles.servingCell, { color: MARGIN_COLOR_MAP[s.colorCode] }]}>
+                          {formatPrice(s.marginPerServingHT)}
+                        </Text>
                       </View>
                     );
                   })}
