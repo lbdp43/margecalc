@@ -1,0 +1,65 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id                 String    @id @default(uuid())
+  email              String    @unique
+  passwordHash       String
+  businessName       String?
+  isAutoEntrepreneur Boolean   @default(false)
+  defaultTvaRate     Float     @default(0.20)
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  products           Product[]
+}
+
+model Category {
+  id        String    @id @default(uuid())
+  name      String    @unique
+  slug      String    @unique
+  icon      String    @default("")
+  sortOrder Int       @default(0)
+  products  Product[]
+}
+
+model Product {
+  id                  String         @id @default(uuid())
+  userId              String
+  user                User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  categoryId          String
+  category            Category       @relation(fields: [categoryId], references: [id])
+  name                String
+  purchasePriceHT     Float
+  containerVolumeCl   Float
+  doseVolumeCl        Float
+  marginMode          String
+  sellingPriceTTC     Float?
+  targetMarginPercent Float?
+  coefficient         Float?
+  tvaRate             Float          @default(0.20)
+  supplier            String?
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+  priceHistory        PriceHistory[]
+
+  @@index([userId])
+  @@index([categoryId])
+}
+
+model PriceHistory {
+  id         String   @id @default(uuid())
+  productId  String
+  product    Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  oldPrice   Float
+  newPrice   Float
+  changedAt  DateTime @default(now())
+  source     String   @default("manual")
+
+  @@index([productId])
+}

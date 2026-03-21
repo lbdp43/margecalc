@@ -1,0 +1,9 @@
+{
+  "name": "margebar",
+  "private": true,
+  "workspaces": [
+    "shared",
+    "backend",
+    "mobile"
+  ]
+}
