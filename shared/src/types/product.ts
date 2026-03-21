@@ -80,3 +80,51 @@ export interface CreateProductInput {
   tvaRate: number;
   supplier?: string;
 }
+
+// --- Serving Types (types de service) ---
+
+export interface ServingType {
+  id: string;
+  userId: string;
+  name: string;
+  volumeCl: number;
+  icon: string;
+  sortOrder: number;
+}
+
+export interface CreateServingTypeInput {
+  name: string;
+  volumeCl: number;
+  icon?: string;
+  sortOrder?: number;
+}
+
+export interface ProductServing {
+  id: string;
+  productId: string;
+  servingTypeId: string;
+  sellingPriceTTC: number;
+  servingType?: ServingType;
+}
+
+export interface ServingMarginResult {
+  servingType: ServingType;
+  sellingPriceTTC: number;
+  sellingPriceHT: number;
+  servingsPerContainer: number;
+  costPerServingHT: number;
+  marginPerServingHT: number;
+  marginPercent: number;
+  revenuePerContainer: number;
+  marginPerContainer: number;
+  colorCode: 'green' | 'orange' | 'red';
+}
+
+/** Default serving types created for new users */
+export const DEFAULT_SERVING_TYPES: Omit<ServingType, 'id' | 'userId'>[] = [
+  { name: 'Shot', volumeCl: 3, icon: '🥃', sortOrder: 1 },
+  { name: 'Verre (spiritueux)', volumeCl: 5, icon: '🥃', sortOrder: 2 },
+  { name: 'Verre de vin', volumeCl: 12, icon: '🍷', sortOrder: 3 },
+  { name: 'Demi', volumeCl: 25, icon: '🍺', sortOrder: 4 },
+  { name: 'Pinte', volumeCl: 50, icon: '🍺', sortOrder: 5 },
+];

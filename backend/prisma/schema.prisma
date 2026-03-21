@@ -18,6 +18,7 @@ model User {
   createdAt                  DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
   products           Product[]
+  servingTypes       ServingType[]
 }
 
 model Category {
@@ -30,11 +31,11 @@ model Category {
 }
 
 model Product {
-  id                  String         @id @default(uuid())
+  id                  String           @id @default(uuid())
   userId              String
-  user                User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user                User             @relation(fields: [userId], references: [id], onDelete: Cascade)
   categoryId          String
-  category            Category       @relation(fields: [categoryId], references: [id])
+  category            Category         @relation(fields: [categoryId], references: [id])
   name                String
   purchasePriceHT     Float
   containerVolumeCl   Float
@@ -43,14 +44,44 @@ model Product {
   sellingPriceTTC     Float?
   targetMarginPercent Float?
   coefficient         Float?
-  tvaRate             Float          @default(0.20)
+  tvaRate             Float            @default(0.20)
   supplier            String?
-  createdAt           DateTime       @default(now())
-  updatedAt           DateTime       @updatedAt
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
   priceHistory        PriceHistory[]
+  servings            ProductServing[]
 
   @@index([userId])
   @@index([categoryId])
+}
+
+model ServingType {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  volumeCl  Float
+  icon      String   @default("")
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  productServings ProductServing[]
+
+  @@index([userId])
+}
+
+model ProductServing {
+  id              String      @id @default(uuid())
+  productId       String
+  product         Product     @relation(fields: [productId], references: [id], onDelete: Cascade)
+  servingTypeId   String
+  servingType     ServingType @relation(fields: [servingTypeId], references: [id], onDelete: Cascade)
+  sellingPriceTTC Float
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  @@unique([productId, servingTypeId])
+  @@index([productId])
 }
 
 model PriceHistory {

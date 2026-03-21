@@ -1,12 +1,14 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, Switch, Alert, TouchableOpacity, ScrollView } from 'react-native';
-import { TVA_RATES, CONTAINER_PRESETS } from '@margebar/shared';
+import React, { useState, useCallback } from 'react';
+import { View, Text, StyleSheet, Switch, Alert, TouchableOpacity, ScrollView, TextInput } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
+import { TVA_RATES, CONTAINER_PRESETS, ServingType } from '@margebar/shared';
 import { ScreenWrapper } from '../../components/ui/ScreenWrapper';
 import { Input } from '../../components/ui/Input';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
 import { useAuthStore } from '../../store/auth.store';
 import { api } from '../../services/api';
+import * as servingService from '../../services/serving.service';
 import { colors, spacing, borderRadius, typography } from '../../theme';
 
 export function SettingsScreen() {
@@ -17,6 +19,91 @@ export function SettingsScreen() {
     user?.defaultContainerVolumeCl || 70
   );
   const [saving, setSaving] = useState(false);
+
+  // Serving types state
+  const [servingTypes, setServingTypes] = useState<ServingType[]>([]);
+  const [newName, setNewName] = useState('');
+  const [newVolume, setNewVolume] = useState('');
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editVolume, setEditVolume] = useState('');
+
+  useFocusEffect(
+    useCallback(() => {
+      loadServingTypes();
+    }, [])
+  );
+
+  const loadServingTypes = async () => {
+    try {
+      const types = await servingService.getServingTypes();
+      setServingTypes(types);
+    } catch {
+      // silently fail on initial load
+    }
+  };
+
+  const handleAddServing = async () => {
+    const vol = parseFloat(newVolume.replace(',', '.'));
+    if (!newName.trim() || isNaN(vol) || vol <= 0) {
+      Alert.alert('Erreur', 'Entrez un nom et un volume valide');
+      return;
+    }
+    try {
+      await servingService.createServingType({
+        name: newName.trim(),
+        volumeCl: vol,
+        sortOrder: servingTypes.length + 1,
+      });
+      setNewName('');
+      setNewVolume('');
+      loadServingTypes();
+    } catch {
+      Alert.alert('Erreur', 'Impossible de créer le type de service');
+    }
+  };
+
+  const handleEditServing = async (id: string) => {
+    const vol = parseFloat(editVolume.replace(',', '.'));
+    if (!editName.trim() || isNaN(vol) || vol <= 0) {
+      Alert.alert('Erreur', 'Entrez un nom et un volume valide');
+      return;
+    }
+    try {
+      await servingService.updateServingType(id, {
+        name: editName.trim(),
+        volumeCl: vol,
+      });
+      setEditingId(null);
+      loadServingTypes();
+    } catch {
+      Alert.alert('Erreur', 'Impossible de modifier');
+    }
+  };
+
+  const handleDeleteServing = (id: string, name: string) => {
+    Alert.alert('Supprimer', `Supprimer "${name}" ?`, [
+      { text: 'Annuler', style: 'cancel' },
+      {
+        text: 'Supprimer',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await servingService.deleteServingType(id);
+            loadServingTypes();
+          } catch {
+            Alert.alert('Erreur', 'Impossible de supprimer');
+          }
+        },
+      },
+    ]);
+  };
+
+  const startEdit = (st: ServingType) => {
+    setEditingId(st.id);
+    setEditName(st.name);
+    setEditVolume(String(st.volumeCl));
+  };
 
   const handleSave = async () => {
     setSaving(true);
@@ -101,6 +188,77 @@ export function SettingsScreen() {
             </TouchableOpacity>
           ))}
         </ScrollView>
+      </Card>
+
+      <Card style={styles.section}>
+        <Text style={styles.sectionTitle}>Types de service</Text>
+        <Text style={styles.sectionDesc}>
+          Définissez les formats de service pour calculer vos marges (shot, demi, pinte...)
+        </Text>
+
+        {servingTypes.map((st) => (
+          <View key={st.id} style={styles.servingRow}>
+            {editingId === st.id ? (
+              <View style={styles.servingEditRow}>
+                <TextInput
+                  style={[styles.servingInput, { flex: 2 }]}
+                  value={editName}
+                  onChangeText={setEditName}
+                  placeholder="Nom"
+                />
+                <TextInput
+                  style={[styles.servingInput, { flex: 1 }]}
+                  value={editVolume}
+                  onChangeText={setEditVolume}
+                  keyboardType="numeric"
+                  placeholder="cl"
+                />
+                <TouchableOpacity onPress={() => handleEditServing(st.id)} style={styles.servingAction}>
+                  <Text style={styles.servingActionText}>✓</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => setEditingId(null)} style={styles.servingAction}>
+                  <Text style={styles.servingActionCancel}>✕</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <>
+                <View style={styles.servingInfo}>
+                  <Text style={styles.servingName}>{st.icon} {st.name}</Text>
+                  <Text style={styles.servingVolume}>{st.volumeCl} cl</Text>
+                </View>
+                <View style={styles.servingActions}>
+                  <TouchableOpacity onPress={() => startEdit(st)} style={styles.servingAction}>
+                    <Text style={styles.servingActionText}>✏️</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => handleDeleteServing(st.id, st.name)} style={styles.servingAction}>
+                    <Text style={styles.servingActionText}>🗑️</Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
+          </View>
+        ))}
+
+        <View style={styles.addServingRow}>
+          <TextInput
+            style={[styles.servingInput, { flex: 2 }]}
+            value={newName}
+            onChangeText={setNewName}
+            placeholder="Nom (ex: Coupe)"
+            placeholderTextColor={colors.grayMedium}
+          />
+          <TextInput
+            style={[styles.servingInput, { flex: 1 }]}
+            value={newVolume}
+            onChangeText={setNewVolume}
+            keyboardType="numeric"
+            placeholder="cl"
+            placeholderTextColor={colors.grayMedium}
+          />
+          <TouchableOpacity onPress={handleAddServing} style={styles.addBtn}>
+            <Text style={styles.addBtnText}>+</Text>
+          </TouchableOpacity>
+        </View>
       </Card>
 
       <Button title="Enregistrer" onPress={handleSave} loading={saving} />
@@ -192,5 +350,79 @@ const styles = StyleSheet.create({
     color: colors.grayMedium,
     textAlign: 'center',
     marginTop: spacing.lg,
+  },
+  // Serving types styles
+  servingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  servingInfo: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  servingName: {
+    ...typography.body,
+    fontWeight: '600',
+    color: colors.text,
+  },
+  servingVolume: {
+    ...typography.bodySmall,
+    color: colors.textSecondary,
+    marginRight: spacing.sm,
+  },
+  servingActions: {
+    flexDirection: 'row',
+  },
+  servingAction: {
+    padding: spacing.xs,
+    marginLeft: spacing.xs,
+  },
+  servingActionText: {
+    fontSize: 16,
+  },
+  servingActionCancel: {
+    fontSize: 16,
+    color: colors.marginRed,
+  },
+  servingEditRow: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  servingInput: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: borderRadius.sm,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    ...typography.bodySmall,
+    color: colors.text,
+    backgroundColor: colors.inputBackground,
+  },
+  addServingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    marginTop: spacing.md,
+  },
+  addBtn: {
+    backgroundColor: colors.primary,
+    borderRadius: borderRadius.sm,
+    width: 36,
+    height: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  addBtnText: {
+    color: colors.white,
+    fontSize: 20,
+    fontWeight: '700',
   },
 });

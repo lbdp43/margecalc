@@ -1,4 +1,4 @@
-import { MarginInput, MarginMode, MarginResult } from '../types/product';
+import { MarginInput, MarginMode, MarginResult, ServingType, ServingMarginResult } from '../types/product';
 import { getMarginColor } from '../constants/colors';
 
 function round2(n: number): number {
@@ -96,6 +96,42 @@ export function calculateMargin(input: MarginInput): MarginResult {
     glassesPerContainer: round2(glasses),
     costPerDoseHT: round2(doseCost),
     marginPerDoseHT: round2(marginPerDoseHT),
+    revenuePerContainer: round2(revenuePerContainer),
+    marginPerContainer: round2(marginPerContainer),
+    colorCode: getMarginColor(marginPercent),
+  };
+}
+
+/**
+ * Calculate margin for a specific serving type.
+ * Given a product's purchase price and container volume,
+ * and a serving type with its selling price TTC.
+ */
+export function calculateServingMargin(
+  purchasePriceHT: number,
+  containerVolumeCl: number,
+  tvaRate: number,
+  servingType: ServingType,
+  sellingPriceTTC: number,
+): ServingMarginResult {
+  const servingsPerContainer = containerVolumeCl / servingType.volumeCl;
+  const costPerServingHT = purchasePriceHT / servingsPerContainer;
+  const sellingPriceHT = sellingPriceTTC / (1 + tvaRate);
+  const marginPerServingHT = sellingPriceHT - costPerServingHT;
+  const marginPercent = sellingPriceHT > 0
+    ? ((sellingPriceHT - costPerServingHT) / sellingPriceHT) * 100
+    : 0;
+  const revenuePerContainer = sellingPriceTTC * servingsPerContainer;
+  const marginPerContainer = marginPerServingHT * servingsPerContainer;
+
+  return {
+    servingType,
+    sellingPriceTTC: round2(sellingPriceTTC),
+    sellingPriceHT: round2(sellingPriceHT),
+    servingsPerContainer: round2(servingsPerContainer),
+    costPerServingHT: round2(costPerServingHT),
+    marginPerServingHT: round2(marginPerServingHT),
+    marginPercent: round2(marginPercent),
     revenuePerContainer: round2(revenuePerContainer),
     marginPerContainer: round2(marginPerContainer),
     colorCode: getMarginColor(marginPercent),

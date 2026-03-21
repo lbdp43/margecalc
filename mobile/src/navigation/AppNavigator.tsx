@@ -4,6 +4,7 @@ import { createAppStackNavigator } from './createStack';
 import { Text } from 'react-native';
 import { DashboardScreen } from '../screens/dashboard/DashboardScreen';
 import { ProductListScreen } from '../screens/products/ProductListScreen';
+import { ProductDetailScreen } from '../screens/products/ProductDetailScreen';
 import { ProductFormScreen } from '../screens/products/ProductFormScreen';
 import { ScanScreen } from '../screens/scan/ScanScreen';
 import { SettingsScreen } from '../screens/settings/SettingsScreen';
@@ -16,6 +17,7 @@ function ProductsNavigator() {
   return (
     <ProductStack.Navigator screenOptions={{ headerShown: false }}>
       <ProductStack.Screen name="ProductList" component={ProductListScreen} />
+      <ProductStack.Screen name="ProductDetail" component={ProductDetailScreen} />
       <ProductStack.Screen name="ProductForm" component={ProductFormScreen} />
     </ProductStack.Navigator>
   );

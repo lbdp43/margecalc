@@ -28,7 +28,7 @@ export function ProductListScreen({ navigation }: Props) {
   const renderProduct = useCallback(({ item }: { item: ProductWithMargin }) => (
     <ProductCard
       product={item}
-      onPress={() => navigation.navigate('ProductForm', { productId: item.id })}
+      onPress={() => navigation.navigate('ProductDetail', { productId: item.id })}
     />
   ), [navigation]);
 
