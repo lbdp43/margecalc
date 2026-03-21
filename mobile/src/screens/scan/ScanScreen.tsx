@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, Alert, Image, ActivityIndicator } from 'react-n
 import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { Ionicons } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
 import { Category, CONTAINER_PRESETS } from '@margebar/shared';
 import { ScreenWrapper } from '../../components/ui/ScreenWrapper';
@@ -107,12 +108,14 @@ export function ScanScreen({ navigation }: Props) {
 
       <View style={styles.buttonRow}>
         <Button
-          title="📷 Prendre une photo"
+          title="Prendre une photo"
+          icon={<Ionicons name="camera-outline" size={18} color={colors.white} />}
           onPress={() => pickImage(true)}
           style={styles.actionBtn}
         />
         <Button
-          title="🖼️ Galerie"
+          title="Galerie"
+          icon={<Ionicons name="images-outline" size={18} color={colors.primary} />}
           onPress={() => pickImage(false)}
           variant="outline"
           style={styles.actionBtn}

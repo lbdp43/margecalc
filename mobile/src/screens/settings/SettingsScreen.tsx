@@ -1,6 +1,7 @@
 import React, { useState, useCallback } from 'react';
 import { View, Text, StyleSheet, Switch, Alert, TouchableOpacity, ScrollView, TextInput } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
+import { Ionicons } from '@expo/vector-icons';
 import { TVA_RATES, CONTAINER_PRESETS, ServingType } from '@margebar/shared';
 import { ScreenWrapper } from '../../components/ui/ScreenWrapper';
 import { Input } from '../../components/ui/Input';
@@ -205,6 +206,7 @@ export function SettingsScreen() {
                   value={editName}
                   onChangeText={setEditName}
                   placeholder="Nom"
+                  placeholderTextColor={colors.grayMedium}
                 />
                 <TextInput
                   style={[styles.servingInput, { flex: 1 }]}
@@ -212,26 +214,32 @@ export function SettingsScreen() {
                   onChangeText={setEditVolume}
                   keyboardType="numeric"
                   placeholder="cl"
+                  placeholderTextColor={colors.grayMedium}
                 />
-                <TouchableOpacity onPress={() => handleEditServing(st.id)} style={styles.servingAction}>
-                  <Text style={styles.servingActionText}>✓</Text>
+                <TouchableOpacity onPress={() => handleEditServing(st.id)} style={styles.iconBtn}>
+                  <Ionicons name="checkmark-circle" size={22} color={colors.accent} />
                 </TouchableOpacity>
-                <TouchableOpacity onPress={() => setEditingId(null)} style={styles.servingAction}>
-                  <Text style={styles.servingActionCancel}>✕</Text>
+                <TouchableOpacity onPress={() => setEditingId(null)} style={styles.iconBtn}>
+                  <Ionicons name="close-circle" size={22} color={colors.marginRed} />
                 </TouchableOpacity>
               </View>
             ) : (
               <>
                 <View style={styles.servingInfo}>
-                  <Text style={styles.servingName}>{st.icon} {st.name}</Text>
+                  <View style={styles.servingNameRow}>
+                    <View style={styles.servingIconBadge}>
+                      <Ionicons name="wine-outline" size={16} color={colors.primary} />
+                    </View>
+                    <Text style={styles.servingName}>{st.name}</Text>
+                  </View>
                   <Text style={styles.servingVolume}>{st.volumeCl} cl</Text>
                 </View>
                 <View style={styles.servingActions}>
-                  <TouchableOpacity onPress={() => startEdit(st)} style={styles.servingAction}>
-                    <Text style={styles.servingActionText}>✏️</Text>
+                  <TouchableOpacity onPress={() => startEdit(st)} style={styles.iconBtn}>
+                    <Ionicons name="pencil-outline" size={18} color={colors.textSecondary} />
                   </TouchableOpacity>
-                  <TouchableOpacity onPress={() => handleDeleteServing(st.id, st.name)} style={styles.servingAction}>
-                    <Text style={styles.servingActionText}>🗑️</Text>
+                  <TouchableOpacity onPress={() => handleDeleteServing(st.id, st.name)} style={styles.iconBtn}>
+                    <Ionicons name="trash-outline" size={18} color={colors.marginRed} />
                   </TouchableOpacity>
                 </View>
               </>
@@ -256,7 +264,7 @@ export function SettingsScreen() {
             placeholderTextColor={colors.grayMedium}
           />
           <TouchableOpacity onPress={handleAddServing} style={styles.addBtn}>
-            <Text style={styles.addBtnText}>+</Text>
+            <Ionicons name="add" size={20} color={colors.white} />
           </TouchableOpacity>
         </View>
       </Card>
@@ -366,6 +374,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
   },
+  servingNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  servingIconBadge: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: colors.primary + '15',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: spacing.sm,
+  },
   servingName: {
     ...typography.body,
     fontWeight: '600',
@@ -379,16 +400,9 @@ const styles = StyleSheet.create({
   servingActions: {
     flexDirection: 'row',
   },
-  servingAction: {
-    padding: spacing.xs,
+  iconBtn: {
+    padding: spacing.sm,
     marginLeft: spacing.xs,
-  },
-  servingActionText: {
-    fontSize: 16,
-  },
-  servingActionCancel: {
-    fontSize: 16,
-    color: colors.marginRed,
   },
   servingEditRow: {
     flex: 1,

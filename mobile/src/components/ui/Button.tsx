@@ -1,5 +1,5 @@
-import React from 'react';
-import { TouchableOpacity, Text, StyleSheet, ActivityIndicator, ViewStyle } from 'react-native';
+import React, { ReactNode } from 'react';
+import { TouchableOpacity, Text, View, StyleSheet, ActivityIndicator, ViewStyle } from 'react-native';
 import { colors, spacing, borderRadius, typography } from '../../theme';
 
 interface ButtonProps {
@@ -9,9 +9,10 @@ interface ButtonProps {
   loading?: boolean;
   disabled?: boolean;
   style?: ViewStyle;
+  icon?: ReactNode;
 }
 
-export function Button({ title, onPress, variant = 'primary', loading, disabled, style }: ButtonProps) {
+export function Button({ title, onPress, variant = 'primary', loading, disabled, style, icon }: ButtonProps) {
   const isDisabled = disabled || loading;
 
   return (
@@ -24,9 +25,12 @@ export function Button({ title, onPress, variant = 'primary', loading, disabled,
       {loading ? (
         <ActivityIndicator color={variant === 'outline' ? colors.primary : variant === 'danger' ? colors.marginRed : colors.textLight} />
       ) : (
-        <Text style={[styles.text, variant === 'outline' && styles.textOutline, variant === 'danger' && styles.textDanger]}>
-          {title}
-        </Text>
+        <View style={styles.content}>
+          {icon && <View style={styles.icon}>{icon}</View>}
+          <Text style={[styles.text, variant === 'outline' && styles.textOutline, variant === 'danger' && styles.textDanger]}>
+            {title}
+          </Text>
+        </View>
       )}
     </TouchableOpacity>
   );
@@ -59,6 +63,14 @@ const styles = StyleSheet.create({
   },
   disabled: {
     opacity: 0.5,
+  },
+  content: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  icon: {
+    marginRight: spacing.sm,
   },
   text: {
     ...typography.button,
