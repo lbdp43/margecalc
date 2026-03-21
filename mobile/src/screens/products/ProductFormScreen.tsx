@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, Alert, ScrollView, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, Alert, ScrollView, TouchableOpacity, TextInput } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
@@ -8,17 +8,21 @@ import {
   Category,
   CONTAINER_PRESETS,
   parseLocaleFloat,
+  ServingType,
+  calculateServingMargin,
+  ServingMarginResult,
+  MARGIN_COLOR_MAP,
+  formatPrice,
+  formatPercent,
 } from '@margebar/shared';
 import { ScreenWrapper } from '../../components/ui/ScreenWrapper';
 import { Input } from '../../components/ui/Input';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
-import { MarginModeSelector } from '../../components/margin/MarginModeSelector';
-import { MarginResultCard } from '../../components/margin/MarginResultCard';
-import { useMarginCalculator } from '../../hooks/useMarginCalculator';
 import { useAuthStore } from '../../store/auth.store';
 import * as productService from '../../services/product.service';
 import * as categoryService from '../../services/category.service';
+import * as servingService from '../../services/serving.service';
 import { colors, spacing, borderRadius, typography } from '../../theme';
 
 type Props = NativeStackScreenProps<any, 'ProductForm'>;
@@ -45,22 +49,31 @@ export function ProductFormScreen({ route, navigation }: Props) {
   const [containerVolume, setContainerVolume] = useState(
     scanData?.containerVolumeCl ? String(scanData.containerVolumeCl) : String(defaultContainer)
   );
-  const [doseVolume, setDoseVolume] = useState('');
-  const [marginMode, setMarginMode] = useState<MarginMode>(MarginMode.FIX_SELLING_PRICE);
-  const [sellingPrice, setSellingPrice] = useState('');
-  const [targetMargin, setTargetMargin] = useState('');
-  const [coefficient, setCoefficient] = useState('');
   const [tvaRate, setTvaRate] = useState(user?.isAutoEntrepreneur ? 0 : TVA_RATES.RATE_20);
   const [supplier, setSupplier] = useState('');
+  // Prices per serving type: { servingTypeId: "3,50" }
+  const [prices, setPrices] = useState<Record<string, string>>({});
 
   const { data: categories = [] } = useQuery<Category[]>({
     queryKey: ['categories'],
     queryFn: categoryService.getCategories,
   });
 
+  const { data: servingTypes = [] } = useQuery<ServingType[]>({
+    queryKey: ['servingTypes'],
+    queryFn: servingService.getServingTypes,
+  });
+
   const { data: existingProduct } = useQuery({
     queryKey: ['product', productId],
     queryFn: () => productService.getProduct(productId!),
+    enabled: isEditing,
+  });
+
+  // Load existing servings when editing
+  const { data: existingServings } = useQuery({
+    queryKey: ['productServings', productId],
+    queryFn: () => servingService.getProductServings(productId!),
     enabled: isEditing,
   });
 
@@ -70,15 +83,21 @@ export function ProductFormScreen({ route, navigation }: Props) {
       setCategoryId(existingProduct.categoryId);
       setPurchasePrice(String(existingProduct.purchasePriceHT));
       setContainerVolume(String(existingProduct.containerVolumeCl));
-      setDoseVolume(String(existingProduct.doseVolumeCl));
-      setMarginMode(existingProduct.marginMode as MarginMode);
-      setSellingPrice(existingProduct.sellingPriceTTC ? String(existingProduct.sellingPriceTTC) : '');
-      setTargetMargin(existingProduct.targetMarginPercent ? String(existingProduct.targetMarginPercent) : '');
-      setCoefficient(existingProduct.coefficient ? String(existingProduct.coefficient) : '');
       setTvaRate(existingProduct.tvaRate);
       setSupplier(existingProduct.supplier || '');
     }
   }, [existingProduct]);
+
+  // Pre-fill prices from existing servings
+  useEffect(() => {
+    if (existingServings && existingServings.length > 0) {
+      const priceMap: Record<string, string> = {};
+      for (const s of existingServings) {
+        priceMap[s.servingType.id] = s.sellingPriceTTC.toFixed(2).replace('.', ',');
+      }
+      setPrices(priceMap);
+    }
+  }, [existingServings]);
 
   useEffect(() => {
     if (categories.length > 0 && !categoryId) {
@@ -86,44 +105,76 @@ export function ProductFormScreen({ route, navigation }: Props) {
     }
   }, [categories, categoryId]);
 
-  const marginResult = useMarginCalculator({
-    purchasePriceHT: parseLocaleFloat(purchasePrice) || 0,
-    containerVolumeCl: parseLocaleFloat(containerVolume) || 0,
-    doseVolumeCl: parseLocaleFloat(doseVolume) || 0,
-    marginMode,
-    sellingPriceTTC: marginMode === MarginMode.FIX_SELLING_PRICE ? parseLocaleFloat(sellingPrice) || undefined : undefined,
-    targetMarginPercent: marginMode === MarginMode.FIX_TARGET_MARGIN ? parseLocaleFloat(targetMargin) || undefined : undefined,
-    coefficient: marginMode === MarginMode.FIX_COEFFICIENT ? parseLocaleFloat(coefficient) || undefined : undefined,
-    tvaRate,
-  });
+  const currentContainerVol = parseLocaleFloat(containerVolume) || 0;
+  const currentPurchasePrice = parseLocaleFloat(purchasePrice) || 0;
+
+  // Calculate margin for a serving type in real-time
+  const getServingMargin = (st: ServingType): ServingMarginResult | null => {
+    const raw = prices[st.id];
+    if (!raw) return null;
+    const price = parseLocaleFloat(raw);
+    if (isNaN(price) || price <= 0 || currentContainerVol <= 0 || currentPurchasePrice < 0) return null;
+    try {
+      return calculateServingMargin(currentPurchasePrice, currentContainerVol, tvaRate, st, price);
+    } catch {
+      return null;
+    }
+  };
 
   const saveMutation = useMutation({
     mutationFn: async () => {
-      const data = {
+      // Collect valid servings
+      const servings = Object.entries(prices)
+        .map(([servingTypeId, raw]) => ({
+          servingTypeId,
+          sellingPriceTTC: parseLocaleFloat(raw),
+        }))
+        .filter((s) => !isNaN(s.sellingPriceTTC) && s.sellingPriceTTC > 0);
+
+      if (servings.length === 0) {
+        throw new Error('Entrez au moins un prix de vente');
+      }
+
+      // Find the first serving to use as default dose
+      const firstServing = servings[0];
+      const firstServingType = servingTypes.find((st) => st.id === firstServing.servingTypeId);
+      const doseVolumeCl = firstServingType?.volumeCl || 5;
+
+      const productData = {
         name,
         categoryId,
         purchasePriceHT: parseLocaleFloat(purchasePrice),
         containerVolumeCl: parseLocaleFloat(containerVolume),
-        doseVolumeCl: parseLocaleFloat(doseVolume),
-        marginMode,
-        sellingPriceTTC: marginMode === MarginMode.FIX_SELLING_PRICE ? parseLocaleFloat(sellingPrice) : undefined,
-        targetMarginPercent: marginMode === MarginMode.FIX_TARGET_MARGIN ? parseLocaleFloat(targetMargin) : undefined,
-        coefficient: marginMode === MarginMode.FIX_COEFFICIENT ? parseLocaleFloat(coefficient) : undefined,
+        doseVolumeCl,
+        marginMode: MarginMode.FIX_SELLING_PRICE,
+        sellingPriceTTC: firstServing.sellingPriceTTC,
         tvaRate,
         supplier: supplier || undefined,
       };
 
+      let savedProductId: string;
+
       if (isEditing) {
-        return productService.updateProduct(productId!, data);
+        const updated = await productService.updateProduct(productId!, productData);
+        savedProductId = updated.id;
+      } else {
+        const created = await productService.createProduct(productData);
+        savedProductId = created.id;
       }
-      return productService.createProduct(data);
+
+      // Save servings
+      await servingService.upsertProductServings(savedProductId, servings);
+
+      return savedProductId;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['products'] });
+      queryClient.invalidateQueries({ queryKey: ['product', productId] });
+      queryClient.invalidateQueries({ queryKey: ['productServings', productId] });
       navigation.goBack();
     },
     onError: (err: any) => {
-      Alert.alert('Erreur', err.response?.data?.error || 'Impossible de sauvegarder');
+      Alert.alert('Erreur', err.response?.data?.error || err.message || 'Impossible de sauvegarder');
     },
   });
 
@@ -143,14 +194,13 @@ export function ProductFormScreen({ route, navigation }: Props) {
   };
 
   const handleSave = () => {
-    if (!name || !purchasePrice || !containerVolume || !doseVolume) {
-      Alert.alert('Erreur', 'Veuillez remplir tous les champs obligatoires');
+    if (!name || !purchasePrice || !containerVolume) {
+      Alert.alert('Erreur', 'Veuillez remplir le nom, le prix d\'achat et le volume du contenant');
       return;
     }
     const pp = parseLocaleFloat(purchasePrice);
     const cv = parseLocaleFloat(containerVolume);
-    const dv = parseLocaleFloat(doseVolume);
-    if (isNaN(pp) || isNaN(cv) || isNaN(dv)) {
+    if (isNaN(pp) || isNaN(cv)) {
       Alert.alert('Erreur', 'Vérifiez les valeurs numériques');
       return;
     }
@@ -161,18 +211,23 @@ export function ProductFormScreen({ route, navigation }: Props) {
     setContainerVolume(String(volumeCl));
   };
 
-  const currentContainerVol = parseLocaleFloat(containerVolume);
-
   const tvaOptions = [
     { label: '20%', value: TVA_RATES.RATE_20 },
     { label: '10%', value: TVA_RATES.RATE_10 },
     { label: '5,5%', value: TVA_RATES.RATE_5_5 },
   ];
 
+  // Count servings with prices
+  const filledServings = Object.values(prices).filter((v) => {
+    const n = parseLocaleFloat(v);
+    return !isNaN(n) && n > 0;
+  }).length;
+
   return (
     <ScreenWrapper>
       <Text style={styles.title}>{isEditing ? 'Modifier le produit' : 'Nouveau produit'}</Text>
 
+      {/* === SECTION 1: Produit === */}
       <Input
         label="Nom du produit *"
         value={name}
@@ -204,7 +259,7 @@ export function ProductFormScreen({ route, navigation }: Props) {
         suffix="€"
       />
 
-      {/* Container volume with presets */}
+      {/* === SECTION 2: Contenant === */}
       <View style={styles.containerSection}>
         <Text style={styles.sectionLabel}>Volume du contenant *</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.presetScroll}>
@@ -238,47 +293,7 @@ export function ProductFormScreen({ route, navigation }: Props) {
         />
       </View>
 
-      {/* Dose de service avec presets */}
-      <View style={styles.containerSection}>
-        <Text style={styles.sectionLabel}>Dose de service *</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.presetScroll}>
-          {[
-            { label: '🥃 Shot', cl: 3 },
-            { label: '🥃 Verre', cl: 5 },
-            { label: '🍷 Vin', cl: 12 },
-            { label: '🍺 Demi', cl: 25 },
-            { label: '🍺 Pinte', cl: 50 },
-            ...(currentContainerVol > 0 ? [{ label: '🍾 Entier', cl: currentContainerVol }] : []),
-          ].map((preset) => (
-            <TouchableOpacity
-              key={preset.label}
-              style={[
-                styles.presetBtn,
-                parseLocaleFloat(doseVolume) === preset.cl && styles.presetBtnActive,
-              ]}
-              onPress={() => setDoseVolume(String(preset.cl))}
-            >
-              <Text
-                style={[
-                  styles.presetBtnText,
-                  parseLocaleFloat(doseVolume) === preset.cl && styles.presetBtnTextActive,
-                ]}
-              >
-                {preset.label} ({preset.cl} cl)
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-        <Input
-          label=""
-          value={doseVolume}
-          onChangeText={setDoseVolume}
-          keyboardType="decimal-pad"
-          placeholder="4"
-          suffix="cl"
-        />
-      </View>
-
+      {/* === SECTION 3: TVA === */}
       {!user?.isAutoEntrepreneur && (
         <View style={styles.tvaRow}>
           <Text style={styles.sectionLabel}>TVA</Text>
@@ -296,41 +311,6 @@ export function ProductFormScreen({ route, navigation }: Props) {
         </View>
       )}
 
-      <MarginModeSelector value={marginMode} onChange={setMarginMode} />
-
-      {marginMode === MarginMode.FIX_SELLING_PRICE && (
-        <Input
-          label="Prix de vente TTC"
-          value={sellingPrice}
-          onChangeText={setSellingPrice}
-          keyboardType="decimal-pad"
-          placeholder="0,00"
-          suffix="€"
-        />
-      )}
-      {marginMode === MarginMode.FIX_TARGET_MARGIN && (
-        <Input
-          label="Marge cible"
-          value={targetMargin}
-          onChangeText={setTargetMargin}
-          keyboardType="decimal-pad"
-          placeholder="70"
-          suffix="%"
-        />
-      )}
-      {marginMode === MarginMode.FIX_COEFFICIENT && (
-        <Input
-          label="Coefficient multiplicateur"
-          value={coefficient}
-          onChangeText={setCoefficient}
-          keyboardType="decimal-pad"
-          placeholder="3,5"
-          suffix="x"
-        />
-      )}
-
-      <MarginResultCard result={marginResult} />
-
       <Input
         label="Fournisseur"
         value={supplier}
@@ -338,11 +318,85 @@ export function ProductFormScreen({ route, navigation }: Props) {
         placeholder="Nom du fournisseur (optionnel)"
       />
 
+      {/* === SECTION 4: Prix de vente par service === */}
+      <Card style={styles.servingSection}>
+        <Text style={styles.servingSectionTitle}>Prix de vente par service</Text>
+        <Text style={styles.servingSectionDesc}>
+          Entrez le prix TTC pour chaque type de service que vous proposez
+        </Text>
+
+        {servingTypes.map((st) => {
+          const margin = getServingMargin(st);
+          const nbServings = currentContainerVol > 0 ? currentContainerVol / st.volumeCl : 0;
+
+          return (
+            <View key={st.id} style={styles.servingBlock}>
+              <View style={styles.servingHeader}>
+                <Text style={styles.servingName}>
+                  {st.icon} {st.name}
+                </Text>
+                <Text style={styles.servingMeta}>
+                  {st.volumeCl} cl{nbServings > 0 ? ` · ${nbServings.toFixed(1)} / contenant` : ''}
+                </Text>
+              </View>
+
+              <View style={styles.priceRow}>
+                <Text style={styles.priceLabel}>Prix TTC</Text>
+                <View style={styles.priceInputWrap}>
+                  <TextInput
+                    style={styles.priceInput}
+                    value={prices[st.id] || ''}
+                    onChangeText={(v) => setPrices((prev) => ({ ...prev, [st.id]: v }))}
+                    keyboardType="decimal-pad"
+                    placeholder="0,00"
+                    placeholderTextColor={colors.grayMedium}
+                  />
+                  <Text style={styles.priceCurrency}>€</Text>
+                </View>
+              </View>
+
+              {margin && (
+                <View style={styles.marginGrid}>
+                  <View style={styles.marginItem}>
+                    <Text style={styles.marginLabel}>Coût</Text>
+                    <Text style={styles.marginValue}>{formatPrice(margin.costPerServingHT)}</Text>
+                  </View>
+                  <View style={styles.marginItem}>
+                    <Text style={styles.marginLabel}>Marge</Text>
+                    <Text style={[styles.marginValueBig, { color: MARGIN_COLOR_MAP[margin.colorCode] }]}>
+                      {formatPercent(margin.marginPercent)}
+                    </Text>
+                  </View>
+                  <View style={styles.marginItem}>
+                    <Text style={styles.marginLabel}>Gain/dose</Text>
+                    <Text style={[styles.marginValue, { color: MARGIN_COLOR_MAP[margin.colorCode] }]}>
+                      {formatPrice(margin.marginPerServingHT)}
+                    </Text>
+                  </View>
+                  <View style={styles.marginItem}>
+                    <Text style={styles.marginLabel}>Gain/contenant</Text>
+                    <Text style={[styles.marginValue, { color: MARGIN_COLOR_MAP[margin.colorCode] }]}>
+                      {formatPrice(margin.marginPerContainer)}
+                    </Text>
+                  </View>
+                </View>
+              )}
+            </View>
+          );
+        })}
+      </Card>
+
       <Button
         title={isEditing ? 'Enregistrer' : 'Ajouter le produit'}
         onPress={handleSave}
         loading={saveMutation.isPending}
       />
+
+      {filledServings > 0 && (
+        <Text style={styles.servingCount}>
+          {filledServings} type{filledServings > 1 ? 's' : ''} de service configuré{filledServings > 1 ? 's' : ''}
+        </Text>
+      )}
 
       {isEditing && (
         <Button
@@ -410,13 +464,6 @@ const styles = StyleSheet.create({
   presetBtnTextActive: {
     color: colors.white,
   },
-  halfInput: {
-    marginBottom: spacing.sm,
-  },
-  row: {
-    flexDirection: 'row',
-    gap: spacing.md,
-  },
   tvaRow: {
     marginBottom: spacing.md,
   },
@@ -428,6 +475,106 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.md,
     minHeight: 36,
+  },
+  // Serving section
+  servingSection: {
+    marginBottom: spacing.md,
+    marginTop: spacing.sm,
+  },
+  servingSectionTitle: {
+    ...typography.h3,
+    color: colors.text,
+    marginBottom: spacing.xs,
+  },
+  servingSectionDesc: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    marginBottom: spacing.md,
+  },
+  servingBlock: {
+    paddingVertical: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  servingHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.sm,
+  },
+  servingName: {
+    ...typography.body,
+    fontWeight: '600',
+    color: colors.text,
+  },
+  servingMeta: {
+    ...typography.caption,
+    color: colors.textSecondary,
+  },
+  priceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing.sm,
+  },
+  priceLabel: {
+    ...typography.bodySmall,
+    color: colors.textSecondary,
+  },
+  priceInputWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  priceInput: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: borderRadius.sm,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    width: 80,
+    textAlign: 'right',
+    ...typography.body,
+    fontWeight: '600',
+    color: colors.text,
+    backgroundColor: colors.inputBackground,
+  },
+  priceCurrency: {
+    ...typography.body,
+    color: colors.textSecondary,
+    marginLeft: spacing.xs,
+  },
+  marginGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
+  marginItem: {
+    flex: 1,
+    minWidth: '40%',
+    backgroundColor: colors.inputBackground,
+    borderRadius: borderRadius.sm,
+    padding: spacing.sm,
+    alignItems: 'center',
+  },
+  marginLabel: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    marginBottom: 2,
+  },
+  marginValue: {
+    ...typography.bodySmall,
+    fontWeight: '600',
+    color: colors.text,
+  },
+  marginValueBig: {
+    ...typography.h3,
+    fontWeight: '700',
+  },
+  servingCount: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    marginTop: spacing.sm,
   },
   deleteBtn: {
     marginTop: spacing.sm,
