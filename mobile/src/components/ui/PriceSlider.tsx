@@ -1,6 +1,6 @@
-import React, { useRef, useState } from 'react';
-import { View, StyleSheet, PanResponder, LayoutChangeEvent, Text } from 'react-native';
-import { colors, spacing, borderRadius, typography } from '../../theme';
+import React, { useRef, useState, useCallback } from 'react';
+import { View, StyleSheet, GestureResponderEvent, LayoutChangeEvent, Text, Platform } from 'react-native';
+import { colors, spacing, typography } from '../../theme';
 
 interface PriceSliderProps {
   min: number;
@@ -23,13 +23,13 @@ export function PriceSlider({
 }: PriceSliderProps) {
   const trackRef = useRef<View>(null);
   const [trackWidth, setTrackWidth] = useState(0);
-  const [trackX, setTrackX] = useState(0);
+  const trackXRef = useRef(0);
 
   const ratio = max > min ? Math.max(0, Math.min(1, (value - min) / (max - min))) : 0;
   const thumbX = ratio * trackWidth;
 
-  const updateValue = (pageX: number) => {
-    const x = pageX - trackX;
+  const computeValue = (pageX: number) => {
+    const x = pageX - trackXRef.current;
     const r = Math.max(0, Math.min(1, x / trackWidth));
     const raw = min + r * (max - min);
     const stepped = Math.round(raw / step) * step;
@@ -37,19 +37,38 @@ export function PriceSlider({
     onValueChange(Math.round(clamped * 100) / 100);
   };
 
-  const panResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: () => true,
-      onPanResponderGrant: (e) => updateValue(e.nativeEvent.pageX),
-      onPanResponderMove: (e) => updateValue(e.nativeEvent.pageX),
-    })
-  ).current;
+  const measureAndUpdate = useCallback((e: GestureResponderEvent) => {
+    const pageX = e.nativeEvent.pageX;
+
+    // Re-measure track position every time to account for scroll
+    if (Platform.OS === 'web' && trackRef.current) {
+      try {
+        const node = trackRef.current as any;
+        // On web, we can access the DOM node directly
+        if (node && typeof node.getBoundingClientRect === 'function') {
+          const rect = node.getBoundingClientRect();
+          trackXRef.current = rect.left;
+        } else if (node._nativeTag || node.measure) {
+          node.measureInWindow?.((x: number) => {
+            if (x !== undefined) trackXRef.current = x;
+          });
+        }
+      } catch {
+        // fallback to stored value
+      }
+    } else {
+      trackRef.current?.measureInWindow?.((x) => {
+        if (x !== undefined) trackXRef.current = x;
+      });
+    }
+
+    computeValue(pageX);
+  }, [min, max, step, trackWidth, onValueChange]);
 
   const handleLayout = (e: LayoutChangeEvent) => {
     setTrackWidth(e.nativeEvent.layout.width);
-    trackRef.current?.measureInWindow((x) => {
-      if (x !== undefined) setTrackX(x);
+    trackRef.current?.measureInWindow?.((x) => {
+      if (x !== undefined) trackXRef.current = x;
     });
   };
 
@@ -57,16 +76,21 @@ export function PriceSlider({
 
   return (
     <View style={styles.container}>
+      <View style={styles.labelRow}>
+        <View style={styles.labelSpacer} />
+        <Text style={[styles.valueLabel, { color: accentColor }]}>{label}</Text>
+      </View>
       <View
         ref={trackRef}
         style={styles.track}
         onLayout={handleLayout}
-        {...panResponder.panHandlers}
+        onStartShouldSetResponder={() => true}
+        onMoveShouldSetResponder={() => true}
+        onResponderGrant={measureAndUpdate}
+        onResponderMove={(e) => computeValue(e.nativeEvent.pageX)}
       >
         <View style={[styles.trackFill, { width: thumbX, backgroundColor: accentColor }]} />
-        <View style={[styles.thumb, { left: thumbX - 14, borderColor: accentColor }]}>
-          <Text style={[styles.thumbLabel, { color: accentColor }]}>{label}</Text>
-        </View>
+        <View style={[styles.thumb, { left: thumbX - 12, borderColor: accentColor }]} />
       </View>
     </View>
   );
@@ -74,44 +98,43 @@ export function PriceSlider({
 
 const styles = StyleSheet.create({
   container: {
-    paddingVertical: spacing.lg,
+    paddingVertical: spacing.sm,
     paddingHorizontal: spacing.xs,
   },
+  labelRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    marginBottom: spacing.sm,
+  },
+  labelSpacer: {
+    flex: 1,
+  },
+  valueLabel: {
+    fontSize: 15,
+    fontWeight: '700',
+  },
   track: {
-    height: 6,
-    backgroundColor: colors.border,
-    borderRadius: 3,
+    height: 32,
     justifyContent: 'center',
+    cursor: 'pointer' as any,
   },
   trackFill: {
     height: 6,
     borderRadius: 3,
     position: 'absolute',
     left: 0,
-    top: 0,
   },
   thumb: {
     position: 'absolute',
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
     backgroundColor: colors.white,
     borderWidth: 3,
-    top: -11,
-    alignItems: 'center',
-    justifyContent: 'center',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.15,
     shadowRadius: 4,
     elevation: 3,
-  },
-  thumbLabel: {
-    position: 'absolute',
-    top: -22,
-    ...typography.caption,
-    fontWeight: '700',
-    width: 80,
-    textAlign: 'center',
   },
 });
