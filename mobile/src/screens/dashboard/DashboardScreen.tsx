@@ -1,12 +1,15 @@
-import React from 'react';
-import { View, Text, StyleSheet, FlatList } from 'react-native';
+import React, { useState, useEffect, useCallback } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Alert } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
-import { ProductWithMargin, formatPrice, formatPercent, MARGIN_COLOR_MAP } from '@margebar/shared';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { ProductWithMargin, formatPercent, MARGIN_COLOR_MAP } from '@margebar/shared';
 import { ScreenWrapper } from '../../components/ui/ScreenWrapper';
 import { Card } from '../../components/ui/Card';
 import * as productService from '../../services/product.service';
 import { useAuthStore } from '../../store/auth.store';
-import { colors, spacing, typography } from '../../theme';
+import { colors, spacing, borderRadius, typography } from '../../theme';
+
+const WELCOME_DISMISSED_KEY = 'margebar_welcome_dismissed';
 
 export function DashboardScreen() {
   const user = useAuthStore((s) => s.user);
@@ -14,6 +17,39 @@ export function DashboardScreen() {
     queryKey: ['products'],
     queryFn: () => productService.getProducts(),
   });
+
+  const [welcomeVisible, setWelcomeVisible] = useState(true);
+  const [loadingPref, setLoadingPref] = useState(true);
+
+  useEffect(() => {
+    AsyncStorage.getItem(WELCOME_DISMISSED_KEY).then((val) => {
+      if (val === 'true') setWelcomeVisible(false);
+      setLoadingPref(false);
+    });
+  }, []);
+
+  const handleDismiss = useCallback(() => {
+    setWelcomeVisible(false);
+    Alert.alert(
+      'Masquer le message de bienvenue',
+      'Voulez-vous le masquer definitivement ou le revoir la prochaine fois ?',
+      [
+        {
+          text: 'Revoir la prochaine fois',
+          style: 'cancel',
+          onPress: () => {
+            // Ne persiste pas, il reviendra au prochain lancement
+          },
+        },
+        {
+          text: 'Masquer definitivement',
+          onPress: () => {
+            AsyncStorage.setItem(WELCOME_DISMISSED_KEY, 'true');
+          },
+        },
+      ],
+    );
+  }, []);
 
   const sorted = [...products].sort((a, b) => b.computed.marginPercent - a.computed.marginPercent);
   const top5 = sorted.slice(0, 5);
@@ -30,8 +66,11 @@ export function DashboardScreen() {
       </Text>
       <Text style={styles.title}>Tableau de bord</Text>
 
-      {products.length === 0 && (
+      {welcomeVisible && !loadingPref && (
         <Card style={styles.welcomeCard}>
+          <TouchableOpacity style={styles.closeBtn} onPress={handleDismiss}>
+            <Text style={styles.closeBtnText}>✕</Text>
+          </TouchableOpacity>
           <Text style={styles.welcomeTitle}>Bienvenue sur MargeBar !</Text>
           <Text style={styles.welcomeText}>
             MargeBar t'aide a calculer tes marges sur chaque produit que tu vends : spiritueux, vins, bieres, softs...
@@ -147,11 +186,30 @@ const styles = StyleSheet.create({
   welcomeCard: {
     marginBottom: spacing.lg,
     backgroundColor: colors.primary,
+    position: 'relative',
+  },
+  closeBtn: {
+    position: 'absolute',
+    top: spacing.sm,
+    right: spacing.sm,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 1,
+  },
+  closeBtnText: {
+    color: colors.white,
+    fontSize: 14,
+    fontWeight: '700',
   },
   welcomeTitle: {
     ...typography.h2,
     color: colors.white,
     marginBottom: spacing.md,
+    paddingRight: spacing.xl,
   },
   welcomeText: {
     ...typography.bodySmall,
