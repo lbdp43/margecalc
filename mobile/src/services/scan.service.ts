@@ -14,3 +14,25 @@ export async function scanBottle(imageBase64: string): Promise<ScanResult> {
   });
   return res.data;
 }
+
+export interface InvoiceProduct {
+  name: string;
+  category: string;
+  containerVolumeCl: number | null;
+  purchasePriceHT: number | null;
+  quantity: number;
+  confidence: number;
+}
+
+export interface InvoiceScanResult {
+  supplier: string;
+  invoiceDate: string | null;
+  products: InvoiceProduct[];
+}
+
+export async function scanInvoice(imageBase64: string): Promise<InvoiceScanResult> {
+  const res = await api.post<InvoiceScanResult>('/scan/invoice', { imageBase64 }, {
+    timeout: 150000,
+  });
+  return res.data;
+}
