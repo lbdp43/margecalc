@@ -1,6 +1,6 @@
 import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { createAppStackNavigator } from './createStack';
 import { Text } from 'react-native';
 import { DashboardScreen } from '../screens/dashboard/DashboardScreen';
 import { ProductListScreen } from '../screens/products/ProductListScreen';
@@ -10,7 +10,7 @@ import { SettingsScreen } from '../screens/settings/SettingsScreen';
 import { colors } from '../theme';
 
 const Tab = createBottomTabNavigator();
-const ProductStack = createNativeStackNavigator();
+const ProductStack = createAppStackNavigator();
 
 function ProductsNavigator() {
   return (

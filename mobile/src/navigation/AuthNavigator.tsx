@@ -1,9 +1,9 @@
 import React from 'react';
-import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { createAppStackNavigator } from './createStack';
 import { LoginScreen } from '../screens/auth/LoginScreen';
 import { RegisterScreen } from '../screens/auth/RegisterScreen';
 
-const Stack = createNativeStackNavigator();
+const Stack = createAppStackNavigator();
 
 export function AuthNavigator() {
   return (
