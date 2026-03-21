@@ -41,6 +41,15 @@ router.get('/:id', async (req: Request, res: Response) => {
   }
 });
 
+router.get('/:id/price-history', async (req: Request, res: Response) => {
+  try {
+    const history = await productService.getPriceHistory(req.params.id, req.user!.userId);
+    res.json(history);
+  } catch (err: any) {
+    res.status(404).json({ error: err.message });
+  }
+});
+
 router.post('/', async (req: Request, res: Response) => {
   try {
     const data = createSchema.parse(req.body) as CreateProductInput;

@@ -587,8 +587,10 @@ export function ProductFormScreen({ route, navigation }: Props) {
         <Button
           title="Supprimer"
           onPress={() => {
-            const confirmed = window.confirm(`Supprimer "${name}" ?`);
-            if (confirmed) deleteMutation.mutate();
+            Alert.alert('Supprimer', `Supprimer "${name}" ?`, [
+              { text: 'Annuler', style: 'cancel' },
+              { text: 'Supprimer', style: 'destructive', onPress: () => deleteMutation.mutate() },
+            ]);
           }}
           variant="danger"
           style={styles.deleteBtn}

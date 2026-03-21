@@ -3,12 +3,14 @@ import { View, Text, StyleSheet, TextInput, Alert, ActivityIndicator } from 'rea
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { Ionicons } from '@expo/vector-icons';
 import { Product, ServingType, ServingMarginResult, calculateServingMargin, MARGIN_COLOR_MAP } from '@margebar/shared';
 import { ScreenWrapper } from '../../components/ui/ScreenWrapper';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
 import * as servingService from '../../services/serving.service';
 import * as productService from '../../services/product.service';
+import { PriceHistoryEntry } from '../../services/product.service';
 import { api } from '../../services/api';
 import { colors, spacing, borderRadius, typography } from '../../theme';
 
@@ -20,6 +22,7 @@ export function ProductDetailScreen({ route, navigation }: Props) {
   const [servingTypes, setServingTypes] = useState<ServingType[]>([]);
   const [savedServings, setSavedServings] = useState<ServingMarginResult[]>([]);
   const [prices, setPrices] = useState<Record<string, string>>({});
+  const [priceHistory, setPriceHistory] = useState<PriceHistoryEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const queryClient = useQueryClient();
@@ -50,6 +53,9 @@ export function ProductDetailScreen({ route, navigation }: Props) {
       setProduct(productRes.data);
       setServingTypes(typesRes);
       setSavedServings(servingsRes);
+
+      const historyRes = await productService.getPriceHistory(productId);
+      setPriceHistory(historyRes);
 
       // Pre-fill prices from saved servings
       const priceMap: Record<string, string> = {};
@@ -204,11 +210,41 @@ export function ProductDetailScreen({ route, navigation }: Props) {
         style={styles.editBtn}
       />
 
+      {priceHistory.length > 0 && (
+        <Card style={styles.section}>
+          <Text style={styles.sectionTitle}>Historique des prix</Text>
+          {priceHistory.map((entry) => {
+            const diff = entry.newPrice - entry.oldPrice;
+            const isUp = diff > 0;
+            return (
+              <View key={entry.id} style={styles.historyRow}>
+                <View style={styles.historyInfo}>
+                  <Text style={styles.historyPrice}>
+                    {entry.oldPrice.toFixed(2)} € → {entry.newPrice.toFixed(2)} €
+                  </Text>
+                  <Text style={styles.historyDate}>
+                    {new Date(entry.changedAt).toLocaleDateString('fr-FR')} · {entry.source === 'scan' ? 'Scan' : 'Manuel'}
+                  </Text>
+                </View>
+                <View style={[styles.historyBadge, { backgroundColor: isUp ? colors.marginRed + '15' : colors.marginGreen + '15' }]}>
+                  <Ionicons name={isUp ? 'arrow-up' : 'arrow-down'} size={14} color={isUp ? colors.marginRed : colors.marginGreen} />
+                  <Text style={[styles.historyDiff, { color: isUp ? colors.marginRed : colors.marginGreen }]}>
+                    {Math.abs(diff).toFixed(2)} €
+                  </Text>
+                </View>
+              </View>
+            );
+          })}
+        </Card>
+      )}
+
       <Button
         title="Supprimer le produit"
         onPress={() => {
-          const confirmed = window.confirm(`Supprimer "${product.name}" ?`);
-          if (confirmed) deleteMutation.mutate();
+          Alert.alert('Supprimer', `Supprimer "${product.name}" ?`, [
+            { text: 'Annuler', style: 'cancel' },
+            { text: 'Supprimer', style: 'destructive', onPress: () => deleteMutation.mutate() },
+          ]);
         }}
         variant="danger"
         style={styles.deleteBtn}
@@ -333,5 +369,38 @@ const styles = StyleSheet.create({
   deleteBtn: {
     marginTop: spacing.sm,
     borderColor: colors.marginRed,
+  },
+  historyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  historyInfo: {
+    flex: 1,
+  },
+  historyPrice: {
+    ...typography.bodySmall,
+    fontWeight: '600',
+    color: colors.text,
+  },
+  historyDate: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  historyBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: borderRadius.sm,
+    gap: 4,
+  },
+  historyDiff: {
+    ...typography.caption,
+    fontWeight: '600',
   },
 });

@@ -23,6 +23,9 @@ export function ProductCard({ product, onPress }: ProductCardProps) {
             <Text style={styles.detail}>
               Achat : {formatPrice(product.purchasePriceHT)} HT
             </Text>
+            <Text style={styles.detail}>
+              x{product.computed.coefficient.toFixed(1)} · {formatPrice(product.computed.marginPerDoseHT)}/dose
+            </Text>
           </View>
           <View style={styles.marginInfo}>
             <Text style={[styles.marginPercent, { color: accent }]}>

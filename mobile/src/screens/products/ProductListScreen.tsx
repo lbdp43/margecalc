@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { View, Text, FlatList, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { View, Text, FlatList, StyleSheet, TouchableOpacity, ActivityIndicator, TextInput } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useQuery } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
@@ -15,6 +15,9 @@ type Props = NativeStackScreenProps<any, 'ProductList'>;
 
 export function ProductListScreen({ navigation }: Props) {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [sortBy, setSortBy] = useState<'name' | 'margin' | 'price' | 'coeff'>('name');
+  const [sortAsc, setSortAsc] = useState(true);
 
   const { data: categories = [] } = useQuery<Category[]>({
     queryKey: ['categories'],
@@ -26,6 +29,19 @@ export function ProductListScreen({ navigation }: Props) {
     queryFn: () => productService.getProducts(selectedCategory || undefined),
   });
 
+  const filtered = products
+    .filter((p) => searchQuery.length === 0 || p.name.toLowerCase().includes(searchQuery.toLowerCase()))
+    .sort((a, b) => {
+      let cmp = 0;
+      switch (sortBy) {
+        case 'name': cmp = a.name.localeCompare(b.name); break;
+        case 'margin': cmp = a.computed.marginPercent - b.computed.marginPercent; break;
+        case 'price': cmp = a.purchasePriceHT - b.purchasePriceHT; break;
+        case 'coeff': cmp = a.computed.coefficient - b.computed.coefficient; break;
+      }
+      return sortAsc ? cmp : -cmp;
+    });
+
   const renderProduct = useCallback(({ item }: { item: ProductWithMargin }) => (
     <ProductCard
       product={item}
@@ -33,7 +49,7 @@ export function ProductListScreen({ navigation }: Props) {
     />
   ), [navigation]);
 
-  const count = products.length;
+  const count = filtered.length;
 
   return (
     <ScreenWrapper scrollable={false}>
@@ -50,11 +66,54 @@ export function ProductListScreen({ navigation }: Props) {
         onSelect={setSelectedCategory}
       />
 
+      <View style={styles.searchRow}>
+        <View style={styles.searchBox}>
+          <Ionicons name="search-outline" size={18} color={colors.grayMedium} />
+          <TextInput
+            style={styles.searchInput}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            placeholder="Rechercher un produit..."
+            placeholderTextColor={colors.grayMedium}
+          />
+          {searchQuery.length > 0 && (
+            <TouchableOpacity onPress={() => setSearchQuery('')}>
+              <Ionicons name="close-circle" size={18} color={colors.grayMedium} />
+            </TouchableOpacity>
+          )}
+        </View>
+      </View>
+
+      <View style={styles.sortRow}>
+        {[
+          { key: 'name', label: 'Nom' },
+          { key: 'margin', label: 'Marge %' },
+          { key: 'price', label: 'Prix' },
+          { key: 'coeff', label: 'Coeff' },
+        ].map((s) => (
+          <TouchableOpacity
+            key={s.key}
+            style={[styles.sortBtn, sortBy === s.key && styles.sortBtnActive]}
+            onPress={() => {
+              if (sortBy === s.key) setSortAsc(!sortAsc);
+              else { setSortBy(s.key as any); setSortAsc(true); }
+            }}
+          >
+            <Text style={[styles.sortBtnText, sortBy === s.key && styles.sortBtnTextActive]}>
+              {s.label}
+            </Text>
+            {sortBy === s.key && (
+              <Ionicons name={sortAsc ? 'arrow-up' : 'arrow-down'} size={12} color={colors.white} />
+            )}
+          </TouchableOpacity>
+        ))}
+      </View>
+
       {isLoading ? (
         <ActivityIndicator color={colors.primary} style={styles.loader} />
       ) : (
         <FlatList
-          data={products}
+          data={filtered}
           renderItem={renderProduct}
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.list}
@@ -116,6 +175,49 @@ const styles = StyleSheet.create({
     ...typography.body,
     color: colors.grayMedium,
     textAlign: 'center',
+  },
+  searchRow: {
+    marginBottom: spacing.sm,
+  },
+  searchBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.inputBackground,
+    borderRadius: borderRadius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    gap: spacing.sm,
+  },
+  searchInput: {
+    flex: 1,
+    ...typography.body,
+    color: colors.text,
+    padding: 0,
+  },
+  sortRow: {
+    flexDirection: 'row',
+    gap: spacing.xs,
+    marginBottom: spacing.md,
+  },
+  sortBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: borderRadius.full,
+    backgroundColor: colors.inputBackground,
+    gap: 4,
+  },
+  sortBtnActive: {
+    backgroundColor: colors.primary,
+  },
+  sortBtnText: {
+    ...typography.caption,
+    fontWeight: '600',
+    color: colors.textSecondary,
+  },
+  sortBtnTextActive: {
+    color: colors.white,
   },
   fab: {
     position: 'absolute',

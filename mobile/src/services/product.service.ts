@@ -25,3 +25,17 @@ export async function updateProduct(id: string, data: Partial<CreateProductInput
 export async function deleteProduct(id: string): Promise<void> {
   await api.delete(`/products/${id}`);
 }
+
+export interface PriceHistoryEntry {
+  id: string;
+  productId: string;
+  oldPrice: number;
+  newPrice: number;
+  changedAt: string;
+  source: string;
+}
+
+export async function getPriceHistory(productId: string): Promise<PriceHistoryEntry[]> {
+  const res = await api.get<PriceHistoryEntry[]>(`/products/${productId}/price-history`);
+  return res.data;
+}

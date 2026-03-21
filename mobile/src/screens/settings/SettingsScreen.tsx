@@ -2,7 +2,8 @@ import React, { useState, useCallback } from 'react';
 import { View, Text, StyleSheet, Switch, Alert, TouchableOpacity, ScrollView, TextInput } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import { TVA_RATES, CONTAINER_PRESETS, ServingType } from '@margebar/shared';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { TVA_RATES, CONTAINER_PRESETS, ServingType, DEFAULT_MARGIN_THRESHOLDS, Category } from '@margebar/shared';
 import { ScreenWrapper } from '../../components/ui/ScreenWrapper';
 import { Input } from '../../components/ui/Input';
 import { Button } from '../../components/ui/Button';
@@ -10,6 +11,7 @@ import { Card } from '../../components/ui/Card';
 import { useAuthStore } from '../../store/auth.store';
 import { api } from '../../services/api';
 import * as servingService from '../../services/serving.service';
+import * as categoryService from '../../services/category.service';
 import { colors, spacing, borderRadius, typography } from '../../theme';
 
 export function SettingsScreen() {
@@ -29,9 +31,25 @@ export function SettingsScreen() {
   const [editName, setEditName] = useState('');
   const [editVolume, setEditVolume] = useState('');
 
+  // Margin thresholds
+  const [greenThreshold, setGreenThreshold] = useState(String(DEFAULT_MARGIN_THRESHOLDS.good));
+  const [orangeThreshold, setOrangeThreshold] = useState(String(DEFAULT_MARGIN_THRESHOLDS.medium));
+
+  // Categories
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [newCategoryName, setNewCategoryName] = useState('');
+
   useFocusEffect(
     useCallback(() => {
       loadServingTypes();
+      loadCategories();
+      AsyncStorage.getItem('margebar_margin_thresholds').then((val) => {
+        if (val) {
+          const parsed = JSON.parse(val);
+          setGreenThreshold(String(parsed.good));
+          setOrangeThreshold(String(parsed.medium));
+        }
+      });
     }, [])
   );
 
@@ -106,9 +124,34 @@ export function SettingsScreen() {
     setEditVolume(String(st.volumeCl));
   };
 
+  const loadCategories = async () => {
+    try {
+      const cats = await categoryService.getCategories();
+      setCategories(cats);
+    } catch {}
+  };
+
+  const handleAddCategory = async () => {
+    if (!newCategoryName.trim()) {
+      Alert.alert('Erreur', 'Entrez un nom de catégorie');
+      return;
+    }
+    try {
+      await categoryService.createCategory(newCategoryName.trim());
+      setNewCategoryName('');
+      loadCategories();
+    } catch {
+      Alert.alert('Erreur', 'Impossible de créer la catégorie');
+    }
+  };
+
   const handleSave = async () => {
     setSaving(true);
     try {
+      await AsyncStorage.setItem('margebar_margin_thresholds', JSON.stringify({
+        good: parseFloat(greenThreshold.replace(',', '.')) || DEFAULT_MARGIN_THRESHOLDS.good,
+        medium: parseFloat(orangeThreshold.replace(',', '.')) || DEFAULT_MARGIN_THRESHOLDS.medium,
+      }));
       const res = await api.patch('/users/me', {
         businessName: businessName || null,
         isAutoEntrepreneur,
@@ -160,6 +203,44 @@ export function SettingsScreen() {
             trackColor={{ true: colors.accent }}
             thumbColor={colors.white}
           />
+        </View>
+      </Card>
+
+      <Card style={styles.section}>
+        <Text style={styles.sectionTitle}>Seuils de marge</Text>
+        <Text style={styles.sectionDesc}>
+          Définissez les seuils pour les indicateurs de couleur
+        </Text>
+        <View style={styles.thresholdRow}>
+          <View style={[styles.thresholdDot, { backgroundColor: colors.marginGreen }]} />
+          <Text style={styles.thresholdLabel}>Bonne marge (vert) ≥</Text>
+          <TextInput
+            style={styles.thresholdInput}
+            value={greenThreshold}
+            onChangeText={setGreenThreshold}
+            keyboardType="numeric"
+            placeholder="65"
+            placeholderTextColor={colors.grayMedium}
+          />
+          <Text style={styles.thresholdUnit}>%</Text>
+        </View>
+        <View style={styles.thresholdRow}>
+          <View style={[styles.thresholdDot, { backgroundColor: colors.marginOrange }]} />
+          <Text style={styles.thresholdLabel}>Marge correcte (orange) ≥</Text>
+          <TextInput
+            style={styles.thresholdInput}
+            value={orangeThreshold}
+            onChangeText={setOrangeThreshold}
+            keyboardType="numeric"
+            placeholder="50"
+            placeholderTextColor={colors.grayMedium}
+          />
+          <Text style={styles.thresholdUnit}>%</Text>
+        </View>
+        <View style={styles.thresholdRow}>
+          <View style={[styles.thresholdDot, { backgroundColor: colors.marginRed }]} />
+          <Text style={styles.thresholdLabel}>Marge faible (rouge)</Text>
+          <Text style={styles.thresholdAuto}>{'< '}{orangeThreshold || '50'}%</Text>
         </View>
       </Card>
 
@@ -264,6 +345,32 @@ export function SettingsScreen() {
             placeholderTextColor={colors.grayMedium}
           />
           <TouchableOpacity onPress={handleAddServing} style={styles.addBtn}>
+            <Ionicons name="add" size={20} color={colors.white} />
+          </TouchableOpacity>
+        </View>
+      </Card>
+
+      <Card style={styles.section}>
+        <Text style={styles.sectionTitle}>Catégories</Text>
+        <Text style={styles.sectionDesc}>
+          Vos catégories de produits
+        </Text>
+        {categories.map((cat) => (
+          <View key={cat.id} style={styles.servingRow}>
+            <View style={styles.servingInfo}>
+              <Text style={styles.servingName}>{cat.name}</Text>
+            </View>
+          </View>
+        ))}
+        <View style={styles.addServingRow}>
+          <TextInput
+            style={[styles.servingInput, { flex: 1 }]}
+            value={newCategoryName}
+            onChangeText={setNewCategoryName}
+            placeholder="Nouvelle catégorie"
+            placeholderTextColor={colors.grayMedium}
+          />
+          <TouchableOpacity onPress={handleAddCategory} style={styles.addBtn}>
             <Ionicons name="add" size={20} color={colors.white} />
           </TouchableOpacity>
         </View>
@@ -438,5 +545,47 @@ const styles = StyleSheet.create({
     color: colors.white,
     fontSize: 20,
     fontWeight: '700',
+  },
+  // Margin threshold styles
+  thresholdRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  thresholdDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    marginRight: spacing.sm,
+  },
+  thresholdLabel: {
+    flex: 1,
+    ...typography.bodySmall,
+    color: colors.text,
+  },
+  thresholdInput: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: borderRadius.sm,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    width: 50,
+    textAlign: 'center',
+    ...typography.bodySmall,
+    fontWeight: '600',
+    color: colors.text,
+    backgroundColor: colors.inputBackground,
+  },
+  thresholdUnit: {
+    ...typography.bodySmall,
+    color: colors.textSecondary,
+    marginLeft: spacing.xs,
+  },
+  thresholdAuto: {
+    ...typography.bodySmall,
+    color: colors.textSecondary,
+    fontStyle: 'italic',
   },
 });

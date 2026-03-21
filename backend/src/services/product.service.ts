@@ -91,6 +91,17 @@ export async function updateProduct(id: string, userId: string, data: Partial<Cr
   return enrichProduct(product);
 }
 
+export async function getPriceHistory(productId: string, userId: string) {
+  const product = await prisma.product.findFirst({ where: { id: productId, userId } });
+  if (!product) throw new Error('Produit non trouvé');
+
+  const history = await prisma.priceHistory.findMany({
+    where: { productId },
+    orderBy: { changedAt: 'desc' },
+  });
+  return history;
+}
+
 export async function deleteProduct(id: string, userId: string) {
   const existing = await prisma.product.findFirst({ where: { id, userId } });
   if (!existing) throw new Error('Produit non trouvé');
