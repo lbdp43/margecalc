@@ -9,6 +9,6 @@
   "scripts": {
     "build": "npm run build --workspace=shared && cd backend && npx prisma generate && cd .. && npm run build --workspace=backend && cd mobile && npx expo export --platform web --output-dir ../backend/dist/public && cd .. && node scripts/patch-html.js",
     "db:push": "cd backend && npx prisma db push",
-    "start": "cd backend && npx prisma db push --skip-generate && cd .. && npm run start --workspace=backend"
+    "start": "cd backend && npx prisma db push --skip-generate --accept-data-loss && cd .. && npm run start --workspace=backend"
   }
 }
