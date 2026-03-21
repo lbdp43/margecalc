@@ -5,5 +5,9 @@
     "shared",
     "backend",
     "mobile"
-  ]
+  ],
+  "scripts": {
+    "build": "npm run build --workspace=shared && npx --workspace=backend prisma generate --schema=backend/prisma/schema.prisma && npm run build --workspace=backend",
+    "start": "npm run start --workspace=backend"
+  }
 }
