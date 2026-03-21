@@ -5,6 +5,9 @@ export interface User {
   isAutoEntrepreneur: boolean;
   defaultTvaRate: number;
   defaultContainerVolumeCl: number;
+  subscriptionStatus: 'none' | 'trialing' | 'active' | 'past_due' | 'canceled';
+  subscriptionPlan: string | null;
+  subscriptionEndDate: string | null;
   createdAt: string;
   updatedAt: string;
 }

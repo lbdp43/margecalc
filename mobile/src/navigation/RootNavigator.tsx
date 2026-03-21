@@ -1,16 +1,31 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, View } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuthStore } from '../store/auth.store';
 import { AuthNavigator } from './AuthNavigator';
 import { AppNavigator } from './AppNavigator';
+import { SubscriptionScreen } from '../screens/subscription/SubscriptionScreen';
 import { colors } from '../theme';
 
+const PAYWALL_SEEN_KEY = 'margebar_paywall_seen';
+
 export function RootNavigator() {
-  const { isAuthenticated, isLoading, loadStoredAuth } = useAuthStore();
+  const { isAuthenticated, isLoading, loadStoredAuth, user } = useAuthStore();
+  const [paywallSeen, setPaywallSeen] = useState<boolean | null>(null);
 
   useEffect(() => {
     loadStoredAuth();
   }, []);
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      AsyncStorage.getItem(PAYWALL_SEEN_KEY).then((val) => {
+        setPaywallSeen(val === 'true');
+      });
+    } else {
+      setPaywallSeen(null);
+    }
+  }, [isAuthenticated]);
 
   if (isLoading) {
     return (
@@ -20,5 +35,31 @@ export function RootNavigator() {
     );
   }
 
-  return isAuthenticated ? <AppNavigator /> : <AuthNavigator />;
+  if (!isAuthenticated) {
+    return <AuthNavigator />;
+  }
+
+  // Show paywall if user has no active subscription and hasn't dismissed it
+  const hasActiveSubscription = user?.subscriptionStatus === 'active' || user?.subscriptionStatus === 'trialing';
+  if (!hasActiveSubscription && paywallSeen === false) {
+    return (
+      <SubscriptionScreen
+        onDismiss={() => {
+          AsyncStorage.setItem(PAYWALL_SEEN_KEY, 'true');
+          setPaywallSeen(true);
+        }}
+      />
+    );
+  }
+
+  // Still loading paywall preference
+  if (paywallSeen === null) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background }}>
+        <ActivityIndicator size="large" color={colors.primary} />
+      </View>
+    );
+  }
+
+  return <AppNavigator />;
 }

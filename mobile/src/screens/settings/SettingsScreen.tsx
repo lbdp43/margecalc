@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { View, Text, StyleSheet, Switch, Alert, TouchableOpacity, ScrollView, TextInput } from 'react-native';
+import { View, Text, StyleSheet, Switch, Alert, TouchableOpacity, ScrollView, TextInput, Linking, Platform } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -14,6 +14,7 @@ import { api } from '../../services/api';
 import * as servingService from '../../services/serving.service';
 import * as categoryService from '../../services/category.service';
 import * as containerService from '../../services/container.service';
+import * as subscriptionService from '../../services/subscription.service';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 
 export function SettingsScreen() {
@@ -41,6 +42,12 @@ export function SettingsScreen() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [newCategoryName, setNewCategoryName] = useState('');
 
+  // Subscription
+  const [subStatus, setSubStatus] = useState<string>(user?.subscriptionStatus || 'none');
+  const [subPlan, setSubPlan] = useState<string | null>(user?.subscriptionPlan || null);
+  const [subEndDate, setSubEndDate] = useState<string | null>(user?.subscriptionEndDate || null);
+  const [subLoading, setSubLoading] = useState(false);
+
   // Containers
   const [containers, setContainers] = useState<CustomContainer[]>([]);
   const [newContainerName, setNewContainerName] = useState('');
@@ -54,6 +61,7 @@ export function SettingsScreen() {
       loadServingTypes();
       loadCategories();
       loadContainers();
+      loadSubscription();
       AsyncStorage.getItem('margebar_margin_thresholds').then((val) => {
         if (val) {
           const parsed = JSON.parse(val);
@@ -70,6 +78,31 @@ export function SettingsScreen() {
       setServingTypes(types);
     } catch {
       // silently fail on initial load
+    }
+  };
+
+  const loadSubscription = async () => {
+    try {
+      const status = await subscriptionService.getSubscriptionStatus();
+      setSubStatus(status.subscriptionStatus);
+      setSubPlan(status.subscriptionPlan);
+      setSubEndDate(status.subscriptionEndDate);
+    } catch {}
+  };
+
+  const handleManageSubscription = async () => {
+    setSubLoading(true);
+    try {
+      const { url } = await subscriptionService.createPortalSession();
+      if (Platform.OS === 'web') {
+        (globalThis as any).open(url, '_blank');
+      } else {
+        await Linking.openURL(url);
+      }
+    } catch {
+      Alert.alert('Erreur', 'Impossible d\'ouvrir le portail d\'abonnement');
+    } finally {
+      setSubLoading(false);
     }
   };
 
@@ -575,6 +608,58 @@ export function SettingsScreen() {
         </View>
       </View>
 
+      {/* Abonnement */}
+      <View style={styles.sectionCard}>
+        <View style={styles.sectionHeader}>
+          <View style={[styles.sectionAccent, { backgroundColor: colors.primary }]} />
+          <Text style={styles.sectionTitle}>Abonnement</Text>
+        </View>
+        <View style={styles.sectionBody}>
+          <View style={styles.subscriptionCard}>
+            <View style={styles.subscriptionInfo}>
+              <View style={[styles.subscriptionBadge, subStatus === 'active' || subStatus === 'trialing' ? styles.subscriptionBadgeActive : styles.subscriptionBadgeInactive]}>
+                <Ionicons
+                  name={subStatus === 'active' || subStatus === 'trialing' ? 'checkmark-circle' : 'close-circle'}
+                  size={20}
+                  color={subStatus === 'active' || subStatus === 'trialing' ? colors.marginGreen : colors.tabBarInactive}
+                />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.subscriptionStatus}>
+                  {subStatus === 'active' ? 'Abonnement actif' :
+                   subStatus === 'trialing' ? 'Période d\'essai' :
+                   subStatus === 'past_due' ? 'Paiement en retard' :
+                   subStatus === 'canceled' ? 'Abonnement annulé' :
+                   'Aucun abonnement'}
+                </Text>
+                {subPlan && (
+                  <Text style={styles.subscriptionPlan}>
+                    Plan : {subPlan === 'pro_yearly' ? 'Annuel' : 'Mensuel'} — 2,50 €/mois
+                  </Text>
+                )}
+                {subEndDate && (
+                  <Text style={styles.subscriptionDate}>
+                    {subStatus === 'active' ? 'Renouvellement' : 'Expire'} le {new Date(subEndDate).toLocaleDateString('fr-FR')}
+                  </Text>
+                )}
+              </View>
+            </View>
+            <TouchableOpacity
+              style={styles.subscriptionBtn}
+              onPress={handleManageSubscription}
+              disabled={subLoading}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="card-outline" size={18} color={colors.primary} style={{ marginRight: spacing.xs }} />
+              <Text style={styles.subscriptionBtnText}>
+                {subLoading ? 'Chargement...' : subStatus === 'active' ? 'Gérer mon abonnement' : 'Voir les offres'}
+              </Text>
+              <Ionicons name="chevron-forward" size={16} color={colors.primary} />
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+
       {/* Save button */}
       <TouchableOpacity
         style={[styles.saveBtn, saving && styles.saveBtnDisabled]}
@@ -924,6 +1009,64 @@ const styles = StyleSheet.create({
     ...typography.bodySmall,
     fontWeight: '700',
     color: colors.marginRed,
+  },
+
+  // Subscription
+  subscriptionCard: {
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+  },
+  subscriptionInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: spacing.md,
+  },
+  subscriptionBadge: {
+    width: 40,
+    height: 40,
+    borderRadius: borderRadius.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: spacing.sm,
+  },
+  subscriptionBadgeActive: {
+    backgroundColor: colors.light,
+  },
+  subscriptionBadgeInactive: {
+    backgroundColor: colors.cardBackground,
+  },
+  subscriptionStatus: {
+    ...typography.body,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  subscriptionPlan: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  subscriptionDate: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  subscriptionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.cardBackground,
+    borderRadius: borderRadius.md,
+    paddingVertical: spacing.sm + 2,
+    paddingHorizontal: spacing.md,
+    borderWidth: 1.5,
+    borderColor: colors.primary,
+  },
+  subscriptionBtnText: {
+    ...typography.bodySmall,
+    fontWeight: '700',
+    color: colors.primary,
+    flex: 1,
   },
 
   // Version

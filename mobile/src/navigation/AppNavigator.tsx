@@ -169,7 +169,7 @@ const scanStyles = StyleSheet.create({
   },
   menu: {
     backgroundColor: colors.white,
-    borderRadius: 20,
+    borderRadius: 28,
     padding: 8,
     ...shadows.lg,
   },

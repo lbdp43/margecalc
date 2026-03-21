@@ -199,7 +199,7 @@ export function DashboardScreen() {
 const styles = StyleSheet.create({
   heroCard: {
     backgroundColor: colors.primary,
-    borderRadius: borderRadius.xl,
+    borderRadius: borderRadius.xxl,
     marginBottom: spacing.lg,
     overflow: 'hidden',
     ...shadows.lg,
