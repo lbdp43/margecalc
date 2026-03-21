@@ -27,12 +27,14 @@ export interface Product {
   coefficient: number | null;
   tvaRate: number;
   supplier: string | null;
+  imageUrl: string | null;
   createdAt: string;
   updatedAt: string;
 }
 
 export interface ProductWithMargin extends Product {
   computed: MarginResult;
+  servings?: ProductServing[];
 }
 
 export interface MarginInput {
@@ -79,6 +81,7 @@ export interface CreateProductInput {
   coefficient?: number;
   tvaRate: number;
   supplier?: string;
+  imageUrl?: string;
 }
 
 // --- Serving Types (types de service) ---
@@ -104,7 +107,7 @@ export interface ProductServing {
   productId: string;
   servingTypeId: string;
   sellingPriceTTC: number;
-  servingType?: ServingType;
+  servingType: ServingType;
 }
 
 export interface ServingMarginResult {

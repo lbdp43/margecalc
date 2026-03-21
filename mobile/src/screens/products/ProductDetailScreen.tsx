@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { View, Text, StyleSheet, TextInput, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, TextInput, Alert, ActivityIndicator, Image } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -133,6 +133,9 @@ export function ProductDetailScreen({ route, navigation }: Props) {
 
   return (
     <ScreenWrapper>
+      {product.imageUrl && (
+        <Image source={{ uri: product.imageUrl }} style={styles.productImage} resizeMode="cover" />
+      )}
       <Text style={styles.title}>{product.name}</Text>
       <Text style={styles.subtitle}>
         Achat : {product.purchasePriceHT.toFixed(2)} € HT · {product.containerVolumeCl} cl
@@ -255,6 +258,12 @@ export function ProductDetailScreen({ route, navigation }: Props) {
 }
 
 const styles = StyleSheet.create({
+  productImage: {
+    width: '100%',
+    height: 180,
+    borderRadius: borderRadius.md,
+    marginBottom: spacing.md,
+  },
   title: {
     ...typography.h1,
     color: colors.primary,

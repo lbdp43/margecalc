@@ -22,7 +22,7 @@ export async function getProducts(userId: string, categoryId?: string) {
 
   const products = await prisma.product.findMany({
     where,
-    include: { category: true },
+    include: { category: true, servings: { include: { servingType: true } } },
     orderBy: { updatedAt: 'desc' },
   });
 
@@ -32,7 +32,7 @@ export async function getProducts(userId: string, categoryId?: string) {
 export async function getProduct(id: string, userId: string) {
   const product = await prisma.product.findFirst({
     where: { id, userId },
-    include: { category: true },
+    include: { category: true, servings: { include: { servingType: true } } },
   });
   if (!product) throw new Error('Produit non trouvé');
   return enrichProduct(product);
@@ -53,6 +53,7 @@ export async function createProduct(userId: string, data: CreateProductInput) {
       coefficient: data.coefficient ?? null,
       tvaRate: data.tvaRate,
       supplier: data.supplier ?? null,
+      imageUrl: data.imageUrl ?? null,
     },
     include: { category: true },
   });

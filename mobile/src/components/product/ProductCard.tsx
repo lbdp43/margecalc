@@ -12,6 +12,7 @@ interface ProductCardProps {
 
 export function ProductCard({ product, onPress }: ProductCardProps) {
   const accent = MARGIN_COLOR_MAP[product.computed.colorCode];
+  const servings = product.servings || [];
 
   return (
     <TouchableOpacity onPress={onPress} activeOpacity={0.7}>
@@ -39,6 +40,17 @@ export function ProductCard({ product, onPress }: ProductCardProps) {
           </View>
           <Ionicons name="chevron-forward" size={16} color={colors.grayMedium} style={styles.chevron} />
         </View>
+        {servings.length > 0 && (
+          <View style={styles.servingsRow}>
+            {servings.map((s) => (
+              <View key={s.id} style={styles.servingChip}>
+                <Text style={styles.servingChipText}>
+                  {s.servingType?.icon || '🍷'} {s.servingType?.name} · {formatPrice(s.sellingPriceTTC)}
+                </Text>
+              </View>
+            ))}
+          </View>
+        )}
       </Card>
     </TouchableOpacity>
   );
@@ -94,5 +106,26 @@ const styles = StyleSheet.create({
   },
   chevron: {
     marginLeft: spacing.sm,
+  },
+  servingsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.xs,
+    marginTop: spacing.sm,
+    paddingTop: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    marginLeft: spacing.md + 4,
+  },
+  servingChip: {
+    backgroundColor: colors.inputBackground,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: borderRadius.full,
+  },
+  servingChipText: {
+    ...typography.caption,
+    color: colors.text,
+    fontWeight: '500',
   },
 });

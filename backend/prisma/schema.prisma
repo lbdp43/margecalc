@@ -46,6 +46,7 @@ model Product {
   coefficient         Float?
   tvaRate             Float            @default(0.20)
   supplier            String?
+  imageUrl            String?
   createdAt           DateTime         @default(now())
   updatedAt           DateTime         @updatedAt
   priceHistory        PriceHistory[]

@@ -121,6 +121,15 @@ export function DashboardScreen() {
                     <Text style={styles.rankCoeff}>x{p.computed.coefficient.toFixed(1)}</Text>
                   </View>
                 </View>
+                {p.servings && p.servings.length > 0 && (
+                  <View style={styles.rankServings}>
+                    {p.servings.map((s) => (
+                      <Text key={s.id} style={styles.rankServingText}>
+                        {s.servingType?.icon} {s.servingType?.name} {formatPrice(s.sellingPriceTTC)}
+                      </Text>
+                    ))}
+                  </View>
+                )}
               </Card>
             </TouchableOpacity>
           ))}
@@ -149,6 +158,15 @@ export function DashboardScreen() {
                         <Text style={styles.rankCoeff}>x{p.computed.coefficient.toFixed(1)}</Text>
                       </View>
                     </View>
+                    {p.servings && p.servings.length > 0 && (
+                      <View style={styles.rankServings}>
+                        {p.servings.map((s) => (
+                          <Text key={s.id} style={styles.rankServingText}>
+                            {s.servingType?.icon} {s.servingType?.name} {formatPrice(s.sellingPriceTTC)}
+                          </Text>
+                        ))}
+                      </View>
+                    )}
                   </Card>
                 </TouchableOpacity>
               ))}
@@ -301,5 +319,19 @@ const styles = StyleSheet.create({
     ...typography.body,
     color: colors.grayMedium,
     textAlign: 'center',
+  },
+  rankServings: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.xs,
+    marginTop: spacing.xs,
+    paddingTop: spacing.xs,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    marginLeft: 28 + spacing.sm,
+  },
+  rankServingText: {
+    ...typography.caption,
+    color: colors.textSecondary,
   },
 });

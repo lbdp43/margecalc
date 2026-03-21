@@ -270,6 +270,20 @@ export function SettingsScreen() {
             </TouchableOpacity>
           ))}
         </ScrollView>
+        <View style={styles.customContainerRow}>
+          <TextInput
+            style={styles.customContainerInput}
+            value={String(defaultContainerVolumeCl)}
+            onChangeText={(v) => {
+              const vol = parseFloat(v.replace(',', '.'));
+              if (!isNaN(vol) && vol > 0) setDefaultContainerVolumeCl(vol);
+            }}
+            keyboardType="numeric"
+            placeholder="Volume personnalisé"
+            placeholderTextColor={colors.grayMedium}
+          />
+          <Text style={styles.customContainerUnit}>cl</Text>
+        </View>
       </Card>
 
       <Card style={styles.section}>
@@ -308,9 +322,7 @@ export function SettingsScreen() {
               <>
                 <View style={styles.servingInfo}>
                   <View style={styles.servingNameRow}>
-                    <View style={styles.servingIconBadge}>
-                      <Ionicons name="wine-outline" size={16} color={colors.primary} />
-                    </View>
+                    <Text style={styles.servingIconEmoji}>{st.icon || '🍷'}</Text>
                     <Text style={styles.servingName}>{st.name}</Text>
                   </View>
                   <Text style={styles.servingVolume}>{st.volumeCl} cl</Text>
@@ -456,6 +468,27 @@ const styles = StyleSheet.create({
   presetBtnTextActive: {
     color: colors.white,
   },
+  customContainerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: spacing.sm,
+  },
+  customContainerInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: borderRadius.sm,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    ...typography.bodySmall,
+    color: colors.text,
+    backgroundColor: colors.inputBackground,
+  },
+  customContainerUnit: {
+    ...typography.bodySmall,
+    color: colors.textSecondary,
+    marginLeft: spacing.xs,
+  },
   logoutBtn: {
     marginTop: spacing.md,
     borderColor: colors.marginRed,
@@ -485,13 +518,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
   },
-  servingIconBadge: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: colors.primary + '15',
-    alignItems: 'center',
-    justifyContent: 'center',
+  servingIconEmoji: {
+    fontSize: 20,
     marginRight: spacing.sm,
   },
   servingName: {

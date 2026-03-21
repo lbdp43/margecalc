@@ -267,6 +267,7 @@ export function ProductFormScreen({ route, navigation }: Props) {
         sellingPriceTTC: servings[0].sellingPriceTTC,
         tvaRate,
         supplier: supplier || undefined,
+        imageUrl: imageUri || undefined,
       };
 
       let id: string;
