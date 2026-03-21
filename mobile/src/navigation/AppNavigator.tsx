@@ -9,7 +9,7 @@ import { ProductListScreen } from '../screens/products/ProductListScreen';
 import { ProductDetailScreen } from '../screens/products/ProductDetailScreen';
 import { ProductFormScreen } from '../screens/products/ProductFormScreen';
 import { SettingsScreen } from '../screens/settings/SettingsScreen';
-import { colors } from '../theme';
+import { colors, shadows } from '../theme';
 
 const Tab = createBottomTabNavigator();
 const ProductStack = createAppStackNavigator();
@@ -39,7 +39,9 @@ function ScanTabButton() {
           });
         }}
       >
-        <Ionicons name="scan" size={26} color={colors.white} />
+        <View style={scanStyles.innerCircle}>
+          <Ionicons name="scan" size={24} color={colors.white} />
+        </View>
       </TouchableOpacity>
     </View>
   );
@@ -68,16 +70,19 @@ export function AppNavigator() {
           return <Ionicons name={iconName as any} size={22} color={color} />;
         },
         tabBarActiveTintColor: colors.primary,
-        tabBarInactiveTintColor: colors.grayMedium,
+        tabBarInactiveTintColor: colors.tabBarInactive,
         tabBarStyle: {
           backgroundColor: colors.white,
-          borderTopColor: colors.border,
-          paddingBottom: 4,
-          height: 60,
+          borderTopWidth: 0,
+          paddingBottom: 6,
+          paddingTop: 6,
+          height: 64,
+          ...shadows.lg,
         },
         tabBarLabelStyle: {
           fontSize: 11,
-          fontWeight: '500',
+          fontWeight: '600',
+          marginTop: 2,
         },
       })}
     >
@@ -109,20 +114,26 @@ const scanStyles = StyleSheet.create({
   wrapper: {
     alignItems: 'center',
     justifyContent: 'center',
-    width: 64,
-    top: -8,
+    width: 68,
+    top: -14,
   },
   button: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
+    width: 58,
+    height: 58,
+    borderRadius: 29,
     backgroundColor: colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
-    elevation: 6,
+    ...shadows.lg,
+  },
+  innerCircle: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: colors.secondary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.2)',
   },
 });

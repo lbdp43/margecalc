@@ -9,7 +9,7 @@ import { ProductCard } from '../../components/product/ProductCard';
 import { CategoryTabs } from '../../components/product/CategoryTabs';
 import * as productService from '../../services/product.service';
 import * as categoryService from '../../services/category.service';
-import { colors, spacing, borderRadius, typography } from '../../theme';
+import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 
 type Props = NativeStackScreenProps<any, 'ProductList'>;
 
@@ -53,64 +53,79 @@ export function ProductListScreen({ navigation }: Props) {
 
   return (
     <ScreenWrapper scrollable={false}>
+      {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.title}>Mes produits</Text>
-        <Text style={styles.count}>
-          {count} produit{count !== 1 ? 's' : ''}
-        </Text>
+        <View>
+          <Text style={styles.title}>Mes produits</Text>
+          <Text style={styles.count}>
+            {count} produit{count !== 1 ? 's' : ''}
+          </Text>
+        </View>
       </View>
 
+      {/* Category pills */}
       <CategoryTabs
         categories={categories}
         selectedId={selectedCategory}
         onSelect={setSelectedCategory}
       />
 
+      {/* Search bar */}
       <View style={styles.searchRow}>
         <View style={styles.searchBox}>
-          <Ionicons name="search-outline" size={18} color={colors.grayMedium} />
+          <Ionicons name="search-outline" size={20} color={colors.textSecondary} />
           <TextInput
             style={styles.searchInput}
             value={searchQuery}
             onChangeText={setSearchQuery}
             placeholder="Rechercher un produit..."
-            placeholderTextColor={colors.grayMedium}
+            placeholderTextColor={colors.textSecondary}
           />
           {searchQuery.length > 0 && (
-            <TouchableOpacity onPress={() => setSearchQuery('')}>
-              <Ionicons name="close-circle" size={18} color={colors.grayMedium} />
+            <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Ionicons name="close-circle" size={20} color={colors.textSecondary} />
             </TouchableOpacity>
           )}
         </View>
       </View>
 
+      {/* Sort pills */}
       <View style={styles.sortRow}>
         {[
           { key: 'name', label: 'Nom' },
           { key: 'margin', label: 'Marge %' },
           { key: 'price', label: 'Prix' },
           { key: 'coeff', label: 'Coeff' },
-        ].map((s) => (
-          <TouchableOpacity
-            key={s.key}
-            style={[styles.sortBtn, sortBy === s.key && styles.sortBtnActive]}
-            onPress={() => {
-              if (sortBy === s.key) setSortAsc(!sortAsc);
-              else { setSortBy(s.key as any); setSortAsc(true); }
-            }}
-          >
-            <Text style={[styles.sortBtnText, sortBy === s.key && styles.sortBtnTextActive]}>
-              {s.label}
-            </Text>
-            {sortBy === s.key && (
-              <Ionicons name={sortAsc ? 'arrow-up' : 'arrow-down'} size={12} color={colors.white} />
-            )}
-          </TouchableOpacity>
-        ))}
+        ].map((s) => {
+          const isActive = sortBy === s.key;
+          return (
+            <TouchableOpacity
+              key={s.key}
+              style={[styles.sortBtn, isActive && styles.sortBtnActive]}
+              onPress={() => {
+                if (sortBy === s.key) setSortAsc(!sortAsc);
+                else { setSortBy(s.key as any); setSortAsc(true); }
+              }}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.sortBtnText, isActive && styles.sortBtnTextActive]}>
+                {s.label}
+              </Text>
+              {isActive && (
+                <Ionicons
+                  name={sortAsc ? 'arrow-up' : 'arrow-down'}
+                  size={12}
+                  color={colors.textLight}
+                />
+              )}
+            </TouchableOpacity>
+          );
+        })}
       </View>
 
+      {/* Product list */}
       {isLoading ? (
-        <ActivityIndicator color={colors.primary} style={styles.loader} />
+        <ActivityIndicator color={colors.primary} style={styles.loader} size="large" />
       ) : (
         <FlatList
           data={filtered}
@@ -122,20 +137,25 @@ export function ProductListScreen({ navigation }: Props) {
           refreshing={isLoading}
           ListEmptyComponent={
             <View style={styles.empty}>
-              <Ionicons name="cube-outline" size={48} color={colors.grayMedium} />
+              <View style={styles.emptyIconWrap}>
+                <Ionicons name="wine-outline" size={40} color={colors.accent} />
+              </View>
               <Text style={styles.emptyText}>Aucun produit</Text>
-              <Text style={styles.emptySubtext}>Scannez une bouteille ou appuyez sur + pour commencer</Text>
+              <Text style={styles.emptySubtext}>
+                Scannez une bouteille ou appuyez sur + pour commencer
+              </Text>
             </View>
           }
         />
       )}
 
+      {/* FAB */}
       <TouchableOpacity
         style={styles.fab}
         onPress={() => navigation.navigate('ProductForm', {})}
         activeOpacity={0.8}
       >
-        <Ionicons name="add" size={28} color={colors.white} />
+        <Ionicons name="add" size={30} color={colors.textLight} />
       </TouchableOpacity>
     </ScreenWrapper>
   );
@@ -143,50 +163,61 @@ export function ProductListScreen({ navigation }: Props) {
 
 const styles = StyleSheet.create({
   header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'baseline',
-    marginBottom: spacing.md,
+    marginBottom: spacing.lg,
   },
   title: {
     ...typography.h1,
-    color: colors.primary,
+    color: colors.text,
   },
   count: {
     ...typography.bodySmall,
     color: colors.textSecondary,
+    marginTop: 2,
   },
   list: {
-    paddingBottom: 80,
+    paddingBottom: 100,
+    paddingTop: spacing.xs,
   },
   loader: {
-    marginTop: spacing.xl,
+    marginTop: spacing.xl * 2,
   },
   empty: {
     alignItems: 'center',
-    paddingTop: spacing.xl * 2,
-    gap: spacing.sm,
+    paddingTop: spacing.xl * 3,
+    gap: spacing.sm + 4,
+  },
+  emptyIconWrap: {
+    width: 80,
+    height: 80,
+    borderRadius: borderRadius.xl,
+    backgroundColor: colors.light,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.sm,
   },
   emptyText: {
     ...typography.h3,
-    color: colors.textSecondary,
+    color: colors.text,
   },
   emptySubtext: {
     ...typography.body,
-    color: colors.grayMedium,
+    color: colors.textSecondary,
     textAlign: 'center',
+    maxWidth: 260,
+    lineHeight: 22,
   },
   searchRow: {
-    marginBottom: spacing.sm,
+    marginBottom: spacing.md,
   },
   searchBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.inputBackground,
-    borderRadius: borderRadius.md,
+    backgroundColor: colors.cardBackground,
+    borderRadius: borderRadius.lg,
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    gap: spacing.sm,
+    paddingVertical: spacing.sm + 4,
+    gap: spacing.sm + 2,
+    ...shadows.sm,
   },
   searchInput: {
     flex: 1,
@@ -196,20 +227,22 @@ const styles = StyleSheet.create({
   },
   sortRow: {
     flexDirection: 'row',
-    gap: spacing.xs,
+    gap: spacing.sm,
     marginBottom: spacing.md,
   },
   sortBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
     borderRadius: borderRadius.full,
-    backgroundColor: colors.inputBackground,
-    gap: 4,
+    backgroundColor: colors.cardBackground,
+    gap: spacing.xs,
+    ...shadows.sm,
   },
   sortBtnActive: {
     backgroundColor: colors.primary,
+    ...shadows.md,
   },
   sortBtnText: {
     ...typography.caption,
@@ -217,22 +250,18 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
   },
   sortBtnTextActive: {
-    color: colors.white,
+    color: colors.textLight,
   },
   fab: {
     position: 'absolute',
-    bottom: spacing.lg,
-    right: spacing.md,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    bottom: spacing.xl,
+    right: spacing.lg,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
     backgroundColor: colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 5,
+    ...shadows.lg,
   },
 });

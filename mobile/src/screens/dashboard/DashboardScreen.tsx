@@ -12,7 +12,7 @@ import { ScreenWrapper } from '../../components/ui/ScreenWrapper';
 import { Card } from '../../components/ui/Card';
 import * as productService from '../../services/product.service';
 import { useAuthStore } from '../../store/auth.store';
-import { colors, spacing, borderRadius, typography } from '../../theme';
+import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 
 const WELCOME_DISMISSED_KEY = 'margebar_welcome_dismissed';
 
@@ -61,115 +61,125 @@ export function DashboardScreen() {
     ? products.reduce((sum, p) => sum + p.computed.marginPercent, 0) / products.length
     : 0;
 
+  const renderRankItem = (p: ProductWithMargin, index: number, badgeColor: string) => (
+    <TouchableOpacity key={p.id} activeOpacity={0.7} onPress={() => navigateToProduct(p.id)}>
+      <View style={styles.rankCard}>
+        <View style={styles.rankRow}>
+          <View style={[styles.rankBadge, { backgroundColor: badgeColor }]}>
+            <Text style={styles.rankNumber}>{index + 1}</Text>
+          </View>
+          <View style={styles.rankInfo}>
+            <Text style={styles.rankName} numberOfLines={1}>{p.name}</Text>
+            <Text style={styles.rankDetail}>
+              Achat {formatPrice(p.purchasePriceHT)} HT · Vente {formatPrice(p.computed.sellingPriceTTC)} TTC
+            </Text>
+          </View>
+          <View style={styles.rankMargin}>
+            <Text style={[styles.rankMarginText, { color: MARGIN_COLOR_MAP[p.computed.colorCode] }]}>
+              {formatPercent(p.computed.marginPercent)}
+            </Text>
+            <Text style={styles.rankCoeff}>x{p.computed.coefficient.toFixed(1)}</Text>
+          </View>
+        </View>
+        {p.servings && p.servings.length > 0 && (
+          <View style={styles.rankServings}>
+            {p.servings.map((s) => (
+              <View key={s.id} style={styles.servingChip}>
+                <Text style={styles.servingChipText}>
+                  {s.servingType?.icon} {s.servingType?.name} {formatPrice(s.sellingPriceTTC)}
+                </Text>
+              </View>
+            ))}
+          </View>
+        )}
+      </View>
+    </TouchableOpacity>
+  );
+
   return (
     <ScreenWrapper>
-      <Text style={styles.greeting}>
-        {user?.businessName || 'Mon établissement'}
-      </Text>
-      <Text style={styles.title}>Tableau de bord</Text>
-
-      {welcomeVisible && !loadingPref && (
-        <Card style={styles.welcomeCard}>
-          <TouchableOpacity style={styles.closeBtn} onPress={handleDismiss}>
-            <Ionicons name="close" size={16} color={colors.white} />
-          </TouchableOpacity>
-          <Text style={styles.welcomeTitle}>Bienvenue sur MargeBar</Text>
-          <Text style={styles.welcomeText}>
-            Calculez vos marges sur chaque produit : spiritueux, vins, bières, softs...
-            Ajoutez vos produits, choisissez votre méthode de calcul et visualisez votre rentabilité.
+      {/* Hero Header */}
+      <View style={styles.heroCard}>
+        <View style={styles.heroContent}>
+          <Text style={styles.heroGreeting}>Bonjour 👋</Text>
+          <Text style={styles.heroTitle}>
+            {user?.businessName || 'Mon établissement'}
           </Text>
-          <Text style={styles.welcomePrivacy}>
-            Vos données sont privées et vous appartiennent. Aucun accès administrateur à vos produits ou résultats.
-          </Text>
-        </Card>
-      )}
+        </View>
 
+        {welcomeVisible && !loadingPref && (
+          <View style={styles.heroDivider} />
+        )}
+
+        {welcomeVisible && !loadingPref && (
+          <View style={styles.welcomeSection}>
+            <TouchableOpacity style={styles.closeBtn} onPress={handleDismiss}>
+              <Ionicons name="close" size={14} color={colors.textLight} />
+            </TouchableOpacity>
+            <View style={styles.welcomeIconRow}>
+              <Ionicons name="information-circle-outline" size={18} color="rgba(255,255,255,0.8)" />
+              <Text style={styles.welcomeTitle}>Bienvenue sur MargeBar</Text>
+            </View>
+            <Text style={styles.welcomeText}>
+              Calculez vos marges sur chaque produit : spiritueux, vins, bières, softs...
+              Ajoutez vos produits, choisissez votre méthode de calcul et visualisez votre rentabilité.
+            </Text>
+            <Text style={styles.welcomePrivacy}>
+              🔒 Vos données sont privées et vous appartiennent.
+            </Text>
+          </View>
+        )}
+      </View>
+
+      {/* Stats Row */}
       <View style={styles.statsRow}>
-        <Card style={styles.statCard}>
-          <Ionicons name="cube-outline" size={20} color={colors.primary} style={styles.statIcon} />
+        <View style={styles.statCard}>
+          <View style={styles.statIconContainer}>
+            <Ionicons name="cube-outline" size={22} color={colors.accent} />
+          </View>
           <Text style={styles.statValue}>{products.length}</Text>
           <Text style={styles.statLabel}>Produits</Text>
-        </Card>
-        <Card style={styles.statCard}>
-          <Ionicons name="trending-up-outline" size={20} color={colors.primary} style={styles.statIcon} />
+        </View>
+        <View style={styles.statCard}>
+          <View style={styles.statIconContainer}>
+            <Ionicons name="trending-up-outline" size={22} color={colors.accent} />
+          </View>
           <Text style={styles.statValue}>{formatPercent(avgMargin)}</Text>
           <Text style={styles.statLabel}>Marge moyenne</Text>
-        </Card>
+        </View>
       </View>
 
       {products.length > 0 && (
         <>
           {/* Top 5 rentabilité */}
-          <Text style={styles.sectionTitle}>Top 5 rentabilité</Text>
-          {sorted.slice(0, 5).map((p, index) => (
-            <TouchableOpacity key={p.id} activeOpacity={0.7} onPress={() => navigateToProduct(p.id)}>
-              <Card style={styles.rankCard}>
-                <View style={styles.rankRow}>
-                  <View style={[styles.rankBadge, { backgroundColor: colors.marginGreen }]}>
-                    <Text style={styles.rankNumber}>{index + 1}</Text>
-                  </View>
-                  <View style={styles.rankInfo}>
-                    <Text style={styles.rankName} numberOfLines={1}>{p.name}</Text>
-                    <Text style={styles.rankDetail}>
-                      Achat {formatPrice(p.purchasePriceHT)} HT · Vente {formatPrice(p.computed.sellingPriceTTC)} TTC
-                    </Text>
-                  </View>
-                  <View style={styles.rankMargin}>
-                    <Text style={[styles.rankMarginText, { color: MARGIN_COLOR_MAP[p.computed.colorCode] }]}>
-                      {formatPercent(p.computed.marginPercent)}
-                    </Text>
-                    <Text style={styles.rankCoeff}>x{p.computed.coefficient.toFixed(1)}</Text>
-                  </View>
-                </View>
-                {p.servings && p.servings.length > 0 && (
-                  <View style={styles.rankServings}>
-                    {p.servings.map((s) => (
-                      <Text key={s.id} style={styles.rankServingText}>
-                        {s.servingType?.icon} {s.servingType?.name} {formatPrice(s.sellingPriceTTC)}
-                      </Text>
-                    ))}
-                  </View>
-                )}
-              </Card>
-            </TouchableOpacity>
-          ))}
+          <View style={styles.sectionHeader}>
+            <Ionicons name="trophy-outline" size={18} color={colors.marginGreen} />
+            <Text style={styles.sectionTitle}>Top 5 rentabilité</Text>
+          </View>
+          <View style={styles.sectionCard}>
+            {sorted.slice(0, 5).map((p, index) => (
+              <React.Fragment key={p.id}>
+                {index > 0 && <View style={styles.listDivider} />}
+                {renderRankItem(p, index, colors.marginGreen)}
+              </React.Fragment>
+            ))}
+          </View>
 
           {/* Flop 5 rentabilité */}
           {sorted.length > 1 && (
             <>
-              <Text style={[styles.sectionTitle, { marginTop: spacing.md }]}>Flop 5 rentabilité</Text>
-              {[...sorted].reverse().slice(0, Math.min(5, sorted.length)).filter((p) => !sorted.slice(0, 5).find((t) => t.id === p.id)).map((p, index) => (
-                <TouchableOpacity key={p.id} activeOpacity={0.7} onPress={() => navigateToProduct(p.id)}>
-                  <Card style={styles.rankCard}>
-                    <View style={styles.rankRow}>
-                      <View style={[styles.rankBadge, { backgroundColor: colors.marginRed }]}>
-                        <Text style={styles.rankNumber}>{index + 1}</Text>
-                      </View>
-                      <View style={styles.rankInfo}>
-                        <Text style={styles.rankName} numberOfLines={1}>{p.name}</Text>
-                        <Text style={styles.rankDetail}>
-                          Achat {formatPrice(p.purchasePriceHT)} HT · Vente {formatPrice(p.computed.sellingPriceTTC)} TTC
-                        </Text>
-                      </View>
-                      <View style={styles.rankMargin}>
-                        <Text style={[styles.rankMarginText, { color: MARGIN_COLOR_MAP[p.computed.colorCode] }]}>
-                          {formatPercent(p.computed.marginPercent)}
-                        </Text>
-                        <Text style={styles.rankCoeff}>x{p.computed.coefficient.toFixed(1)}</Text>
-                      </View>
-                    </View>
-                    {p.servings && p.servings.length > 0 && (
-                      <View style={styles.rankServings}>
-                        {p.servings.map((s) => (
-                          <Text key={s.id} style={styles.rankServingText}>
-                            {s.servingType?.icon} {s.servingType?.name} {formatPrice(s.sellingPriceTTC)}
-                          </Text>
-                        ))}
-                      </View>
-                    )}
-                  </Card>
-                </TouchableOpacity>
-              ))}
+              <View style={[styles.sectionHeader, { marginTop: spacing.lg }]}>
+                <Ionicons name="arrow-down-circle-outline" size={18} color={colors.marginRed} />
+                <Text style={styles.sectionTitle}>Flop 5 rentabilité</Text>
+              </View>
+              <View style={styles.sectionCard}>
+                {[...sorted].reverse().slice(0, Math.min(5, sorted.length)).filter((p) => !sorted.slice(0, 5).find((t) => t.id === p.id)).map((p, index) => (
+                  <React.Fragment key={p.id}>
+                    {index > 0 && <View style={styles.listDivider} />}
+                    {renderRankItem(p, index, colors.marginRed)}
+                  </React.Fragment>
+                ))}
+              </View>
             </>
           )}
         </>
@@ -177,8 +187,13 @@ export function DashboardScreen() {
 
       {products.length === 0 && !loadingPref && (
         <View style={styles.emptyState}>
-          <Ionicons name="analytics-outline" size={48} color={colors.grayMedium} />
-          <Text style={styles.emptyText}>Ajoutez des produits pour voir vos statistiques</Text>
+          <View style={styles.emptyIconCircle}>
+            <Ionicons name="analytics-outline" size={40} color={colors.accent} />
+          </View>
+          <Text style={styles.emptyTitle}>Aucun produit</Text>
+          <Text style={styles.emptyText}>
+            Ajoutez des produits pour voir vos statistiques de rentabilité
+          </Text>
         </View>
       )}
     </ScreenWrapper>
@@ -186,17 +201,77 @@ export function DashboardScreen() {
 }
 
 const styles = StyleSheet.create({
-  greeting: {
-    ...typography.caption,
-    color: colors.textSecondary,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-  },
-  title: {
-    ...typography.h1,
-    color: colors.primary,
+  /* ── Hero Header ────────────────────────────────────────── */
+  heroCard: {
+    backgroundColor: colors.primary,
+    borderRadius: borderRadius.xl,
     marginBottom: spacing.lg,
+    overflow: 'hidden',
+    ...shadows.lg,
   },
+  heroContent: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.md,
+  },
+  heroGreeting: {
+    ...typography.bodySmall,
+    color: 'rgba(255,255,255,0.75)',
+    marginBottom: spacing.xs,
+  },
+  heroTitle: {
+    ...typography.h1,
+    color: colors.textLight,
+  },
+  heroDivider: {
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    marginHorizontal: spacing.lg,
+  },
+
+  /* ── Welcome (inside hero) ──────────────────────────────── */
+  welcomeSection: {
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    position: 'relative',
+  },
+  closeBtn: {
+    position: 'absolute',
+    top: spacing.sm,
+    right: spacing.sm,
+    width: 26,
+    height: 26,
+    borderRadius: borderRadius.full,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 1,
+  },
+  welcomeIconRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    marginBottom: spacing.sm,
+  },
+  welcomeTitle: {
+    ...typography.bodySmall,
+    fontWeight: '700',
+    color: colors.textLight,
+  },
+  welcomeText: {
+    ...typography.caption,
+    color: 'rgba(255,255,255,0.85)',
+    lineHeight: 18,
+    marginBottom: spacing.sm,
+    paddingRight: spacing.xl,
+  },
+  welcomePrivacy: {
+    ...typography.caption,
+    color: 'rgba(255,255,255,0.6)',
+    lineHeight: 16,
+  },
+
+  /* ── Stats Row ──────────────────────────────────────────── */
   statsRow: {
     flexDirection: 'row',
     gap: spacing.md,
@@ -205,29 +280,61 @@ const styles = StyleSheet.create({
   statCard: {
     flex: 1,
     alignItems: 'center',
-    paddingVertical: spacing.md,
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.lg,
+    paddingVertical: spacing.lg,
+    paddingHorizontal: spacing.md,
+    ...shadows.sm,
   },
-  statIcon: {
-    marginBottom: spacing.xs,
+  statIconContainer: {
+    width: 44,
+    height: 44,
+    borderRadius: borderRadius.md,
+    backgroundColor: colors.light,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.sm,
   },
   statValue: {
-    ...typography.h2,
-    color: colors.primary,
+    ...typography.h1,
+    color: colors.accent,
     marginBottom: 2,
   },
   statLabel: {
     ...typography.caption,
     color: colors.textSecondary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
-  // Top/Flop sections
+
+  /* ── Section Headers ────────────────────────────────────── */
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginBottom: spacing.sm,
+  },
   sectionTitle: {
     ...typography.h3,
     color: colors.text,
-    marginBottom: spacing.sm,
   },
+
+  /* ── Section Card (wrapping list) ───────────────────────── */
+  sectionCard: {
+    backgroundColor: colors.cardBackground,
+    borderRadius: borderRadius.lg,
+    overflow: 'hidden',
+    ...shadows.sm,
+  },
+  listDivider: {
+    height: 1,
+    backgroundColor: colors.border,
+    marginHorizontal: spacing.md,
+  },
+
+  /* ── Rank Items ─────────────────────────────────────────── */
   rankCard: {
-    marginBottom: spacing.xs,
-    paddingVertical: spacing.sm,
+    paddingVertical: spacing.md,
     paddingHorizontal: spacing.md,
   },
   rankRow: {
@@ -235,20 +342,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   rankBadge: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width: 32,
+    height: 32,
+    borderRadius: borderRadius.full,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: spacing.sm,
+    marginRight: spacing.md,
+    ...shadows.sm,
   },
   rankNumber: {
     ...typography.bodySmall,
-    fontWeight: '700',
-    color: colors.white,
+    fontWeight: '800',
+    color: colors.textLight,
   },
   rankInfo: {
     flex: 1,
+    marginRight: spacing.sm,
   },
   rankName: {
     ...typography.body,
@@ -258,80 +367,64 @@ const styles = StyleSheet.create({
   rankDetail: {
     ...typography.caption,
     color: colors.textSecondary,
-    marginTop: 1,
+    marginTop: 2,
   },
   rankMargin: {
     alignItems: 'flex-end',
   },
   rankMarginText: {
-    ...typography.body,
-    fontWeight: '700',
+    ...typography.h3,
+    fontWeight: '800',
   },
   rankCoeff: {
     ...typography.caption,
     color: colors.textSecondary,
-    marginTop: 1,
+    marginTop: 2,
   },
-  // Welcome
-  welcomeCard: {
-    marginBottom: spacing.lg,
-    backgroundColor: colors.primary,
-    position: 'relative',
-  },
-  closeBtn: {
-    position: 'absolute',
-    top: spacing.sm,
-    right: spacing.sm,
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 1,
-  },
-  welcomeTitle: {
-    ...typography.h3,
-    color: colors.white,
-    marginBottom: spacing.sm,
-    paddingRight: spacing.xl,
-  },
-  welcomeText: {
-    ...typography.bodySmall,
-    color: colors.white,
-    opacity: 0.9,
-    marginBottom: spacing.sm,
-    lineHeight: 20,
-  },
-  welcomePrivacy: {
-    ...typography.caption,
-    color: colors.white,
-    opacity: 0.7,
-    fontStyle: 'italic',
-    lineHeight: 18,
-  },
-  emptyState: {
-    alignItems: 'center',
-    paddingTop: spacing.xl * 2,
-    gap: spacing.md,
-  },
-  emptyText: {
-    ...typography.body,
-    color: colors.grayMedium,
-    textAlign: 'center',
-  },
+
+  /* ── Servings Chips ─────────────────────────────────────── */
   rankServings: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: spacing.xs,
-    marginTop: spacing.xs,
-    paddingTop: spacing.xs,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-    marginLeft: 28 + spacing.sm,
+    marginTop: spacing.sm,
+    marginLeft: 32 + spacing.md,
   },
-  rankServingText: {
+  servingChip: {
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.full,
+    paddingHorizontal: spacing.sm + 2,
+    paddingVertical: spacing.xs,
+  },
+  servingChipText: {
     ...typography.caption,
     color: colors.textSecondary,
+  },
+
+  /* ── Empty State ────────────────────────────────────────── */
+  emptyState: {
+    alignItems: 'center',
+    paddingTop: spacing.xxl,
+    paddingHorizontal: spacing.xl,
+    gap: spacing.sm,
+  },
+  emptyIconCircle: {
+    width: 80,
+    height: 80,
+    borderRadius: borderRadius.full,
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.sm,
+  },
+  emptyTitle: {
+    ...typography.h3,
+    color: colors.text,
+  },
+  emptyText: {
+    ...typography.body,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 22,
   },
 });

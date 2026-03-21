@@ -1,6 +1,6 @@
 import React, { ReactNode } from 'react';
 import { TouchableOpacity, Text, View, StyleSheet, ActivityIndicator, ViewStyle } from 'react-native';
-import { colors, spacing, borderRadius, typography } from '../../theme';
+import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 
 interface ButtonProps {
   title: string;
@@ -20,7 +20,7 @@ export function Button({ title, onPress, variant = 'primary', loading, disabled,
       style={[styles.base, styles[variant], isDisabled && styles.disabled, style]}
       onPress={onPress}
       disabled={isDisabled}
-      activeOpacity={0.7}
+      activeOpacity={0.8}
     >
       {loading ? (
         <ActivityIndicator color={variant === 'outline' ? colors.primary : variant === 'danger' ? colors.marginRed : colors.textLight} />
@@ -43,23 +43,25 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.md,
     alignItems: 'center',
     justifyContent: 'center',
-    minHeight: 48,
+    minHeight: 52,
   },
   primary: {
     backgroundColor: colors.primary,
+    ...shadows.sm,
   },
   secondary: {
     backgroundColor: colors.secondary,
+    ...shadows.sm,
   },
   outline: {
     backgroundColor: 'transparent',
-    borderWidth: 2,
-    borderColor: colors.primary,
+    borderWidth: 1.5,
+    borderColor: colors.border,
   },
   danger: {
-    backgroundColor: 'transparent',
-    borderWidth: 2,
-    borderColor: colors.marginRed,
+    backgroundColor: colors.marginRed + '10',
+    borderWidth: 1.5,
+    borderColor: colors.marginRed + '40',
   },
   disabled: {
     opacity: 0.5,
@@ -77,7 +79,7 @@ const styles = StyleSheet.create({
     color: colors.textLight,
   },
   textOutline: {
-    color: colors.primary,
+    color: colors.text,
   },
   textDanger: {
     color: colors.marginRed,

@@ -11,14 +11,18 @@ interface InputProps extends TextInputProps {
 export function Input({ label, error, suffix, style, ...props }: InputProps) {
   return (
     <View style={styles.container}>
-      <Text style={styles.label}>{label}</Text>
+      {label ? <Text style={styles.label}>{label}</Text> : null}
       <View style={styles.inputWrapper}>
         <TextInput
           style={[styles.input, suffix ? styles.inputWithSuffix : null, style]}
-          placeholderTextColor={colors.grayMedium}
+          placeholderTextColor={colors.tabBarInactive}
           {...props}
         />
-        {suffix && <Text style={styles.suffix}>{suffix}</Text>}
+        {suffix && (
+          <View style={styles.suffixWrap}>
+            <Text style={styles.suffix}>{suffix}</Text>
+          </View>
+        )}
       </View>
       {error && <Text style={styles.error}>{error}</Text>}
     </View>
@@ -33,7 +37,7 @@ const styles = StyleSheet.create({
     ...typography.bodySmall,
     fontWeight: '600',
     color: colors.text,
-    marginBottom: spacing.xs,
+    marginBottom: spacing.xs + 2,
   },
   inputWrapper: {
     flexDirection: 'row',
@@ -42,7 +46,9 @@ const styles = StyleSheet.create({
   input: {
     flex: 1,
     backgroundColor: colors.inputBackground,
-    borderRadius: borderRadius.sm,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm + 4,
     ...typography.body,
@@ -51,14 +57,21 @@ const styles = StyleSheet.create({
   inputWithSuffix: {
     borderTopRightRadius: 0,
     borderBottomRightRadius: 0,
+    borderRightWidth: 0,
   },
-  suffix: {
-    backgroundColor: colors.border,
+  suffixWrap: {
+    backgroundColor: colors.surface,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm + 4,
-    borderTopRightRadius: borderRadius.sm,
-    borderBottomRightRadius: borderRadius.sm,
+    borderTopRightRadius: borderRadius.md,
+    borderBottomRightRadius: borderRadius.md,
+    borderWidth: 1,
+    borderLeftWidth: 0,
+    borderColor: colors.border,
+  },
+  suffix: {
     ...typography.body,
+    fontWeight: '600',
     color: colors.textSecondary,
   },
   error: {

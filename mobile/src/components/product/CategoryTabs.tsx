@@ -1,7 +1,7 @@
 import React from 'react';
-import { ScrollView, TouchableOpacity, Text, StyleSheet } from 'react-native';
+import { ScrollView, TouchableOpacity, Text, View, StyleSheet } from 'react-native';
 import { Category } from '@margebar/shared';
-import { colors, spacing, borderRadius, typography } from '../../theme';
+import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 
 interface CategoryTabsProps {
   categories: Category[];
@@ -22,20 +22,27 @@ export function CategoryTabs({ categories, selectedId, onSelect }: CategoryTabsP
         onPress={() => onSelect(null)}
         activeOpacity={0.7}
       >
+        <Text style={styles.tabIcon}>📋</Text>
         <Text style={[styles.tabText, !selectedId && styles.tabTextActive]}>Tous</Text>
       </TouchableOpacity>
-      {categories.map((cat) => (
-        <TouchableOpacity
-          key={cat.id}
-          style={[styles.tab, selectedId === cat.id && styles.tabActive]}
-          onPress={() => onSelect(cat.id)}
-          activeOpacity={0.7}
-        >
-          <Text style={[styles.tabText, selectedId === cat.id && styles.tabTextActive]}>
-            {cat.name}
-          </Text>
-        </TouchableOpacity>
-      ))}
+      {categories.map((cat) => {
+        const isActive = selectedId === cat.id;
+        return (
+          <TouchableOpacity
+            key={cat.id}
+            style={[styles.tab, isActive && styles.tabActive]}
+            onPress={() => onSelect(cat.id)}
+            activeOpacity={0.7}
+          >
+            {cat.icon ? (
+              <Text style={styles.tabIcon}>{cat.icon}</Text>
+            ) : null}
+            <Text style={[styles.tabText, isActive && styles.tabTextActive]}>
+              {cat.name}
+            </Text>
+          </TouchableOpacity>
+        );
+      })}
     </ScrollView>
   );
 }
@@ -43,22 +50,32 @@ export function CategoryTabs({ categories, selectedId, onSelect }: CategoryTabsP
 const styles = StyleSheet.create({
   container: {
     marginBottom: spacing.md,
-    maxHeight: 40,
+    maxHeight: 44,
   },
   content: {
-    gap: spacing.xs,
+    gap: spacing.sm,
+    paddingHorizontal: 2,
+    paddingVertical: 2,
   },
   tab: {
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
+    paddingVertical: spacing.sm + 2,
     borderRadius: borderRadius.full,
-    backgroundColor: colors.inputBackground,
+    backgroundColor: colors.cardBackground,
+    gap: spacing.xs + 2,
+    ...shadows.sm,
   },
   tabActive: {
     backgroundColor: colors.primary,
+    ...shadows.md,
+  },
+  tabIcon: {
+    fontSize: 14,
   },
   tabText: {
-    ...typography.caption,
+    ...typography.bodySmall,
     fontWeight: '600',
     color: colors.textSecondary,
   },

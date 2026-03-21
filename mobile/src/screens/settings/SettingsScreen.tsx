@@ -12,7 +12,7 @@ import { useAuthStore } from '../../store/auth.store';
 import { api } from '../../services/api';
 import * as servingService from '../../services/serving.service';
 import * as categoryService from '../../services/category.service';
-import { colors, spacing, borderRadius, typography } from '../../theme';
+import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 
 export function SettingsScreen() {
   const { user, setAuth, logout } = useAuthStore();
@@ -179,223 +179,284 @@ export function SettingsScreen() {
     <ScreenWrapper>
       <Text style={styles.title}>Paramètres</Text>
 
-      <Card style={styles.section}>
-        <Text style={styles.sectionTitle}>Mon établissement</Text>
-        <Input
-          label="Nom de l'établissement"
-          value={businessName}
-          onChangeText={setBusinessName}
-          placeholder="Ex: La Brasserie des Plantes"
-        />
-        <Text style={styles.email}>{user?.email}</Text>
-      </Card>
-
-      <Card style={styles.section}>
-        <Text style={styles.sectionTitle}>TVA</Text>
-        <View style={styles.switchRow}>
-          <View style={styles.switchInfo}>
-            <Text style={styles.switchLabel}>Auto-entrepreneur</Text>
-            <Text style={styles.switchDesc}>Désactive la TVA sur tous les calculs</Text>
+      {/* Mon établissement */}
+      <View style={styles.sectionCard}>
+        <View style={styles.sectionHeader}>
+          <View style={styles.sectionAccent} />
+          <Text style={styles.sectionTitle}>Mon établissement</Text>
+        </View>
+        <View style={styles.sectionBody}>
+          <Input
+            label="Nom de l'établissement"
+            value={businessName}
+            onChangeText={setBusinessName}
+            placeholder="Ex: La Brasserie des Plantes"
+          />
+          <View style={styles.emailRow}>
+            <Ionicons name="mail-outline" size={16} color={colors.textSecondary} />
+            <Text style={styles.email}>{user?.email}</Text>
           </View>
-          <Switch
-            value={isAutoEntrepreneur}
-            onValueChange={setIsAutoEntrepreneur}
-            trackColor={{ true: colors.accent }}
-            thumbColor={colors.white}
-          />
         </View>
-      </Card>
+      </View>
 
-      <Card style={styles.section}>
-        <Text style={styles.sectionTitle}>Seuils de marge</Text>
-        <Text style={styles.sectionDesc}>
-          Définissez les seuils pour les indicateurs de couleur
-        </Text>
-        <View style={styles.thresholdRow}>
-          <View style={[styles.thresholdDot, { backgroundColor: colors.marginGreen }]} />
-          <Text style={styles.thresholdLabel}>Bonne marge (vert) ≥</Text>
-          <TextInput
-            style={styles.thresholdInput}
-            value={greenThreshold}
-            onChangeText={setGreenThreshold}
-            keyboardType="numeric"
-            placeholder="65"
-            placeholderTextColor={colors.grayMedium}
-          />
-          <Text style={styles.thresholdUnit}>%</Text>
+      {/* TVA */}
+      <View style={styles.sectionCard}>
+        <View style={styles.sectionHeader}>
+          <View style={styles.sectionAccent} />
+          <Text style={styles.sectionTitle}>TVA</Text>
         </View>
-        <View style={styles.thresholdRow}>
-          <View style={[styles.thresholdDot, { backgroundColor: colors.marginOrange }]} />
-          <Text style={styles.thresholdLabel}>Marge correcte (orange) ≥</Text>
-          <TextInput
-            style={styles.thresholdInput}
-            value={orangeThreshold}
-            onChangeText={setOrangeThreshold}
-            keyboardType="numeric"
-            placeholder="50"
-            placeholderTextColor={colors.grayMedium}
-          />
-          <Text style={styles.thresholdUnit}>%</Text>
-        </View>
-        <View style={styles.thresholdRow}>
-          <View style={[styles.thresholdDot, { backgroundColor: colors.marginRed }]} />
-          <Text style={styles.thresholdLabel}>Marge faible (rouge)</Text>
-          <Text style={styles.thresholdAuto}>{'< '}{orangeThreshold || '50'}%</Text>
-        </View>
-      </Card>
-
-      <Card style={styles.section}>
-        <Text style={styles.sectionTitle}>Contenant par défaut</Text>
-        <Text style={styles.sectionDesc}>
-          Volume du contenant pré-sélectionné lors de l'ajout d'un produit
-        </Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.presetScroll}>
-          {CONTAINER_PRESETS.map((preset) => (
-            <TouchableOpacity
-              key={preset.volumeCl}
-              style={[
-                styles.presetBtn,
-                defaultContainerVolumeCl === preset.volumeCl && styles.presetBtnActive,
-              ]}
-              onPress={() => setDefaultContainerVolumeCl(preset.volumeCl)}
-            >
-              <Text
-                style={[
-                  styles.presetBtnText,
-                  defaultContainerVolumeCl === preset.volumeCl && styles.presetBtnTextActive,
-                ]}
-              >
-                {preset.label}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-        <View style={styles.customContainerRow}>
-          <TextInput
-            style={styles.customContainerInput}
-            value={String(defaultContainerVolumeCl)}
-            onChangeText={(v) => {
-              const vol = parseFloat(v.replace(',', '.'));
-              if (!isNaN(vol) && vol > 0) setDefaultContainerVolumeCl(vol);
-            }}
-            keyboardType="numeric"
-            placeholder="Volume personnalisé"
-            placeholderTextColor={colors.grayMedium}
-          />
-          <Text style={styles.customContainerUnit}>cl</Text>
-        </View>
-      </Card>
-
-      <Card style={styles.section}>
-        <Text style={styles.sectionTitle}>Types de service</Text>
-        <Text style={styles.sectionDesc}>
-          Définissez les formats de service pour calculer vos marges (shot, demi, pinte...)
-        </Text>
-
-        {servingTypes.map((st) => (
-          <View key={st.id} style={styles.servingRow}>
-            {editingId === st.id ? (
-              <View style={styles.servingEditRow}>
-                <TextInput
-                  style={[styles.servingInput, { flex: 2 }]}
-                  value={editName}
-                  onChangeText={setEditName}
-                  placeholder="Nom"
-                  placeholderTextColor={colors.grayMedium}
-                />
-                <TextInput
-                  style={[styles.servingInput, { flex: 1 }]}
-                  value={editVolume}
-                  onChangeText={setEditVolume}
-                  keyboardType="numeric"
-                  placeholder="cl"
-                  placeholderTextColor={colors.grayMedium}
-                />
-                <TouchableOpacity onPress={() => handleEditServing(st.id)} style={styles.iconBtn}>
-                  <Ionicons name="checkmark-circle" size={22} color={colors.accent} />
-                </TouchableOpacity>
-                <TouchableOpacity onPress={() => setEditingId(null)} style={styles.iconBtn}>
-                  <Ionicons name="close-circle" size={22} color={colors.marginRed} />
-                </TouchableOpacity>
-              </View>
-            ) : (
-              <>
-                <View style={styles.servingInfo}>
-                  <View style={styles.servingNameRow}>
-                    <Text style={styles.servingIconEmoji}>{st.icon || '🍷'}</Text>
-                    <Text style={styles.servingName}>{st.name}</Text>
-                  </View>
-                  <Text style={styles.servingVolume}>{st.volumeCl} cl</Text>
-                </View>
-                <View style={styles.servingActions}>
-                  <TouchableOpacity onPress={() => startEdit(st)} style={styles.iconBtn}>
-                    <Ionicons name="pencil-outline" size={18} color={colors.textSecondary} />
-                  </TouchableOpacity>
-                  <TouchableOpacity onPress={() => handleDeleteServing(st.id, st.name)} style={styles.iconBtn}>
-                    <Ionicons name="trash-outline" size={18} color={colors.marginRed} />
-                  </TouchableOpacity>
-                </View>
-              </>
-            )}
+        <View style={styles.sectionBody}>
+          <View style={styles.switchRow}>
+            <View style={styles.switchInfo}>
+              <Text style={styles.switchLabel}>Auto-entrepreneur</Text>
+              <Text style={styles.switchDesc}>Désactive la TVA sur tous les calculs</Text>
+            </View>
+            <Switch
+              value={isAutoEntrepreneur}
+              onValueChange={setIsAutoEntrepreneur}
+              trackColor={{ false: colors.border, true: colors.accent }}
+              thumbColor={colors.cardBackground}
+            />
           </View>
-        ))}
-
-        <View style={styles.addServingRow}>
-          <TextInput
-            style={[styles.servingInput, { flex: 2 }]}
-            value={newName}
-            onChangeText={setNewName}
-            placeholder="Nom (ex: Coupe)"
-            placeholderTextColor={colors.grayMedium}
-          />
-          <TextInput
-            style={[styles.servingInput, { flex: 1 }]}
-            value={newVolume}
-            onChangeText={setNewVolume}
-            keyboardType="numeric"
-            placeholder="cl"
-            placeholderTextColor={colors.grayMedium}
-          />
-          <TouchableOpacity onPress={handleAddServing} style={styles.addBtn}>
-            <Ionicons name="add" size={20} color={colors.white} />
-          </TouchableOpacity>
         </View>
-      </Card>
+      </View>
 
-      <Card style={styles.section}>
-        <Text style={styles.sectionTitle}>Catégories</Text>
-        <Text style={styles.sectionDesc}>
-          Vos catégories de produits
-        </Text>
-        {categories.map((cat) => (
-          <View key={cat.id} style={styles.servingRow}>
-            <View style={styles.servingInfo}>
-              <Text style={styles.servingName}>{cat.name}</Text>
+      {/* Seuils de marge */}
+      <View style={styles.sectionCard}>
+        <View style={styles.sectionHeader}>
+          <View style={styles.sectionAccent} />
+          <Text style={styles.sectionTitle}>Seuils de marge</Text>
+        </View>
+        <View style={styles.sectionBody}>
+          <Text style={styles.sectionDesc}>
+            Définissez les seuils pour les indicateurs de couleur
+          </Text>
+          <View style={styles.thresholdCard}>
+            <View style={[styles.thresholdDot, { backgroundColor: colors.marginGreen }]} />
+            <Text style={styles.thresholdLabel}>Bonne marge (vert) ≥</Text>
+            <View style={styles.thresholdInputWrap}>
+              <TextInput
+                style={styles.thresholdInput}
+                value={greenThreshold}
+                onChangeText={setGreenThreshold}
+                keyboardType="numeric"
+                placeholder="65"
+                placeholderTextColor={colors.textSecondary}
+              />
+              <Text style={styles.thresholdUnit}>%</Text>
             </View>
           </View>
-        ))}
-        <View style={styles.addServingRow}>
-          <TextInput
-            style={[styles.servingInput, { flex: 1 }]}
-            value={newCategoryName}
-            onChangeText={setNewCategoryName}
-            placeholder="Nouvelle catégorie"
-            placeholderTextColor={colors.grayMedium}
-          />
-          <TouchableOpacity onPress={handleAddCategory} style={styles.addBtn}>
-            <Ionicons name="add" size={20} color={colors.white} />
-          </TouchableOpacity>
+          <View style={styles.thresholdCard}>
+            <View style={[styles.thresholdDot, { backgroundColor: colors.marginOrange }]} />
+            <Text style={styles.thresholdLabel}>Marge correcte (orange) ≥</Text>
+            <View style={styles.thresholdInputWrap}>
+              <TextInput
+                style={styles.thresholdInput}
+                value={orangeThreshold}
+                onChangeText={setOrangeThreshold}
+                keyboardType="numeric"
+                placeholder="50"
+                placeholderTextColor={colors.textSecondary}
+              />
+              <Text style={styles.thresholdUnit}>%</Text>
+            </View>
+          </View>
+          <View style={styles.thresholdCard}>
+            <View style={[styles.thresholdDot, { backgroundColor: colors.marginRed }]} />
+            <Text style={styles.thresholdLabel}>Marge faible (rouge)</Text>
+            <Text style={styles.thresholdAuto}>{'< '}{orangeThreshold || '50'}%</Text>
+          </View>
         </View>
-      </Card>
+      </View>
 
-      <Button title="Enregistrer" onPress={handleSave} loading={saving} />
+      {/* Contenant par défaut */}
+      <View style={styles.sectionCard}>
+        <View style={styles.sectionHeader}>
+          <View style={styles.sectionAccent} />
+          <Text style={styles.sectionTitle}>Contenant par défaut</Text>
+        </View>
+        <View style={styles.sectionBody}>
+          <Text style={styles.sectionDesc}>
+            Volume du contenant pré-sélectionné lors de l'ajout d'un produit
+          </Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.presetScroll}>
+            {CONTAINER_PRESETS.map((preset) => (
+              <TouchableOpacity
+                key={preset.volumeCl}
+                style={[
+                  styles.presetBtn,
+                  defaultContainerVolumeCl === preset.volumeCl && styles.presetBtnActive,
+                ]}
+                onPress={() => setDefaultContainerVolumeCl(preset.volumeCl)}
+              >
+                <Text
+                  style={[
+                    styles.presetBtnText,
+                    defaultContainerVolumeCl === preset.volumeCl && styles.presetBtnTextActive,
+                  ]}
+                >
+                  {preset.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+          <View style={styles.customContainerRow}>
+            <View style={styles.customContainerInputWrap}>
+              <Ionicons name="resize-outline" size={16} color={colors.textSecondary} style={{ marginRight: spacing.sm }} />
+              <TextInput
+                style={styles.customContainerInput}
+                value={String(defaultContainerVolumeCl)}
+                onChangeText={(v) => {
+                  const vol = parseFloat(v.replace(',', '.'));
+                  if (!isNaN(vol) && vol > 0) setDefaultContainerVolumeCl(vol);
+                }}
+                keyboardType="numeric"
+                placeholder="Volume personnalisé"
+                placeholderTextColor={colors.textSecondary}
+              />
+              <Text style={styles.customContainerUnit}>cl</Text>
+            </View>
+          </View>
+        </View>
+      </View>
 
-      <Button
-        title="Se déconnecter"
-        onPress={handleLogout}
-        variant="outline"
+      {/* Types de service */}
+      <View style={styles.sectionCard}>
+        <View style={styles.sectionHeader}>
+          <View style={styles.sectionAccent} />
+          <Text style={styles.sectionTitle}>Types de service</Text>
+        </View>
+        <View style={styles.sectionBody}>
+          <Text style={styles.sectionDesc}>
+            Définissez les formats de service pour calculer vos marges (shot, demi, pinte...)
+          </Text>
+
+          {servingTypes.map((st) => (
+            <View key={st.id} style={styles.servingMiniCard}>
+              {editingId === st.id ? (
+                <View style={styles.servingEditRow}>
+                  <TextInput
+                    style={[styles.servingInput, { flex: 2 }]}
+                    value={editName}
+                    onChangeText={setEditName}
+                    placeholder="Nom"
+                    placeholderTextColor={colors.textSecondary}
+                  />
+                  <TextInput
+                    style={[styles.servingInput, { flex: 1 }]}
+                    value={editVolume}
+                    onChangeText={setEditVolume}
+                    keyboardType="numeric"
+                    placeholder="cl"
+                    placeholderTextColor={colors.textSecondary}
+                  />
+                  <TouchableOpacity onPress={() => handleEditServing(st.id)} style={styles.iconBtn}>
+                    <Ionicons name="checkmark-circle" size={24} color={colors.accent} />
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => setEditingId(null)} style={styles.iconBtn}>
+                    <Ionicons name="close-circle" size={24} color={colors.marginRed} />
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <>
+                  <View style={styles.servingInfo}>
+                    <View style={styles.servingIconBadge}>
+                      <Text style={styles.servingIconEmoji}>{st.icon || '🍷'}</Text>
+                    </View>
+                    <View style={styles.servingTextBlock}>
+                      <Text style={styles.servingName}>{st.name}</Text>
+                      <Text style={styles.servingVolume}>{st.volumeCl} cl</Text>
+                    </View>
+                  </View>
+                  <View style={styles.servingActions}>
+                    <TouchableOpacity onPress={() => startEdit(st)} style={styles.iconBtnSmall}>
+                      <Ionicons name="pencil-outline" size={18} color={colors.textSecondary} />
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => handleDeleteServing(st.id, st.name)} style={styles.iconBtnSmall}>
+                      <Ionicons name="trash-outline" size={18} color={colors.marginRed} />
+                    </TouchableOpacity>
+                  </View>
+                </>
+              )}
+            </View>
+          ))}
+
+          <View style={styles.addRow}>
+            <TextInput
+              style={[styles.addInput, { flex: 2 }]}
+              value={newName}
+              onChangeText={setNewName}
+              placeholder="Nom (ex: Coupe)"
+              placeholderTextColor={colors.textSecondary}
+            />
+            <TextInput
+              style={[styles.addInput, { flex: 1 }]}
+              value={newVolume}
+              onChangeText={setNewVolume}
+              keyboardType="numeric"
+              placeholder="cl"
+              placeholderTextColor={colors.textSecondary}
+            />
+            <TouchableOpacity onPress={handleAddServing} style={styles.addBtn}>
+              <Ionicons name="add" size={22} color={colors.textLight} />
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+
+      {/* Catégories */}
+      <View style={styles.sectionCard}>
+        <View style={styles.sectionHeader}>
+          <View style={styles.sectionAccent} />
+          <Text style={styles.sectionTitle}>Catégories</Text>
+        </View>
+        <View style={styles.sectionBody}>
+          <Text style={styles.sectionDesc}>
+            Vos catégories de produits
+          </Text>
+          {categories.map((cat) => (
+            <View key={cat.id} style={styles.categoryRow}>
+              <View style={styles.categoryBadge}>
+                <Ionicons name="pricetag-outline" size={14} color={colors.accent} />
+              </View>
+              <Text style={styles.categoryName}>{cat.name}</Text>
+            </View>
+          ))}
+          <View style={styles.addRow}>
+            <TextInput
+              style={[styles.addInput, { flex: 1 }]}
+              value={newCategoryName}
+              onChangeText={setNewCategoryName}
+              placeholder="Nouvelle catégorie"
+              placeholderTextColor={colors.textSecondary}
+            />
+            <TouchableOpacity onPress={handleAddCategory} style={styles.addBtn}>
+              <Ionicons name="add" size={22} color={colors.textLight} />
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+
+      {/* Save button */}
+      <TouchableOpacity
+        style={[styles.saveBtn, saving && styles.saveBtnDisabled]}
+        onPress={handleSave}
+        disabled={saving}
+        activeOpacity={0.8}
+      >
+        <Ionicons name="checkmark-circle-outline" size={22} color={colors.textLight} style={{ marginRight: spacing.sm }} />
+        <Text style={styles.saveBtnText}>{saving ? 'Enregistrement...' : 'Enregistrer'}</Text>
+      </TouchableOpacity>
+
+      {/* Logout button */}
+      <TouchableOpacity
         style={styles.logoutBtn}
-      />
+        onPress={handleLogout}
+        activeOpacity={0.7}
+      >
+        <Ionicons name="log-out-outline" size={20} color={colors.marginRed} style={{ marginRight: spacing.sm }} />
+        <Text style={styles.logoutBtnText}>Se déconnecter</Text>
+      </TouchableOpacity>
 
       <Text style={styles.version}>MargeBar v1.0.0</Text>
     </ScreenWrapper>
@@ -406,29 +467,67 @@ const styles = StyleSheet.create({
   title: {
     ...typography.h1,
     color: colors.primary,
-    marginBottom: spacing.lg,
+    marginBottom: spacing.xl,
   },
-  section: {
-    marginBottom: spacing.md,
+
+  // Section card
+  sectionCard: {
+    backgroundColor: colors.cardBackground,
+    borderRadius: borderRadius.lg,
+    marginBottom: spacing.lg,
+    ...shadows.sm,
+    overflow: 'hidden',
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.xs,
+  },
+  sectionAccent: {
+    width: 4,
+    height: 20,
+    borderRadius: 2,
+    backgroundColor: colors.accent,
+    marginRight: spacing.sm,
   },
   sectionTitle: {
     ...typography.h3,
     color: colors.text,
-    marginBottom: spacing.sm,
+  },
+  sectionBody: {
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.lg,
+    paddingTop: spacing.sm,
   },
   sectionDesc: {
     ...typography.caption,
     color: colors.textSecondary,
     marginBottom: spacing.md,
+    lineHeight: 18,
+  },
+
+  // Email
+  emailRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: spacing.sm,
   },
   email: {
     ...typography.bodySmall,
     color: colors.textSecondary,
+    marginLeft: spacing.xs,
   },
+
+  // Switch
   switchRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
   },
   switchInfo: {
     flex: 1,
@@ -442,23 +541,78 @@ const styles = StyleSheet.create({
   switchDesc: {
     ...typography.caption,
     color: colors.textSecondary,
-    marginTop: 2,
+    marginTop: spacing.xs,
+    lineHeight: 17,
   },
-  presetScroll: {
+
+  // Thresholds
+  thresholdCard: {
     flexDirection: 'row',
-  },
-  presetBtn: {
-    paddingVertical: spacing.sm,
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.md,
     paddingHorizontal: spacing.md,
-    borderRadius: borderRadius.sm,
+    paddingVertical: spacing.sm + 2,
+    marginBottom: spacing.sm,
+  },
+  thresholdDot: {
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    marginRight: spacing.sm,
+  },
+  thresholdLabel: {
+    flex: 1,
+    ...typography.bodySmall,
+    color: colors.text,
+  },
+  thresholdInputWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  thresholdInput: {
     borderWidth: 1,
     borderColor: colors.border,
+    borderRadius: borderRadius.sm,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs + 2,
+    width: 56,
+    textAlign: 'center',
+    ...typography.bodySmall,
+    fontWeight: '700',
+    color: colors.text,
+    backgroundColor: colors.cardBackground,
+  },
+  thresholdUnit: {
+    ...typography.bodySmall,
+    fontWeight: '600',
+    color: colors.textSecondary,
+    marginLeft: spacing.xs,
+  },
+  thresholdAuto: {
+    ...typography.bodySmall,
+    color: colors.textSecondary,
+    fontStyle: 'italic',
+  },
+
+  // Container presets
+  presetScroll: {
+    flexDirection: 'row',
+    marginBottom: spacing.sm,
+  },
+  presetBtn: {
+    paddingVertical: spacing.sm + 2,
+    paddingHorizontal: spacing.lg,
+    borderRadius: borderRadius.full,
+    borderWidth: 1.5,
+    borderColor: colors.border,
     marginRight: spacing.sm,
-    backgroundColor: colors.inputBackground,
+    backgroundColor: colors.cardBackground,
   },
   presetBtnActive: {
     backgroundColor: colors.primary,
     borderColor: colors.primary,
+    ...shadows.sm,
   },
   presetBtnText: {
     ...typography.bodySmall,
@@ -466,76 +620,81 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
   },
   presetBtnTextActive: {
-    color: colors.white,
+    color: colors.textLight,
   },
   customContainerRow: {
+    marginTop: spacing.sm,
+  },
+  customContainerInputWrap: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: spacing.sm,
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
   },
   customContainerInput: {
     flex: 1,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: borderRadius.sm,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
     ...typography.bodySmall,
     color: colors.text,
-    backgroundColor: colors.inputBackground,
+    paddingVertical: spacing.xs,
   },
   customContainerUnit: {
     ...typography.bodySmall,
+    fontWeight: '700',
     color: colors.textSecondary,
     marginLeft: spacing.xs,
   },
-  logoutBtn: {
-    marginTop: spacing.md,
-    borderColor: colors.marginRed,
-  },
-  version: {
-    ...typography.caption,
-    color: colors.grayMedium,
-    textAlign: 'center',
-    marginTop: spacing.lg,
-  },
-  // Serving types styles
-  servingRow: {
+
+  // Serving types
+  servingMiniCard: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.md,
+    padding: spacing.sm + 2,
+    marginBottom: spacing.sm,
   },
   servingInfo: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
   },
-  servingNameRow: {
-    flexDirection: 'row',
+  servingIconBadge: {
+    width: 40,
+    height: 40,
+    borderRadius: borderRadius.sm,
+    backgroundColor: colors.cardBackground,
     alignItems: 'center',
+    justifyContent: 'center',
+    ...shadows.sm,
   },
   servingIconEmoji: {
-    fontSize: 20,
-    marginRight: spacing.sm,
+    fontSize: 22,
+  },
+  servingTextBlock: {
+    marginLeft: spacing.sm,
   },
   servingName: {
-    ...typography.body,
-    fontWeight: '600',
+    ...typography.bodySmall,
+    fontWeight: '700',
     color: colors.text,
   },
   servingVolume: {
-    ...typography.bodySmall,
+    ...typography.caption,
     color: colors.textSecondary,
-    marginRight: spacing.sm,
+    marginTop: 2,
   },
   servingActions: {
     flexDirection: 'row',
+    alignItems: 'center',
   },
   iconBtn: {
+    padding: spacing.sm,
+    marginLeft: spacing.xs,
+  },
+  iconBtnSmall: {
     padding: spacing.sm,
     marginLeft: spacing.xs,
   },
@@ -550,70 +709,107 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     borderRadius: borderRadius.sm,
     paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
-    ...typography.bodySmall,
-    color: colors.text,
-    backgroundColor: colors.inputBackground,
-  },
-  addServingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-    marginTop: spacing.md,
-  },
-  addBtn: {
-    backgroundColor: colors.primary,
-    borderRadius: borderRadius.sm,
-    width: 36,
-    height: 36,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  addBtnText: {
-    color: colors.white,
-    fontSize: 20,
-    fontWeight: '700',
-  },
-  // Margin threshold styles
-  thresholdRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
     paddingVertical: spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  thresholdDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    marginRight: spacing.sm,
-  },
-  thresholdLabel: {
-    flex: 1,
     ...typography.bodySmall,
     color: colors.text,
+    backgroundColor: colors.cardBackground,
   },
-  thresholdInput: {
+
+  // Add row (shared for serving + category)
+  addRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginTop: spacing.sm,
+  },
+  addInput: {
     borderWidth: 1,
     borderColor: colors.border,
+    borderRadius: borderRadius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm + 2,
+    ...typography.bodySmall,
+    color: colors.text,
+    backgroundColor: colors.cardBackground,
+  },
+  addBtn: {
+    backgroundColor: colors.accent,
+    borderRadius: borderRadius.full,
+    width: 42,
+    height: 42,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...shadows.sm,
+  },
+
+  // Categories
+  categoryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm + 4,
+    marginBottom: spacing.sm,
+  },
+  categoryBadge: {
+    width: 30,
+    height: 30,
     borderRadius: borderRadius.sm,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
-    width: 50,
-    textAlign: 'center',
+    backgroundColor: colors.light,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: spacing.sm,
+  },
+  categoryName: {
     ...typography.bodySmall,
     fontWeight: '600',
     color: colors.text,
-    backgroundColor: colors.inputBackground,
   },
-  thresholdUnit: {
-    ...typography.bodySmall,
-    color: colors.textSecondary,
-    marginLeft: spacing.xs,
+
+  // Save button
+  saveBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.primary,
+    borderRadius: borderRadius.md,
+    paddingVertical: spacing.md,
+    marginTop: spacing.sm,
+    ...shadows.md,
   },
-  thresholdAuto: {
+  saveBtnDisabled: {
+    opacity: 0.7,
+  },
+  saveBtnText: {
+    ...typography.button,
+    color: colors.textLight,
+  },
+
+  // Logout button
+  logoutBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: colors.marginRed,
+    borderRadius: borderRadius.md,
+    paddingVertical: spacing.sm + 4,
+    marginTop: spacing.md,
+    backgroundColor: colors.cardBackground,
+  },
+  logoutBtnText: {
     ...typography.bodySmall,
+    fontWeight: '700',
+    color: colors.marginRed,
+  },
+
+  // Version
+  version: {
+    ...typography.caption,
     color: colors.textSecondary,
-    fontStyle: 'italic',
+    textAlign: 'center',
+    marginTop: spacing.xl,
+    marginBottom: spacing.md,
   },
 });

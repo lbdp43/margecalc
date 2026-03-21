@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { View, Text, StyleSheet, TextInput, Alert, ActivityIndicator, Image } from 'react-native';
+import { View, Text, StyleSheet, TextInput, Alert, ActivityIndicator, Image, TouchableOpacity } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -12,7 +12,7 @@ import * as servingService from '../../services/serving.service';
 import * as productService from '../../services/product.service';
 import { PriceHistoryEntry } from '../../services/product.service';
 import { api } from '../../services/api';
-import { colors, spacing, borderRadius, typography } from '../../theme';
+import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 
 type Props = NativeStackScreenProps<any, 'ProductDetail'>;
 
@@ -57,7 +57,6 @@ export function ProductDetailScreen({ route, navigation }: Props) {
       const historyRes = await productService.getPriceHistory(productId);
       setPriceHistory(historyRes);
 
-      // Pre-fill prices from saved servings
       const priceMap: Record<string, string> = {};
       for (const s of servingsRes) {
         priceMap[s.servingType.id] = s.sellingPriceTTC.toFixed(2).replace('.', ',');
@@ -115,7 +114,9 @@ export function ProductDetailScreen({ route, navigation }: Props) {
   if (loading) {
     return (
       <ScreenWrapper>
-        <ActivityIndicator size="large" color={colors.primary} />
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={colors.primary} />
+        </View>
       </ScreenWrapper>
     );
   }
@@ -133,16 +134,37 @@ export function ProductDetailScreen({ route, navigation }: Props) {
 
   return (
     <ScreenWrapper>
+      {/* Back button */}
+      <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
+        <Ionicons name="arrow-back" size={20} color={colors.primary} />
+        <Text style={styles.backText}>Retour</Text>
+      </TouchableOpacity>
+
+      {/* Product header */}
       {product.imageUrl && (
         <Image source={{ uri: product.imageUrl }} style={styles.productImage} resizeMode="cover" />
       )}
-      <Text style={styles.title}>{product.name}</Text>
-      <Text style={styles.subtitle}>
-        Achat : {product.purchasePriceHT.toFixed(2)} € HT · {product.containerVolumeCl} cl
-      </Text>
 
+      <View style={styles.headerCard}>
+        <Text style={styles.title}>{product.name}</Text>
+        <View style={styles.metaRow}>
+          <View style={styles.metaChip}>
+            <Ionicons name="pricetag-outline" size={14} color={colors.textSecondary} />
+            <Text style={styles.metaText}>{product.purchasePriceHT.toFixed(2)} € HT</Text>
+          </View>
+          <View style={styles.metaChip}>
+            <Ionicons name="cube-outline" size={14} color={colors.textSecondary} />
+            <Text style={styles.metaText}>{product.containerVolumeCl} cl</Text>
+          </View>
+        </View>
+      </View>
+
+      {/* Serving types with prices */}
       <Card style={styles.section}>
-        <Text style={styles.sectionTitle}>Prix de vente par service</Text>
+        <View style={styles.sectionHeader}>
+          <View style={styles.sectionDot} />
+          <Text style={styles.sectionTitle}>Prix de vente par service</Text>
+        </View>
         <Text style={styles.sectionDesc}>
           Entrez le prix TTC pour chaque type de service
         </Text>
@@ -154,12 +176,13 @@ export function ProductDetailScreen({ route, navigation }: Props) {
           return (
             <View key={st.id} style={styles.servingBlock}>
               <View style={styles.servingHeader}>
-                <Text style={styles.servingName}>{st.icon} {st.name}</Text>
-                <Text style={styles.servingMeta}>{st.volumeCl} cl · {nbServings.toFixed(1)} par bouteille</Text>
-              </View>
-
-              <View style={styles.priceRow}>
-                <Text style={styles.priceLabel}>Prix TTC</Text>
+                <View style={styles.servingNameRow}>
+                  <Text style={styles.servingIcon}>{st.icon}</Text>
+                  <View>
+                    <Text style={styles.servingName}>{st.name}</Text>
+                    <Text style={styles.servingMeta}>{st.volumeCl} cl · {nbServings.toFixed(1)} / bouteille</Text>
+                  </View>
+                </View>
                 <View style={styles.priceInputWrap}>
                   <TextInput
                     style={styles.priceInput}
@@ -167,7 +190,7 @@ export function ProductDetailScreen({ route, navigation }: Props) {
                     onChangeText={(v) => setPrices((prev) => ({ ...prev, [st.id]: v }))}
                     keyboardType="numeric"
                     placeholder="0,00"
-                    placeholderTextColor={colors.grayMedium}
+                    placeholderTextColor={colors.tabBarInactive}
                   />
                   <Text style={styles.priceCurrency}>€</Text>
                 </View>
@@ -176,7 +199,7 @@ export function ProductDetailScreen({ route, navigation }: Props) {
               {margin && (
                 <View style={styles.marginGrid}>
                   <View style={styles.marginItem}>
-                    <Text style={styles.marginLabel}>Coût/dose</Text>
+                    <Text style={styles.marginLabel}>Coût</Text>
                     <Text style={styles.marginValue}>{margin.costPerServingHT.toFixed(2)} €</Text>
                   </View>
                   <View style={styles.marginItem}>
@@ -185,14 +208,14 @@ export function ProductDetailScreen({ route, navigation }: Props) {
                       {margin.marginPerServingHT.toFixed(2)} €
                     </Text>
                   </View>
-                  <View style={styles.marginItem}>
+                  <View style={[styles.marginItem, styles.marginItemAccent]}>
                     <Text style={styles.marginLabel}>Marge</Text>
                     <Text style={[styles.marginValueBig, { color: MARGIN_COLOR_MAP[margin.colorCode] }]}>
                       {margin.marginPercent.toFixed(1)}%
                     </Text>
                   </View>
                   <View style={styles.marginItem}>
-                    <Text style={styles.marginLabel}>Gain/bouteille</Text>
+                    <Text style={styles.marginLabel}>Gain/bout.</Text>
                     <Text style={[styles.marginValue, { color: MARGIN_COLOR_MAP[margin.colorCode] }]}>
                       {margin.marginPerContainer.toFixed(2)} €
                     </Text>
@@ -215,7 +238,10 @@ export function ProductDetailScreen({ route, navigation }: Props) {
 
       {priceHistory.length > 0 && (
         <Card style={styles.section}>
-          <Text style={styles.sectionTitle}>Historique des prix</Text>
+          <View style={styles.sectionHeader}>
+            <View style={styles.sectionDot} />
+            <Text style={styles.sectionTitle}>Historique des prix</Text>
+          </View>
           {priceHistory.map((entry) => {
             const diff = entry.newPrice - entry.oldPrice;
             const isUp = diff > 0;
@@ -229,7 +255,7 @@ export function ProductDetailScreen({ route, navigation }: Props) {
                     {new Date(entry.changedAt).toLocaleDateString('fr-FR')} · {entry.source === 'scan' ? 'Scan' : 'Manuel'}
                   </Text>
                 </View>
-                <View style={[styles.historyBadge, { backgroundColor: isUp ? colors.marginRed + '15' : colors.marginGreen + '15' }]}>
+                <View style={[styles.historyBadge, { backgroundColor: isUp ? colors.marginRed + '12' : colors.marginGreen + '12' }]}>
                   <Ionicons name={isUp ? 'arrow-up' : 'arrow-down'} size={14} color={isUp ? colors.marginRed : colors.marginGreen} />
                   <Text style={[styles.historyDiff, { color: isUp ? colors.marginRed : colors.marginGreen }]}>
                     {Math.abs(diff).toFixed(2)} €
@@ -253,26 +279,62 @@ export function ProductDetailScreen({ route, navigation }: Props) {
         style={styles.deleteBtn}
         loading={deleteMutation.isPending}
       />
+
+      <View style={{ height: spacing.xl }} />
     </ScreenWrapper>
   );
 }
 
 const styles = StyleSheet.create({
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingTop: spacing.xxl,
+  },
+  backBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    marginBottom: spacing.md,
+    alignSelf: 'flex-start',
+  },
+  backText: {
+    ...typography.bodySmall,
+    color: colors.primary,
+    fontWeight: '600',
+  },
   productImage: {
     width: '100%',
-    height: 180,
-    borderRadius: borderRadius.md,
+    height: 200,
+    borderRadius: borderRadius.lg,
     marginBottom: spacing.md,
+  },
+  headerCard: {
+    marginBottom: spacing.lg,
   },
   title: {
     ...typography.h1,
     color: colors.primary,
-    marginBottom: spacing.xs,
+    marginBottom: spacing.sm,
   },
-  subtitle: {
-    ...typography.body,
+  metaRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  metaChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    backgroundColor: colors.surface,
+    paddingHorizontal: spacing.sm + 2,
+    paddingVertical: spacing.xs + 2,
+    borderRadius: borderRadius.full,
+  },
+  metaText: {
+    ...typography.caption,
     color: colors.textSecondary,
-    marginBottom: spacing.lg,
+    fontWeight: '600',
   },
   error: {
     ...typography.body,
@@ -283,15 +345,27 @@ const styles = StyleSheet.create({
   section: {
     marginBottom: spacing.md,
   },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginBottom: spacing.xs,
+  },
+  sectionDot: {
+    width: 4,
+    height: 18,
+    borderRadius: 2,
+    backgroundColor: colors.accent,
+  },
   sectionTitle: {
     ...typography.h3,
     color: colors.text,
-    marginBottom: spacing.xs,
   },
   sectionDesc: {
     ...typography.caption,
     color: colors.textSecondary,
     marginBottom: spacing.md,
+    marginLeft: spacing.md + 4,
   },
   servingBlock: {
     paddingVertical: spacing.md,
@@ -304,24 +378,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: spacing.sm,
   },
+  servingNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  servingIcon: {
+    fontSize: 24,
+  },
   servingName: {
     ...typography.body,
-    fontWeight: '600',
+    fontWeight: '700',
     color: colors.text,
   },
   servingMeta: {
     ...typography.caption,
     color: colors.textSecondary,
-  },
-  priceRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: spacing.sm,
-  },
-  priceLabel: {
-    ...typography.bodySmall,
-    color: colors.textSecondary,
+    marginTop: 1,
   },
   priceInputWrap: {
     flexDirection: 'row',
@@ -330,18 +403,19 @@ const styles = StyleSheet.create({
   priceInput: {
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: borderRadius.sm,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
-    width: 80,
+    borderRadius: borderRadius.md,
+    paddingHorizontal: spacing.sm + 2,
+    paddingVertical: spacing.sm,
+    width: 85,
     textAlign: 'right',
     ...typography.body,
-    fontWeight: '600',
+    fontWeight: '700',
     color: colors.text,
     backgroundColor: colors.inputBackground,
   },
   priceCurrency: {
     ...typography.body,
+    fontWeight: '600',
     color: colors.textSecondary,
     marginLeft: spacing.xs,
   },
@@ -353,37 +427,39 @@ const styles = StyleSheet.create({
   marginItem: {
     flex: 1,
     minWidth: '40%',
-    backgroundColor: colors.inputBackground,
-    borderRadius: borderRadius.sm,
-    padding: spacing.sm,
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.md,
+    padding: spacing.sm + 2,
     alignItems: 'center',
+  },
+  marginItemAccent: {
+    backgroundColor: colors.light,
   },
   marginLabel: {
     ...typography.caption,
     color: colors.textSecondary,
-    marginBottom: 2,
+    marginBottom: 3,
   },
   marginValue: {
     ...typography.bodySmall,
-    fontWeight: '600',
+    fontWeight: '700',
     color: colors.text,
   },
   marginValueBig: {
     ...typography.h3,
-    fontWeight: '700',
+    fontWeight: '800',
   },
   editBtn: {
     marginTop: spacing.sm,
   },
   deleteBtn: {
-    marginTop: spacing.sm,
-    borderColor: colors.marginRed,
+    marginTop: spacing.lg,
   },
   historyRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: spacing.sm,
+    paddingVertical: spacing.sm + 2,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
@@ -392,7 +468,7 @@ const styles = StyleSheet.create({
   },
   historyPrice: {
     ...typography.bodySmall,
-    fontWeight: '600',
+    fontWeight: '700',
     color: colors.text,
   },
   historyDate: {
@@ -403,13 +479,13 @@ const styles = StyleSheet.create({
   historyBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
-    borderRadius: borderRadius.sm,
+    paddingHorizontal: spacing.sm + 2,
+    paddingVertical: spacing.xs + 2,
+    borderRadius: borderRadius.full,
     gap: 4,
   },
   historyDiff: {
     ...typography.caption,
-    fontWeight: '600',
+    fontWeight: '700',
   },
 });
