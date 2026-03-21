@@ -2,6 +2,7 @@ import React, { useState, useCallback } from 'react';
 import { View, Text, FlatList, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useQuery } from '@tanstack/react-query';
+import { Ionicons } from '@expo/vector-icons';
 import { ProductWithMargin, Category } from '@margebar/shared';
 import { ScreenWrapper } from '../../components/ui/ScreenWrapper';
 import { ProductCard } from '../../components/product/ProductCard';
@@ -32,11 +33,15 @@ export function ProductListScreen({ navigation }: Props) {
     />
   ), [navigation]);
 
+  const count = products.length;
+
   return (
     <ScreenWrapper scrollable={false}>
       <View style={styles.header}>
-        <Text style={styles.title}>Mes Produits</Text>
-        <Text style={styles.count}>{products.length} produit{products.length !== 1 ? 's' : ''}</Text>
+        <Text style={styles.title}>Mes produits</Text>
+        <Text style={styles.count}>
+          {count} produit{count !== 1 ? 's' : ''}
+        </Text>
       </View>
 
       <CategoryTabs
@@ -58,8 +63,9 @@ export function ProductListScreen({ navigation }: Props) {
           refreshing={isLoading}
           ListEmptyComponent={
             <View style={styles.empty}>
+              <Ionicons name="cube-outline" size={48} color={colors.grayMedium} />
               <Text style={styles.emptyText}>Aucun produit</Text>
-              <Text style={styles.emptySubtext}>Ajoutez votre premier produit pour commencer</Text>
+              <Text style={styles.emptySubtext}>Appuyez sur + pour ajouter votre premier produit</Text>
             </View>
           }
         />
@@ -70,7 +76,7 @@ export function ProductListScreen({ navigation }: Props) {
         onPress={() => navigation.navigate('ProductForm', {})}
         activeOpacity={0.8}
       >
-        <Text style={styles.fabText}>+</Text>
+        <Ionicons name="add" size={28} color={colors.white} />
       </TouchableOpacity>
     </ScreenWrapper>
   );
@@ -100,15 +106,16 @@ const styles = StyleSheet.create({
   empty: {
     alignItems: 'center',
     paddingTop: spacing.xl * 2,
+    gap: spacing.sm,
   },
   emptyText: {
     ...typography.h3,
     color: colors.textSecondary,
-    marginBottom: spacing.sm,
   },
   emptySubtext: {
     ...typography.body,
     color: colors.grayMedium,
+    textAlign: 'center',
   },
   fab: {
     position: 'absolute',
@@ -125,11 +132,5 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 8,
     elevation: 5,
-  },
-  fabText: {
-    fontSize: 28,
-    color: colors.textLight,
-    fontWeight: '300',
-    lineHeight: 30,
   },
 });

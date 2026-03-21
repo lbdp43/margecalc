@@ -32,7 +32,7 @@ export function CategoryTabs({ categories, selectedId, onSelect }: CategoryTabsP
           activeOpacity={0.7}
         >
           <Text style={[styles.tabText, selectedId === cat.id && styles.tabTextActive]}>
-            {cat.icon} {cat.name}
+            {cat.name}
           </Text>
         </TouchableOpacity>
       ))}
@@ -43,10 +43,10 @@ export function CategoryTabs({ categories, selectedId, onSelect }: CategoryTabsP
 const styles = StyleSheet.create({
   container: {
     marginBottom: spacing.md,
+    maxHeight: 40,
   },
   content: {
-    paddingHorizontal: spacing.md,
-    gap: spacing.sm,
+    gap: spacing.xs,
   },
   tab: {
     paddingHorizontal: spacing.md,
@@ -58,8 +58,8 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
   },
   tabText: {
-    ...typography.bodySmall,
-    fontWeight: '500',
+    ...typography.caption,
+    fontWeight: '600',
     color: colors.textSecondary,
   },
   tabTextActive: {
