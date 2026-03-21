@@ -1,20 +1,43 @@
 import React from 'react';
-import { View, StyleSheet } from 'react-native';
+import { View, StyleSheet, useWindowDimensions } from 'react-native';
+import Svg, { Path } from 'react-native-svg';
 import { colors } from '../../theme';
 
 interface DecorativeCurveProps {
   variant?: 'top' | 'middle' | 'bottom';
   color?: string;
+  opacity?: number;
 }
 
-export function DecorativeCurve({ variant = 'bottom', color }: DecorativeCurveProps) {
+export function DecorativeCurve({
+  variant = 'bottom',
+  color,
+  opacity = 0.07,
+}: DecorativeCurveProps) {
+  const { width } = useWindowDimensions();
   const baseColor = color || colors.primary;
 
   if (variant === 'top') {
     return (
-      <View style={styles.container} pointerEvents="none">
-        <View style={[styles.topCurve1, { backgroundColor: baseColor }]} />
-        <View style={[styles.topCurve2, { backgroundColor: baseColor }]} />
+      <View style={styles.topContainer} pointerEvents="none">
+        <Svg width={width + 40} height={220} viewBox={`0 0 ${width + 40} 220`}>
+          {/* Main flowing wave */}
+          <Path
+            d={`M-20,180 C${width * 0.15},60 ${width * 0.35},200 ${width * 0.55},100 S${width * 0.85},20 ${width + 40},140`}
+            fill="none"
+            stroke={baseColor}
+            strokeWidth={3}
+            opacity={opacity}
+          />
+          {/* Second parallel wave */}
+          <Path
+            d={`M-20,195 C${width * 0.2},80 ${width * 0.4},210 ${width * 0.58},115 S${width * 0.88},40 ${width + 40},155`}
+            fill="none"
+            stroke={baseColor}
+            strokeWidth={1.5}
+            opacity={opacity * 0.6}
+          />
+        </Svg>
       </View>
     );
   }
@@ -22,8 +45,24 @@ export function DecorativeCurve({ variant = 'bottom', color }: DecorativeCurvePr
   if (variant === 'middle') {
     return (
       <View style={styles.middleContainer} pointerEvents="none">
-        <View style={[styles.middleCurve1, { backgroundColor: baseColor }]} />
-        <View style={[styles.middleCurve2, { backgroundColor: baseColor }]} />
+        <Svg width={width + 40} height={160} viewBox={`0 0 ${width + 40} 160`}>
+          {/* Main S-curve */}
+          <Path
+            d={`M-20,120 C${width * 0.1},20 ${width * 0.3},150 ${width * 0.5},60 S${width * 0.75},140 ${width + 40},40`}
+            fill="none"
+            stroke={baseColor}
+            strokeWidth={2.5}
+            opacity={opacity}
+          />
+          {/* Thinner companion */}
+          <Path
+            d={`M-20,130 C${width * 0.15},35 ${width * 0.35},155 ${width * 0.52},72 S${width * 0.78},148 ${width + 40},55`}
+            fill="none"
+            stroke={baseColor}
+            strokeWidth={1.2}
+            opacity={opacity * 0.5}
+          />
+        </Svg>
       </View>
     );
   }
@@ -31,110 +70,49 @@ export function DecorativeCurve({ variant = 'bottom', color }: DecorativeCurvePr
   // bottom (default)
   return (
     <View style={styles.bottomContainer} pointerEvents="none">
-      <View style={[styles.bottomCurve1, { backgroundColor: baseColor }]} />
-      <View style={[styles.bottomCurve2, { backgroundColor: baseColor }]} />
-      <View style={[styles.bottomCurve3, { backgroundColor: baseColor }]} />
+      <Svg width={width + 40} height={250} viewBox={`0 0 ${width + 40} 250`}>
+        {/* Main flowing wave from left to right */}
+        <Path
+          d={`M-20,50 C${width * 0.1},180 ${width * 0.25},10 ${width * 0.45},140 S${width * 0.7},30 ${width * 0.85},190 S${width + 20},80 ${width + 40},120`}
+          fill="none"
+          stroke={baseColor}
+          strokeWidth={3}
+          opacity={opacity}
+        />
+        {/* Second thinner wave */}
+        <Path
+          d={`M-20,65 C${width * 0.12},190 ${width * 0.28},25 ${width * 0.47},150 S${width * 0.72},45 ${width * 0.87},200 S${width + 22},95 ${width + 40},135`}
+          fill="none"
+          stroke={baseColor}
+          strokeWidth={1.5}
+          opacity={opacity * 0.5}
+        />
+      </Svg>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  topContainer: {
     position: 'absolute',
-    top: -60,
-    left: -40,
-    right: -40,
-    height: 200,
-    overflow: 'hidden',
-  },
-  topCurve1: {
-    position: 'absolute',
-    top: 0,
+    top: -30,
     left: -20,
-    width: 500,
-    height: 180,
-    borderBottomLeftRadius: 300,
-    borderBottomRightRadius: 200,
-    opacity: 0.04,
-    transform: [{ rotate: '-3deg' }],
-  },
-  topCurve2: {
-    position: 'absolute',
-    top: 20,
-    right: -40,
-    width: 400,
-    height: 140,
-    borderBottomLeftRadius: 250,
-    borderBottomRightRadius: 180,
-    opacity: 0.03,
-    transform: [{ rotate: '2deg' }],
+    right: -20,
+    height: 220,
+    overflow: 'hidden',
   },
   middleContainer: {
-    position: 'absolute',
-    left: -60,
-    right: -60,
-    height: 300,
-    overflow: 'hidden',
-  },
-  middleCurve1: {
-    position: 'absolute',
-    top: 30,
-    left: -20,
-    width: 500,
-    height: 200,
-    borderRadius: 250,
-    opacity: 0.035,
-    transform: [{ rotate: '-8deg' }],
-  },
-  middleCurve2: {
-    position: 'absolute',
-    top: 80,
-    right: -60,
-    width: 350,
-    height: 150,
-    borderRadius: 200,
-    opacity: 0.025,
-    transform: [{ rotate: '5deg' }],
+    height: 40,
+    marginVertical: -20,
+    overflow: 'visible',
+    marginHorizontal: -20,
   },
   bottomContainer: {
     position: 'absolute',
-    bottom: -40,
-    left: -60,
-    right: -60,
+    bottom: 0,
+    left: -20,
+    right: -20,
     height: 250,
     overflow: 'hidden',
-  },
-  bottomCurve1: {
-    position: 'absolute',
-    bottom: -30,
-    left: -30,
-    width: 500,
-    height: 200,
-    borderTopLeftRadius: 200,
-    borderTopRightRadius: 300,
-    opacity: 0.05,
-    transform: [{ rotate: '2deg' }],
-  },
-  bottomCurve2: {
-    position: 'absolute',
-    bottom: 10,
-    right: -50,
-    width: 380,
-    height: 160,
-    borderTopLeftRadius: 250,
-    borderTopRightRadius: 180,
-    opacity: 0.035,
-    transform: [{ rotate: '-4deg' }],
-  },
-  bottomCurve3: {
-    position: 'absolute',
-    bottom: -10,
-    left: 40,
-    width: 300,
-    height: 120,
-    borderTopLeftRadius: 180,
-    borderTopRightRadius: 220,
-    opacity: 0.025,
-    transform: [{ rotate: '6deg' }],
   },
 });
