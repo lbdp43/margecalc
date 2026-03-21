@@ -1,9 +1,7 @@
 import axios from 'axios';
 import { useAuthStore } from '../store/auth.store';
 
-const API_BASE_URL = __DEV__
-  ? 'http://localhost:3000/api'
-  : 'https://margecalc-production.up.railway.app/api';
+const API_BASE_URL = 'https://margecalc-production.up.railway.app/api';
 
 export const api = axios.create({
   baseURL: API_BASE_URL,
