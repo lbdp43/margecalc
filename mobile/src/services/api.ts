@@ -1,7 +1,11 @@
 import axios from 'axios';
+import { Platform } from 'react-native';
 import { useAuthStore } from '../store/auth.store';
 
-const API_BASE_URL = 'https://margecalc-production.up.railway.app/api';
+// On web, use relative path (same origin); on native, use full URL
+const API_BASE_URL = Platform.OS === 'web'
+  ? '/api'
+  : 'https://margecalc-production.up.railway.app/api';
 
 export const api = axios.create({
   baseURL: API_BASE_URL,

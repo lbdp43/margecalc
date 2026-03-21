@@ -20,6 +20,10 @@
         "foregroundImage": "./assets/icon.png",
         "backgroundColor": "#1B4332"
       }
+    },
+    "web": {
+      "bundler": "metro",
+      "favicon": "./assets/favicon.png"
     }
   }
 }

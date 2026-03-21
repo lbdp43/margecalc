@@ -1,5 +1,6 @@
 import express from 'express';
 import cors from 'cors';
+import path from 'path';
 import { config } from './config/env';
 import routes from './routes';
 import { errorHandler } from './middleware/errorHandler';
@@ -18,6 +19,18 @@ app.get('/health', (_req, res) => {
 });
 
 app.use('/api', routes);
+
+// Serve Expo web build (static files)
+const publicDir = path.join(__dirname, 'public');
+app.use(express.static(publicDir));
+
+// SPA fallback: any non-API route serves index.html
+app.get('*', (_req, res, next) => {
+  const indexPath = path.join(publicDir, 'index.html');
+  res.sendFile(indexPath, (err) => {
+    if (err) next();
+  });
+});
 
 app.use(errorHandler);
 
