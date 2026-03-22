@@ -15,7 +15,7 @@ model User {
   isAutoEntrepreneur Boolean   @default(false)
   defaultTvaRate              Float     @default(0.20)
   defaultContainerVolumeCl   Float     @default(70)
-  stripeCustomerId           String?   @unique
+  stripeCustomerId           String?
   subscriptionStatus         String    @default("none") // none | trialing | active | past_due | canceled
   subscriptionPlan           String?   // e.g. "pro_monthly", "pro_yearly"
   subscriptionEndDate        DateTime?
