@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert, useWindowDimensions, Modal, TextInput, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Alert, useWindowDimensions, Modal, TextInput, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
 import Svg, { Path, Rect, Text as SvgText } from 'react-native-svg';
 import { useNavigation } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -284,75 +284,131 @@ export function DashboardScreen() {
       {/* Alcohol Tax Calculator Modal */}
       <Modal visible={calcVisible} transparent animationType="slide" onRequestClose={() => setCalcVisible(false)}>
         <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Calculateur prix HT</Text>
-              <TouchableOpacity onPress={() => setCalcVisible(false)} hitSlop={styles.hitSlop} style={styles.modalCloseBtn}>
-                <Ionicons name="close" size={20} color={colors.textSecondary} />
-              </TouchableOpacity>
-            </View>
-
-            <Text style={styles.calcLabel}>Prix d'achat HT hors droit</Text>
-            <TextInput
-              style={styles.calcInput}
-              value={calcPriceHD}
-              onChangeText={setCalcPriceHD}
-              placeholder="Ex : 10,50"
-              keyboardType="decimal-pad"
-              placeholderTextColor={colors.tabBarInactive}
-            />
-
-            <Text style={styles.calcLabel}>Contenant (cl)</Text>
-            <View style={styles.presetRow}>
-              {CONTAINER_PRESETS.slice(0, 4).map((p) => (
-                <TouchableOpacity
-                  key={p.volumeCl}
-                  style={[styles.presetChip, calcContainer === String(p.volumeCl) && styles.presetChipActive]}
-                  onPress={() => setCalcContainer(String(p.volumeCl))}
-                >
-                  <Text style={[styles.presetChipText, calcContainer === String(p.volumeCl) && styles.presetChipTextActive]}>
-                    {p.label}
-                  </Text>
+          <View style={styles.modalSheet}>
+            {/* Green header with decorative curves */}
+            <View style={styles.modalHeaderBg}>
+              <View style={styles.modalHeaderContent}>
+                <View>
+                  <Text style={styles.modalTitle}>Calculateur</Text>
+                  <Text style={styles.modalSubtitle}>Prix HT avec droits</Text>
+                </View>
+                <TouchableOpacity onPress={() => setCalcVisible(false)} hitSlop={styles.hitSlop} style={styles.modalCloseBtn}>
+                  <Ionicons name="close" size={18} color={colors.textLight} />
                 </TouchableOpacity>
-              ))}
-            </View>
-            <TextInput
-              style={styles.calcInput}
-              value={calcContainer}
-              onChangeText={setCalcContainer}
-              placeholder="Volume en cl"
-              keyboardType="decimal-pad"
-              placeholderTextColor={colors.tabBarInactive}
-            />
-
-            <Text style={styles.calcLabel}>Degré d'alcool (%)</Text>
-            <TextInput
-              style={styles.calcInput}
-              value={calcDegree}
-              onChangeText={setCalcDegree}
-              placeholder="Ex : 40"
-              keyboardType="decimal-pad"
-              placeholderTextColor={colors.tabBarInactive}
-            />
-
-            {calcTax.price > 0 && (
-              <View style={styles.calcResult}>
-                <View style={styles.calcResultRow}>
-                  <Text style={styles.calcResultLabel}>Prix HT hors droit</Text>
-                  <Text style={styles.calcResultValue}>{formatPrice(calcTax.price)}</Text>
-                </View>
-                {calcTax.tax > 0 && (
-                  <View style={styles.calcResultRow}>
-                    <Text style={styles.calcResultLabel}>Droits d'accise + Sécu</Text>
-                    <Text style={styles.calcResultValue}>{formatPrice(calcTax.tax)}</Text>
-                  </View>
-                )}
-                <View style={[styles.calcResultRow, styles.calcResultTotal]}>
-                  <Text style={styles.calcResultTotalLabel}>Prix HT (avec droits)</Text>
-                  <Text style={styles.calcResultTotalValue}>{formatPrice(calcTax.total)}</Text>
-                </View>
               </View>
-            )}
+              {/* Decorative curves in header */}
+              <View style={styles.modalCurves} pointerEvents="none">
+                <Svg width={width} height={80} viewBox={`0 0 ${width} 80`}>
+                  <Path
+                    d={`M-10,50 C${width * 0.15},10 ${width * 0.35},70 ${width * 0.55},30 S${width * 0.85},60 ${width + 10},20`}
+                    fill="none"
+                    stroke={colors.textLight}
+                    strokeWidth={2}
+                    opacity={0.12}
+                  />
+                  <Path
+                    d={`M-10,62 C${width * 0.2},25 ${width * 0.4},75 ${width * 0.58},38 S${width * 0.88},65 ${width + 10},35`}
+                    fill="none"
+                    stroke={colors.textLight}
+                    strokeWidth={1.2}
+                    opacity={0.07}
+                  />
+                </Svg>
+              </View>
+            </View>
+            {/* S-curve transition */}
+            <View style={styles.modalCurveTransition}>
+              <Svg width={width} height={32}>
+                <Path
+                  d={`M0,0 L0,32 C${width * 0.35},32 ${width * 0.35},0 ${width},0 Z`}
+                  fill={colors.primary}
+                />
+              </Svg>
+            </View>
+
+            <ScrollView style={styles.modalBody} keyboardShouldPersistTaps="handled" bounces={false}>
+              <Text style={styles.calcLabel}>Prix d'achat HT hors droit</Text>
+              <TextInput
+                style={styles.calcInput}
+                value={calcPriceHD}
+                onChangeText={setCalcPriceHD}
+                placeholder="Ex : 10,50"
+                keyboardType="decimal-pad"
+                placeholderTextColor={colors.tabBarInactive}
+              />
+
+              <Text style={styles.calcLabel}>Contenant (cl)</Text>
+              <View style={styles.presetRow}>
+                {CONTAINER_PRESETS.slice(0, 4).map((p) => (
+                  <TouchableOpacity
+                    key={p.volumeCl}
+                    style={[styles.presetChip, calcContainer === String(p.volumeCl) && styles.presetChipActive]}
+                    onPress={() => setCalcContainer(String(p.volumeCl))}
+                  >
+                    <Text style={[styles.presetChipText, calcContainer === String(p.volumeCl) && styles.presetChipTextActive]}>
+                      {p.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <TextInput
+                style={styles.calcInput}
+                value={calcContainer}
+                onChangeText={setCalcContainer}
+                placeholder="Volume en cl"
+                keyboardType="decimal-pad"
+                placeholderTextColor={colors.tabBarInactive}
+              />
+
+              <Text style={styles.calcLabel}>Degré d'alcool (%)</Text>
+              <TextInput
+                style={styles.calcInput}
+                value={calcDegree}
+                onChangeText={setCalcDegree}
+                placeholder="Ex : 40"
+                keyboardType="decimal-pad"
+                placeholderTextColor={colors.tabBarInactive}
+              />
+
+              {calcTax.price > 0 && (
+                <View style={styles.calcResult}>
+                  <View style={styles.calcResultRow}>
+                    <Text style={styles.calcResultLabel}>Prix HT hors droit</Text>
+                    <Text style={styles.calcResultValue}>{formatPrice(calcTax.price)}</Text>
+                  </View>
+                  {calcTax.tax > 0 && (
+                    <View style={styles.calcResultRow}>
+                      <Text style={styles.calcResultLabel}>Droits d'accise + Sécu</Text>
+                      <Text style={styles.calcResultValue}>{formatPrice(calcTax.tax)}</Text>
+                    </View>
+                  )}
+                  <View style={[styles.calcResultRow, styles.calcResultTotal]}>
+                    <Text style={styles.calcResultTotalLabel}>Prix HT (avec droits)</Text>
+                    <Text style={styles.calcResultTotalValue}>{formatPrice(calcTax.total)}</Text>
+                  </View>
+                </View>
+              )}
+            </ScrollView>
+
+            {/* Bottom decorative curves */}
+            <View style={styles.modalBottomCurves} pointerEvents="none">
+              <Svg width={width} height={100} viewBox={`0 0 ${width} 100`}>
+                <Path
+                  d={`M-10,30 C${width * 0.1},80 ${width * 0.3},5 ${width * 0.5},60 S${width * 0.75},10 ${width + 10},70`}
+                  fill="none"
+                  stroke={colors.primary}
+                  strokeWidth={2.5}
+                  opacity={0.06}
+                />
+                <Path
+                  d={`M-10,42 C${width * 0.12},88 ${width * 0.32},15 ${width * 0.52},68 S${width * 0.78},18 ${width + 10},80`}
+                  fill="none"
+                  stroke={colors.primary}
+                  strokeWidth={1.2}
+                  opacity={0.04}
+                />
+              </Svg>
+            </View>
           </View>
         </KeyboardAvoidingView>
       </Modal>
@@ -744,31 +800,61 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.45)',
     justifyContent: 'flex-end',
   },
-  modalContent: {
+  modalSheet: {
     backgroundColor: colors.cardBackground,
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
-    padding: spacing.lg,
-    paddingBottom: spacing.xxl,
-    ...shadows.md,
+    overflow: 'hidden',
+    ...shadows.lg,
   },
-  modalHeader: {
+  modalHeaderBg: {
+    backgroundColor: colors.primary,
+    paddingTop: spacing.lg,
+    paddingHorizontal: spacing.lg,
+    paddingBottom: 0,
+    overflow: 'hidden',
+  },
+  modalHeaderContent: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: spacing.md,
+    alignItems: 'flex-start',
+    zIndex: 1,
+  },
+  modalCurves: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 80,
+  },
+  modalCurveTransition: {
+    marginTop: -1,
   },
   modalCloseBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: colors.inputBackground,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255,255,255,0.15)',
     alignItems: 'center',
     justifyContent: 'center',
   },
   modalTitle: {
-    ...typography.h3,
-    color: colors.text,
+    ...typography.h2,
+    color: colors.textLight,
+  },
+  modalSubtitle: {
+    ...typography.bodySmall,
+    color: 'rgba(255,255,255,0.7)',
+    marginTop: 2,
+    marginBottom: spacing.md,
+  },
+  modalBody: {
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.xxl,
+  },
+  modalBottomCurves: {
+    height: 100,
+    overflow: 'hidden',
   },
   calcLabel: {
     ...typography.bodySmall,
