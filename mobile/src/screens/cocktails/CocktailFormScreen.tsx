@@ -3,7 +3,7 @@ import {
   View, Text, StyleSheet, TouchableOpacity, TextInput, ScrollView, Alert, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import {
   ProductWithMargin, RecipeWithCost,
@@ -12,6 +12,7 @@ import {
   CreateRecipeIngredientInput, CreateRecipeConsumableInput,
 } from '@margebar/shared';
 import { ScreenWrapper } from '../../components/ui/ScreenWrapper';
+import { useOfflineQuery } from '../../hooks/useOfflineQuery';
 import * as recipeService from '../../services/recipe.service';
 import * as productService from '../../services/product.service';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
@@ -41,16 +42,16 @@ export function CocktailFormScreen() {
   const editId = route.params?.recipeId;
   const isEdit = !!editId;
 
-  const { data: existingRecipe } = useQuery<RecipeWithCost>({
-    queryKey: ['recipe', editId],
-    queryFn: () => recipeService.getRecipe(editId),
-    enabled: isEdit,
-  });
+  const { data: existingRecipe } = useOfflineQuery<RecipeWithCost>(
+    ['recipe', editId],
+    () => recipeService.getRecipe(editId),
+    { enabled: isEdit },
+  );
 
-  const { data: products = [] } = useQuery<ProductWithMargin[]>({
-    queryKey: ['products'],
-    queryFn: () => productService.getProducts(),
-  });
+  const { data: products = [] } = useOfflineQuery<ProductWithMargin[]>(
+    ['products'],
+    () => productService.getProducts(),
+  );
 
   // Form state
   const [name, setName] = useState(existingRecipe?.name || '');
@@ -184,8 +185,20 @@ export function CocktailFormScreen() {
       Alert.alert('Erreur', 'Le nom du cocktail est requis');
       return;
     }
-    if (ingredients.every((i) => !i.name.trim())) {
+
+    const validIngredients = ingredients.filter((i) => i.name.trim());
+    if (validIngredients.length === 0) {
       Alert.alert('Erreur', 'Ajoutez au moins un ingrédient');
+      return;
+    }
+
+    // Validate quantities are positive
+    const badQty = validIngredients.find((i) => {
+      const qty = parseLocaleFloat(i.quantityCl);
+      return isNaN(qty) || qty <= 0;
+    });
+    if (badQty) {
+      Alert.alert('Erreur', `Quantité invalide pour "${badQty.name}"`);
       return;
     }
 
@@ -197,8 +210,7 @@ export function CocktailFormScreen() {
         sellingPriceTTC: parseLocaleFloat(sellingPrice) || undefined,
         tvaRate,
         isPublic,
-        ingredients: ingredients
-          .filter((i) => i.name.trim())
+        ingredients: validIngredients
           .map((i): CreateRecipeIngredientInput => ({
             productId: i.productId,
             name: i.name.trim(),
@@ -220,7 +232,9 @@ export function CocktailFormScreen() {
         await recipeService.createRecipe(data);
       }
       queryClient.invalidateQueries({ queryKey: ['recipes'] });
-      queryClient.invalidateQueries({ queryKey: ['recipes-community'] });
+      if (isPublic) {
+        queryClient.invalidateQueries({ queryKey: ['recipes-community'] });
+      }
       navigation.goBack();
     } catch (err: any) {
       Alert.alert('Erreur', err.message || 'Impossible de sauvegarder');

@@ -5,7 +5,7 @@ import { config } from '../config/env';
 import { AuthPayload } from '@margebar/shared';
 
 const SALT_ROUNDS = 12;
-const TOKEN_EXPIRY = '7d';
+const TOKEN_EXPIRY = '24h';
 
 export async function register(email: string, password: string, businessName?: string, isAutoEntrepreneur = false) {
   const existing = await prisma.user.findUnique({ where: { email } });

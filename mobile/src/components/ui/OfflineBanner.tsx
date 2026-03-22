@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { isOnline, onConnectivityChange, getPendingCount } from '../../services/offline';
@@ -7,19 +7,23 @@ import { colors, spacing, typography } from '../../theme';
 export function OfflineBanner() {
   const [online, setOnline] = useState(isOnline());
   const [pending, setPending] = useState(0);
+  const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     return onConnectivityChange((state) => {
       setOnline(state);
-      if (state) {
-        // Refresh pending count when coming online
-        getPendingCount().then(setPending);
-      }
     });
   }, []);
 
+  // Debounced pending count refresh
   useEffect(() => {
-    getPendingCount().then(setPending);
+    if (refreshTimer.current) clearTimeout(refreshTimer.current);
+    refreshTimer.current = setTimeout(() => {
+      getPendingCount().then(setPending);
+    }, 500);
+    return () => {
+      if (refreshTimer.current) clearTimeout(refreshTimer.current);
+    };
   }, [online]);
 
   if (online && pending === 0) return null;
@@ -33,7 +37,7 @@ export function OfflineBanner() {
       />
       <Text style={styles.text}>
         {!online
-          ? 'Mode hors-ligne — Les données sont en cache'
+          ? `Mode hors-ligne${pending > 0 ? ` — ${pending} modification${pending > 1 ? 's' : ''} en attente` : ''}`
           : `Synchronisation de ${pending} opération${pending > 1 ? 's' : ''}...`}
       </Text>
     </View>

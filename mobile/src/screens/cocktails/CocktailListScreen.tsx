@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, FlatList } from 'react-native';
-import { useQuery } from '@tanstack/react-query';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { RecipeWithCost, formatPercent, formatPrice, MARGIN_COLOR_MAP } from '@margebar/shared';
 import { ScreenWrapper } from '../../components/ui/ScreenWrapper';
+import { useOfflineQuery } from '../../hooks/useOfflineQuery';
 import * as recipeService from '../../services/recipe.service';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 
@@ -14,15 +14,17 @@ export function CocktailListScreen() {
   const navigation = useNavigation<any>();
   const [tab, setTab] = useState<Tab>('mine');
 
-  const { data: myRecipes = [] } = useQuery<RecipeWithCost[]>({
-    queryKey: ['recipes'],
-    queryFn: () => recipeService.getRecipes(),
-  });
+  const { data: myRecipes = [], isOffline } = useOfflineQuery<RecipeWithCost[]>(
+    ['recipes'],
+    () => recipeService.getRecipes(),
+  );
 
-  const { data: communityRecipes = [] } = useQuery<RecipeWithCost[]>({
-    queryKey: ['recipes-community'],
-    queryFn: () => recipeService.getCommunityRecipes(),
-  });
+  // Only fetch community recipes when that tab is active
+  const { data: communityRecipes = [] } = useOfflineQuery<RecipeWithCost[]>(
+    ['recipes-community'],
+    () => recipeService.getCommunityRecipes(),
+    { enabled: tab === 'community' },
+  );
 
   const recipes = tab === 'mine' ? myRecipes : communityRecipes;
 
@@ -94,6 +96,9 @@ export function CocktailListScreen() {
         renderItem={renderRecipe}
         contentContainerStyle={styles.list}
         showsVerticalScrollIndicator={false}
+        initialNumToRender={10}
+        maxToRenderPerBatch={15}
+        removeClippedSubviews
         ListEmptyComponent={
           <View style={styles.empty}>
             <Ionicons name="wine-outline" size={48} color={colors.tabBarInactive} />

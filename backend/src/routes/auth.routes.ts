@@ -6,7 +6,7 @@ const router = Router();
 
 const registerSchema = z.object({
   email: z.string().email('Email invalide'),
-  password: z.string().min(6, 'Mot de passe: 6 caractères minimum'),
+  password: z.string().min(8, 'Mot de passe: 8 caractères minimum'),
   businessName: z.string().optional(),
   isAutoEntrepreneur: z.boolean().optional(),
 });

@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Alert, useWindowDimensions } from 'react-native';
 import Svg, { Path, Rect, Text as SvgText } from 'react-native-svg';
-import { useQuery } from '@tanstack/react-query';
 import { useNavigation } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
@@ -12,6 +11,7 @@ import {
 } from '@margebar/shared';
 import { ScreenWrapper } from '../../components/ui/ScreenWrapper';
 import { DecorativeCurve } from '../../components/ui/DecorativeCurve';
+import { useOfflineQuery } from '../../hooks/useOfflineQuery';
 import * as productService from '../../services/product.service';
 import { useAuthStore } from '../../store/auth.store';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
@@ -37,18 +37,21 @@ export function DashboardScreen() {
   const navigation = useNavigation<any>();
   const { width } = useWindowDimensions();
   const chartWidth = width - spacing.md * 4;
-  const { data: products = [] } = useQuery<ProductWithMargin[]>({
-    queryKey: ['products'],
-    queryFn: () => productService.getProducts(),
-  });
+  const { data: products = [] } = useOfflineQuery<ProductWithMargin[]>(
+    ['products'],
+    () => productService.getProducts(),
+  );
 
   const [welcomeVisible, setWelcomeVisible] = useState(true);
   const [loadingPref, setLoadingPref] = useState(true);
   useEffect(() => {
+    let mounted = true;
     AsyncStorage.getItem(WELCOME_DISMISSED_KEY).then((val) => {
+      if (!mounted) return;
       if (val === 'true') setWelcomeVisible(false);
       setLoadingPref(false);
     });
+    return () => { mounted = false; };
   }, []);
 
   const handleDismiss = useCallback(() => {
@@ -101,7 +104,7 @@ export function DashboardScreen() {
 
   // Top 5 and Bottom 5
   const top5 = sorted.slice(0, 5);
-  const flop5 = sorted.length > 5 ? [...sorted].reverse().slice(0, 5) : [];
+  const flop5 = sorted.length > 5 ? sorted.slice(-5).reverse() : [];
 
   const renderProductCard = (p: ProductWithMargin) => {
     const servings = p.servings || [];

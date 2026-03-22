@@ -168,8 +168,11 @@ export function calculateRecipeMargin(
   sellingPriceTTC: number,
   tvaRate: number,
 ): RecipeMarginResult {
-  const totalIngredientCost = ingredients.reduce((sum, ing) => sum + ing.costPerUnit, 0);
-  const totalConsumableCost = consumables.reduce((sum, c) => sum + c.unitCost * c.quantity, 0);
+  if (sellingPriceTTC <= 0) throw new Error('Selling price must be > 0');
+  if (tvaRate < 0 || tvaRate >= 1) throw new Error('TVA rate must be between 0 and 1');
+
+  const totalIngredientCost = ingredients.reduce((sum, ing) => sum + round2(ing.costPerUnit), 0);
+  const totalConsumableCost = consumables.reduce((sum, c) => sum + round2(c.unitCost * c.quantity), 0);
   const totalCostHT = totalIngredientCost + totalConsumableCost;
 
   const sellingPriceHT = sellingPriceTTC / (1 + tvaRate);

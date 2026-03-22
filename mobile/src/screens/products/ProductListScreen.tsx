@@ -1,13 +1,13 @@
 import React, { useState, useCallback } from 'react';
 import { View, Text, FlatList, StyleSheet, TouchableOpacity, TextInput } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { useQuery } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import { ProductWithMargin, Category } from '@margebar/shared';
 import { ScreenWrapper } from '../../components/ui/ScreenWrapper';
 import { YinYangSpinner } from '../../components/ui/YinYangSpinner';
 import { ProductCard } from '../../components/product/ProductCard';
 import { CategoryTabs } from '../../components/product/CategoryTabs';
+import { useOfflineQuery } from '../../hooks/useOfflineQuery';
 import * as productService from '../../services/product.service';
 import * as categoryService from '../../services/category.service';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
@@ -20,15 +20,15 @@ export function ProductListScreen({ navigation }: Props) {
   const [sortBy, setSortBy] = useState<'name' | 'margin' | 'price' | 'coeff'>('name');
   const [sortAsc, setSortAsc] = useState(true);
 
-  const { data: categories = [] } = useQuery<Category[]>({
-    queryKey: ['categories'],
-    queryFn: categoryService.getCategories,
-  });
+  const { data: categories = [] } = useOfflineQuery<Category[]>(
+    ['categories'],
+    categoryService.getCategories,
+  );
 
-  const { data: products = [], isLoading, refetch } = useQuery<ProductWithMargin[]>({
-    queryKey: ['products', selectedCategory],
-    queryFn: () => productService.getProducts(selectedCategory || undefined),
-  });
+  const { data: products = [], isLoading, refetch, isOffline } = useOfflineQuery<ProductWithMargin[]>(
+    ['products', selectedCategory],
+    () => productService.getProducts(selectedCategory || undefined),
+  );
 
   const filtered = products
     .filter((p) => searchQuery.length === 0 || p.name.toLowerCase().includes(searchQuery.toLowerCase()))
@@ -134,6 +134,9 @@ export function ProductListScreen({ navigation }: Props) {
           showsVerticalScrollIndicator={false}
           onRefresh={refetch}
           refreshing={isLoading}
+          initialNumToRender={10}
+          maxToRenderPerBatch={15}
+          removeClippedSubviews
           ListEmptyComponent={
             <View style={styles.empty}>
               <View style={styles.emptyIconWrap}>

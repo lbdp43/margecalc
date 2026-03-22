@@ -1,10 +1,11 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Alert } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import { RecipeWithCost, formatPercent, formatPrice, MARGIN_COLOR_MAP } from '@margebar/shared';
 import { ScreenWrapper } from '../../components/ui/ScreenWrapper';
+import { useOfflineQuery } from '../../hooks/useOfflineQuery';
 import * as recipeService from '../../services/recipe.service';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 
@@ -14,16 +15,23 @@ export function CocktailDetailScreen() {
   const queryClient = useQueryClient();
   const { recipeId } = route.params;
 
-  const { data: recipe } = useQuery<RecipeWithCost>({
-    queryKey: ['recipe', recipeId],
-    queryFn: () => recipeService.getRecipe(recipeId),
-  });
+  const { data: recipe, isLoading, isOffline } = useOfflineQuery<RecipeWithCost>(
+    ['recipe', recipeId],
+    () => recipeService.getRecipe(recipeId),
+  );
 
-  if (!recipe) {
+  if (isLoading || !recipe) {
     return (
       <ScreenWrapper>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => navigation.goBack()}>
+            <Ionicons name="arrow-back" size={24} color={colors.text} />
+          </TouchableOpacity>
+        </View>
         <View style={styles.loading}>
-          <Text style={styles.loadingText}>Chargement...</Text>
+          <Text style={styles.loadingText}>
+            {isLoading ? 'Chargement...' : 'Recette introuvable'}
+          </Text>
         </View>
       </ScreenWrapper>
     );
@@ -41,9 +49,13 @@ export function CocktailDetailScreen() {
           text: 'Supprimer',
           style: 'destructive',
           onPress: async () => {
-            await recipeService.deleteRecipe(recipeId);
-            queryClient.invalidateQueries({ queryKey: ['recipes'] });
-            navigation.goBack();
+            try {
+              await recipeService.deleteRecipe(recipeId);
+              queryClient.invalidateQueries({ queryKey: ['recipes'] });
+              navigation.goBack();
+            } catch {
+              Alert.alert('Erreur', 'Impossible de supprimer la recette');
+            }
           },
         },
       ],

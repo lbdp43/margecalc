@@ -19,13 +19,13 @@ const consumableSchema = z.object({
 });
 
 const createSchema = z.object({
-  name: z.string().min(1, 'Nom requis'),
-  description: z.string().optional(),
+  name: z.string().min(1, 'Nom requis').max(200),
+  description: z.string().max(2000).optional(),
   sellingPriceTTC: z.number().positive().optional(),
   tvaRate: z.number().min(0).max(1),
-  imageUrl: z.string().optional(),
+  imageUrl: z.string().url('URL image invalide').optional(),
   isPublic: z.boolean().optional(),
-  ingredients: z.array(ingredientSchema),
+  ingredients: z.array(ingredientSchema).min(1, 'Au moins un ingrédient requis'),
   consumables: z.array(consumableSchema),
 });
 
@@ -37,7 +37,7 @@ router.get('/', async (req: Request, res: Response) => {
     const recipes = await recipeService.getRecipes(req.user!.userId);
     res.json(recipes);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Erreur serveur' });
   }
 });
 
@@ -47,7 +47,7 @@ router.get('/community', async (_req: Request, res: Response) => {
     const recipes = await recipeService.getPublicRecipes();
     res.json(recipes);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Erreur serveur' });
   }
 });
 
@@ -57,7 +57,8 @@ router.get('/:id', async (req: Request, res: Response) => {
     const recipe = await recipeService.getRecipe(req.params.id, req.user!.userId);
     res.json(recipe);
   } catch (err: any) {
-    res.status(404).json({ error: err.message });
+    const status = err.message === 'Recette non trouvée' ? 404 : 500;
+    res.status(status).json({ error: err.message === 'Recette non trouvée' ? err.message : 'Erreur serveur' });
   }
 });
 
@@ -69,7 +70,7 @@ router.post('/', async (req: Request, res: Response) => {
     res.status(201).json(recipe);
   } catch (err: any) {
     const status = err.name === 'ZodError' ? 400 : 500;
-    res.status(status).json({ error: err.message });
+    res.status(status).json({ error: err.name === 'ZodError' ? err.message : 'Erreur serveur' });
   }
 });
 
@@ -80,8 +81,8 @@ router.put('/:id', async (req: Request, res: Response) => {
     const recipe = await recipeService.updateRecipe(req.params.id, req.user!.userId, data);
     res.json(recipe);
   } catch (err: any) {
-    const status = err.message === 'Recette non trouvée' ? 404 : 500;
-    res.status(status).json({ error: err.message });
+    const status = err.message === 'Recette non trouvée' ? 404 : err.name === 'ZodError' ? 400 : 500;
+    res.status(status).json({ error: err.message === 'Recette non trouvée' ? err.message : 'Erreur serveur' });
   }
 });
 
@@ -91,7 +92,8 @@ router.delete('/:id', async (req: Request, res: Response) => {
     await recipeService.deleteRecipe(req.params.id, req.user!.userId);
     res.status(204).send();
   } catch (err: any) {
-    res.status(404).json({ error: err.message });
+    const status = err.message === 'Recette non trouvée' ? 404 : 500;
+    res.status(status).json({ error: err.message === 'Recette non trouvée' ? err.message : 'Erreur serveur' });
   }
 });
 

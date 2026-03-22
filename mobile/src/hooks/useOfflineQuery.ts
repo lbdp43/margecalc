@@ -1,5 +1,5 @@
 import { useQuery, UseQueryOptions, QueryKey } from '@tanstack/react-query';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { getCached, setCache, isOnline, onConnectivityChange } from '../services/offline';
 
 /**
@@ -11,20 +11,33 @@ export function useOfflineQuery<T>(
   queryFn: () => Promise<T>,
   options?: Omit<UseQueryOptions<T>, 'queryKey' | 'queryFn'>,
 ) {
-  const cacheKey = Array.isArray(queryKey) ? queryKey.join('_') : String(queryKey);
+  // Stable cache key using JSON serialization to avoid collisions
+  const cacheKey = JSON.stringify(queryKey);
   const [online, setOnline] = useState(isOnline());
   const [cachedData, setCachedData] = useState<T | undefined>(undefined);
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
 
   // Monitor connectivity
   useEffect(() => {
-    return onConnectivityChange(setOnline);
+    return onConnectivityChange((state) => {
+      if (mountedRef.current) setOnline(state);
+    });
   }, []);
 
-  // Load from cache on mount
+  // Load from cache on mount — only use if query hasn't returned data yet
   useEffect(() => {
+    let cancelled = false;
     getCached<T>(cacheKey).then((data) => {
-      if (data) setCachedData(data);
+      if (data && !cancelled && mountedRef.current) {
+        setCachedData(data);
+      }
     });
+    return () => { cancelled = true; };
   }, [cacheKey]);
 
   const query = useQuery<T>({
@@ -33,7 +46,6 @@ export function useOfflineQuery<T>(
       const data = await queryFn();
       // Update cache on successful fetch
       await setCache(cacheKey, data);
-      setCachedData(data);
       return data;
     },
     ...options,
@@ -41,7 +53,7 @@ export function useOfflineQuery<T>(
     retry: online ? 2 : 0,
   });
 
-  // When offline and no fresh data, use cached data
+  // Prefer fresh query data over cached data (avoids race condition)
   const data = query.data ?? cachedData ?? (options as any)?.initialData;
 
   return {

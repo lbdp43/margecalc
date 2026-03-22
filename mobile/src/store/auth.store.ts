@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { User } from '@margebar/shared';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { clearAllOfflineData } from '../services/offline';
 
 interface AuthState {
   token: string | null;
@@ -29,6 +30,8 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   logout: () => {
     AsyncStorage.multiRemove([TOKEN_KEY, USER_KEY]);
+    // Clear all offline cache and pending ops to prevent data leak
+    clearAllOfflineData();
     set({ token: null, user: null, isAuthenticated: false });
   },
 
