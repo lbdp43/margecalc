@@ -28,8 +28,8 @@ router.get('/', async (req: Request, res: Response) => {
     const categoryId = req.query.categoryId as string | undefined;
     const products = await productService.getProducts(req.user!.userId, categoryId);
     res.json(products);
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
+  } catch {
+    res.status(500).json({ error: 'Erreur serveur' });
   }
 });
 
@@ -38,7 +38,8 @@ router.get('/:id', async (req: Request, res: Response) => {
     const product = await productService.getProduct(req.params.id, req.user!.userId);
     res.json(product);
   } catch (err: any) {
-    res.status(404).json({ error: err.message });
+    const status = err.message === 'Produit non trouvé' ? 404 : 500;
+    res.status(status).json({ error: status === 404 ? 'Produit non trouvé' : 'Erreur serveur' });
   }
 });
 
@@ -47,7 +48,8 @@ router.get('/:id/price-history', async (req: Request, res: Response) => {
     const history = await productService.getPriceHistory(req.params.id, req.user!.userId);
     res.json(history);
   } catch (err: any) {
-    res.status(404).json({ error: err.message });
+    const status = err.message === 'Produit non trouvé' ? 404 : 500;
+    res.status(status).json({ error: status === 404 ? 'Produit non trouvé' : 'Erreur serveur' });
   }
 });
 
@@ -58,7 +60,7 @@ router.post('/', async (req: Request, res: Response) => {
     res.status(201).json(product);
   } catch (err: any) {
     const status = err.name === 'ZodError' ? 400 : 500;
-    res.status(status).json({ error: err.message });
+    res.status(status).json({ error: err.name === 'ZodError' ? err.message : 'Erreur serveur' });
   }
 });
 
@@ -68,8 +70,10 @@ router.put('/:id', async (req: Request, res: Response) => {
     const product = await productService.updateProduct(req.params.id, req.user!.userId, data);
     res.json(product);
   } catch (err: any) {
-    const status = err.message === 'Produit non trouvé' ? 404 : 500;
-    res.status(status).json({ error: err.message });
+    const status = err.message === 'Produit non trouvé' ? 404 : err.name === 'ZodError' ? 400 : 500;
+    res.status(status).json({
+      error: err.message === 'Produit non trouvé' ? err.message : err.name === 'ZodError' ? err.message : 'Erreur serveur',
+    });
   }
 });
 
@@ -78,7 +82,8 @@ router.delete('/:id', async (req: Request, res: Response) => {
     await productService.deleteProduct(req.params.id, req.user!.userId);
     res.status(204).send();
   } catch (err: any) {
-    res.status(404).json({ error: err.message });
+    const status = err.message === 'Produit non trouvé' ? 404 : 500;
+    res.status(status).json({ error: status === 404 ? 'Produit non trouvé' : 'Erreur serveur' });
   }
 });
 

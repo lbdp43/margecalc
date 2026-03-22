@@ -19,7 +19,7 @@ interface ProductCardProps {
   onPress: () => void;
 }
 
-export function ProductCard({ product, onPress }: ProductCardProps) {
+export const ProductCard = React.memo(function ProductCard({ product, onPress }: ProductCardProps) {
   const accent = MARGIN_COLOR_MAP[product.computed.colorCode];
   const servings = product.servings || [];
 
@@ -85,7 +85,7 @@ export function ProductCard({ product, onPress }: ProductCardProps) {
       </View>
     </TouchableOpacity>
   );
-}
+});
 
 const styles = StyleSheet.create({
   pressable: {

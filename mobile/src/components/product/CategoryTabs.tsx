@@ -9,7 +9,7 @@ interface CategoryTabsProps {
   onSelect: (id: string | null) => void;
 }
 
-export function CategoryTabs({ categories, selectedId, onSelect }: CategoryTabsProps) {
+export const CategoryTabs = React.memo(function CategoryTabs({ categories, selectedId, onSelect }: CategoryTabsProps) {
   return (
     <ScrollView
       horizontal
@@ -45,7 +45,7 @@ export function CategoryTabs({ categories, selectedId, onSelect }: CategoryTabsP
       })}
     </ScrollView>
   );
-}
+});
 
 const styles = StyleSheet.create({
   container: {

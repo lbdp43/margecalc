@@ -60,7 +60,9 @@ export function ProductFormScreen({ route, navigation }: Props) {
   const [alcoholTaxRates, setAlcoholTaxRates] = useState({ droitAccise: 0, cotisationSecu: 0 });
 
   useEffect(() => {
+    let mounted = true;
     AsyncStorage.getItem('margebar_alcohol_tax').then((val) => {
+      if (!mounted) return;
       if (val) {
         const parsed = JSON.parse(val);
         setAlcoholTaxRates({
@@ -69,6 +71,7 @@ export function ProductFormScreen({ route, navigation }: Props) {
         });
       }
     });
+    return () => { mounted = false; };
   }, []);
 
   // Serving state

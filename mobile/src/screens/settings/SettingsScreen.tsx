@@ -63,24 +63,28 @@ export function SettingsScreen() {
 
   useFocusEffect(
     useCallback(() => {
+      let mounted = true;
       loadServingTypes();
       loadCategories();
       loadContainers();
       loadSubscription();
-      AsyncStorage.getItem('margebar_margin_thresholds').then((val) => {
-        if (val) {
-          const parsed = JSON.parse(val);
+      Promise.all([
+        AsyncStorage.getItem('margebar_margin_thresholds'),
+        AsyncStorage.getItem('margebar_alcohol_tax'),
+      ]).then(([thresholdsVal, taxVal]) => {
+        if (!mounted) return;
+        if (thresholdsVal) {
+          const parsed = JSON.parse(thresholdsVal);
           setGreenThreshold(String(parsed.good));
           setOrangeThreshold(String(parsed.medium));
         }
-      });
-      AsyncStorage.getItem('margebar_alcohol_tax').then((val) => {
-        if (val) {
-          const parsed = JSON.parse(val);
+        if (taxVal) {
+          const parsed = JSON.parse(taxVal);
           setDroitAccise(String(parsed.droitAccise || ''));
           setCotisationSecu(String(parsed.cotisationSecu || ''));
         }
       });
+      return () => { mounted = false; };
     }, [])
   );
 

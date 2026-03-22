@@ -63,9 +63,10 @@ export function CocktailFormScreen() {
   const [isPublic, setIsPublic] = useState(existingRecipe?.isPublic ?? false);
   const [saving, setSaving] = useState(false);
 
-  // Initialize from existing recipe
+  // Initialize from existing recipe — use ID as dep to avoid re-running on refetch
+  const [initialized, setInitialized] = useState(!isEdit);
   React.useEffect(() => {
-    if (existingRecipe) {
+    if (existingRecipe && !initialized) {
       setName(existingRecipe.name);
       setDescription(existingRecipe.description || '');
       setSellingPrice(existingRecipe.sellingPriceTTC?.toString().replace('.', ',') || '');
@@ -84,8 +85,9 @@ export function CocktailFormScreen() {
         unitCost: c.unitCost.toString().replace('.', ','),
         quantity: c.quantity.toString().replace('.', ','),
       })));
+      setInitialized(true);
     }
-  }, [existingRecipe]);
+  }, [existingRecipe?.id]);
 
   const [ingredients, setIngredients] = useState<IngredientRow[]>([
     { key: 'ing-0', name: '', quantityCl: '', costPerUnit: '' },

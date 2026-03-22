@@ -95,7 +95,7 @@ Si tu ne reconnais pas le produit, mets confidence à 0.`;
     if (!response.ok) {
       const err = await response.text();
       console.error(`[SCAN] Erreur API: ${response.status} - ${err}`);
-      throw new Error(`Erreur API vision: ${response.status} - ${err}`);
+      throw new Error('Erreur lors de l\'analyse de l\'image. Réessayez.');
     }
 
     const data = (await response.json()) as { content?: Array<{ text?: string }> };
@@ -219,7 +219,7 @@ N'oublie aucune ligne produit de la facture.`;
     if (!response.ok) {
       const err = await response.text();
       console.error(`[SCAN-INVOICE] Erreur API: ${response.status} - ${err}`);
-      throw new Error(`Erreur API vision: ${response.status} - ${err}`);
+      throw new Error('Erreur lors de l\'analyse de la facture. Réessayez.');
     }
 
     const data = (await response.json()) as { content?: Array<{ text?: string }> };
