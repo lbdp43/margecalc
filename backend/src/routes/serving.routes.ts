@@ -80,7 +80,7 @@ router.put('/:id', async (req: Request, res: Response) => {
       res.status(404).json({ error: 'Type de service non trouvé' });
       return;
     }
-    const updated = await prisma.servingType.findUnique({ where: { id: req.params.id } });
+    const updated = await prisma.servingType.findFirst({ where: { id: req.params.id, userId: req.user!.userId } });
     res.json(updated);
   } catch (err: any) {
     const status = err.name === 'ZodError' ? 400 : 500;

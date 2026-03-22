@@ -18,7 +18,7 @@ import { colors, spacing, borderRadius, typography, shadows } from '../../theme'
 type Props = NativeStackScreenProps<any, 'ProductDetail'>;
 
 export function ProductDetailScreen({ route, navigation }: Props) {
-  const { productId } = route.params as { productId: string };
+  const productId = (route.params as any)?.productId as string;
   const [product, setProduct] = useState<ProductWithMargin | null>(null);
   const [servingTypes, setServingTypes] = useState<ServingType[]>([]);
   const [savedServings, setSavedServings] = useState<ServingMarginResult[]>([]);

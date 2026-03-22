@@ -77,8 +77,8 @@ export function calculateMargin(input: MarginInput): MarginResult {
 
     case MarginMode.FIX_TARGET_MARGIN: {
       const targetMargin = input.targetMarginPercent;
-      if (targetMargin === undefined || targetMargin >= 100) {
-        throw new Error('Target margin must be defined and < 100%');
+      if (targetMargin === undefined || targetMargin === null || targetMargin < 0 || targetMargin >= 100) {
+        throw new Error('Target margin must be defined and between 0 and 100%');
       }
       marginPercent = targetMargin;
       sellingPriceHT = doseCost / (1 - targetMargin / 100);
@@ -135,8 +135,11 @@ export function calculateServingMargin(
   servingType: ServingType,
   sellingPriceTTC: number,
 ): ServingMarginResult {
+  if (purchasePriceHT < 0) throw new Error('Purchase price must be >= 0');
+  if (sellingPriceTTC <= 0) throw new Error('Selling price must be > 0');
   if (servingType.volumeCl <= 0) throw new Error('Serving volume must be > 0');
   if (containerVolumeCl <= 0) throw new Error('Container volume must be > 0');
+  if (tvaRate < 0 || tvaRate >= 1) throw new Error('TVA rate must be between 0 and 1');
   const servingsPerContainer = containerVolumeCl / servingType.volumeCl;
   const costPerServingHT = purchasePriceHT / servingsPerContainer;
   const sellingPriceHT = sellingPriceTTC / (1 + tvaRate);

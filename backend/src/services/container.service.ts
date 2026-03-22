@@ -56,7 +56,7 @@ export async function updateContainer(
     return null;
   }
 
-  return prisma.customContainer.findUnique({ where: { id } });
+  return prisma.customContainer.findFirst({ where: { id, userId } });
 }
 
 export async function deleteContainer(userId: string, id: string) {

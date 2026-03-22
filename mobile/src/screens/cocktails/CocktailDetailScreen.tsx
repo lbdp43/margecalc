@@ -13,7 +13,7 @@ export function CocktailDetailScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
   const queryClient = useQueryClient();
-  const { recipeId } = route.params;
+  const recipeId = route.params?.recipeId;
 
   const { data: recipe, isLoading, isOffline } = useOfflineQuery<RecipeWithCost>(
     ['recipe', recipeId],
