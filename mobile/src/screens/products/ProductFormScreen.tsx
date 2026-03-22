@@ -36,13 +36,17 @@ type FormStep = 'scan' | 'form';
 
 export function ProductFormScreen({ route, navigation }: Props) {
   const productId = route.params?.productId;
+  const incomingScanData = route.params?.scanData as {
+    name?: string; categoryId?: string;
+    containerVolumeCl?: number; estimatedPriceHT?: number;
+  } | undefined;
   const isEditing = !!productId;
   const queryClient = useQueryClient();
   const user = useAuthStore((s) => s.user);
   const defaultContainer = user?.defaultContainerVolumeCl || 70;
 
-  // Step: scan first, then form
-  const [step, setStep] = useState<FormStep>(isEditing ? 'form' : 'scan');
+  // Skip scan step if we already have scan data from ScanScreen or editing
+  const [step, setStep] = useState<FormStep>(isEditing || incomingScanData ? 'form' : 'scan');
 
   // Scan state
   const [imageUri, setImageUri] = useState<string | null>(null);
@@ -126,6 +130,16 @@ export function ProductFormScreen({ route, navigation }: Props) {
       setServingPrices(prices);
     }
   }, [existingServings]);
+
+  // Pre-fill from incoming scan data (from ScanScreen or draft)
+  useEffect(() => {
+    if (incomingScanData) {
+      if (incomingScanData.name) setName(incomingScanData.name);
+      if (incomingScanData.categoryId) setCategoryId(incomingScanData.categoryId);
+      if (incomingScanData.containerVolumeCl) setContainerVolume(String(incomingScanData.containerVolumeCl));
+      if (incomingScanData.estimatedPriceHT) setPurchasePrice(String(incomingScanData.estimatedPriceHT));
+    }
+  }, []);  // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (categories.length > 0 && !categoryId) {
