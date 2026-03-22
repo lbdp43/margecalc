@@ -1,10 +1,8 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
-import { PrismaClient } from '@prisma/client';
 import { authenticate } from '../middleware/auth';
 import { DEFAULT_SERVING_TYPES } from '@margebar/shared';
-
-const prisma = new PrismaClient();
+import { prisma } from '../config/database';
 const router = Router();
 
 const createSchema = z.object({

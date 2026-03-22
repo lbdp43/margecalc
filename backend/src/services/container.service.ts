@@ -1,7 +1,5 @@
-import { PrismaClient } from '@prisma/client';
 import { CONTAINER_PRESETS } from '@margebar/shared';
-
-const prisma = new PrismaClient();
+import { prisma } from '../config/database';
 
 export async function getContainers(userId: string) {
   let containers = await prisma.customContainer.findMany({

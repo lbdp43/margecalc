@@ -8,7 +8,7 @@ interface InputProps extends TextInputProps {
   suffix?: string;
 }
 
-export function Input({ label, error, suffix, style, ...props }: InputProps) {
+export const Input = React.memo(function Input({ label, error, suffix, style, ...props }: InputProps) {
   return (
     <View style={styles.container}>
       {label ? <Text style={styles.label}>{label}</Text> : null}
@@ -27,7 +27,7 @@ export function Input({ label, error, suffix, style, ...props }: InputProps) {
       {error && <Text style={styles.error}>{error}</Text>}
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   container: {

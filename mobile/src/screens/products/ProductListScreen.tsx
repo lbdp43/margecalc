@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import { View, Text, FlatList, StyleSheet, TouchableOpacity, TextInput } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
@@ -13,6 +13,16 @@ import * as categoryService from '../../services/category.service';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 
 type Props = NativeStackScreenProps<any, 'ProductList'>;
+
+const SORT_OPTIONS = [
+  { key: 'name', label: 'Nom' },
+  { key: 'margin', label: 'Marge %' },
+  { key: 'price', label: 'Prix' },
+  { key: 'coeff', label: 'Coeff' },
+] as const;
+
+const keyExtractor = (item: ProductWithMargin) => item.id;
+const CLEAR_HIT_SLOP = { top: 8, bottom: 8, left: 8, right: 8 };
 
 export function ProductListScreen({ navigation }: Props) {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
@@ -30,7 +40,7 @@ export function ProductListScreen({ navigation }: Props) {
     () => productService.getProducts(selectedCategory || undefined),
   );
 
-  const filtered = products
+  const filtered = useMemo(() => products
     .filter((p) => searchQuery.length === 0 || p.name.toLowerCase().includes(searchQuery.toLowerCase()))
     .sort((a, b) => {
       let cmp = 0;
@@ -41,7 +51,7 @@ export function ProductListScreen({ navigation }: Props) {
         case 'coeff': cmp = a.computed.coefficient - b.computed.coefficient; break;
       }
       return sortAsc ? cmp : -cmp;
-    });
+    }), [products, searchQuery, sortBy, sortAsc]);
 
   const renderProduct = useCallback(({ item }: { item: ProductWithMargin }) => (
     <ProductCard
@@ -81,7 +91,7 @@ export function ProductListScreen({ navigation }: Props) {
             placeholderTextColor={colors.textSecondary}
           />
           {searchQuery.length > 0 && (
-            <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={CLEAR_HIT_SLOP}>
               <Ionicons name="close-circle" size={20} color={colors.textSecondary} />
             </TouchableOpacity>
           )}
@@ -90,12 +100,7 @@ export function ProductListScreen({ navigation }: Props) {
 
       {/* Sort pills */}
       <View style={styles.sortRow}>
-        {[
-          { key: 'name', label: 'Nom' },
-          { key: 'margin', label: 'Marge %' },
-          { key: 'price', label: 'Prix' },
-          { key: 'coeff', label: 'Coeff' },
-        ].map((s) => {
+        {SORT_OPTIONS.map((s) => {
           const isActive = sortBy === s.key;
           return (
             <TouchableOpacity
@@ -129,7 +134,7 @@ export function ProductListScreen({ navigation }: Props) {
         <FlatList
           data={filtered}
           renderItem={renderProduct}
-          keyExtractor={(item) => item.id}
+          keyExtractor={keyExtractor}
           contentContainerStyle={styles.list}
           showsVerticalScrollIndicator={false}
           onRefresh={refetch}

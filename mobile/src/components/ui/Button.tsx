@@ -12,7 +12,7 @@ interface ButtonProps {
   icon?: ReactNode;
 }
 
-export function Button({ title, onPress, variant = 'primary', loading, disabled, style, icon }: ButtonProps) {
+export const Button = React.memo(function Button({ title, onPress, variant = 'primary', loading, disabled, style, icon }: ButtonProps) {
   const isDisabled = disabled || loading;
 
   return (
@@ -34,7 +34,7 @@ export function Button({ title, onPress, variant = 'primary', loading, disabled,
       )}
     </TouchableOpacity>
   );
-}
+});
 
 const styles = StyleSheet.create({
   base: {

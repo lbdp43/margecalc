@@ -23,8 +23,10 @@ export const useAuthStore = create<AuthState>((set) => ({
   isLoading: true,
 
   setAuth: (token, user) => {
-    AsyncStorage.setItem(TOKEN_KEY, token);
-    AsyncStorage.setItem(USER_KEY, JSON.stringify(user));
+    AsyncStorage.multiSet([
+      [TOKEN_KEY, token],
+      [USER_KEY, JSON.stringify(user)],
+    ]).catch(() => {});
     set({ token, user, isAuthenticated: true });
   },
 

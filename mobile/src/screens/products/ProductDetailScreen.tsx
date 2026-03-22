@@ -43,18 +43,16 @@ export function ProductDetailScreen({ route, navigation }: Props) {
       const loadData = async () => {
         setLoading(true);
         try {
-          const [productRes, typesRes, servingsRes] = await Promise.all([
+          const [productRes, typesRes, servingsRes, historyRes] = await Promise.all([
             productService.getProduct(productId),
             servingService.getServingTypes(),
             servingService.getProductServings(productId),
+            productService.getPriceHistory(productId),
           ]);
           if (!mounted) return;
           setProduct(productRes);
           setServingTypes(typesRes);
           setSavedServings(servingsRes);
-
-          const historyRes = await productService.getPriceHistory(productId);
-          if (!mounted) return;
           setPriceHistory(historyRes);
 
           const priceMap: Record<string, string> = {};

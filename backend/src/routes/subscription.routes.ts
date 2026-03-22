@@ -142,7 +142,7 @@ router.post('/webhook', async (req: Request, res: Response) => {
       case 'customer.subscription.updated': {
         const updatedSub = event.data.object as Stripe.Subscription;
         const customerId = updatedSub.customer as string;
-        const existingUser = await prisma.user.findFirst({
+        const existingUser = await prisma.user.findUnique({
           where: { stripeCustomerId: customerId },
         });
         if (existingUser) {

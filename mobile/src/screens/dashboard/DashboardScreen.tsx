@@ -69,12 +69,12 @@ export function DashboardScreen() {
     );
   }, []);
 
-  const navigateToProduct = (productId: string) => {
+  const navigateToProduct = useCallback((productId: string) => {
     navigation.navigate('Produits', {
       screen: 'ProductDetail',
       params: { productId },
     });
-  };
+  }, [navigation]);
 
   const sorted = useMemo(
     () => [...products].sort((a, b) => b.computed.marginPercent - a.computed.marginPercent),
@@ -105,13 +105,30 @@ export function DashboardScreen() {
       .sort((a, b) => b.avgMargin - a.avgMargin);
   }, [products]);
 
-  // Top 5 and Bottom 5
-  const top5 = sorted.slice(0, 5);
-  const flop5 = sorted.length > 5 ? sorted.slice(-5).reverse() : [];
+  // Top 5 and Bottom 5 (memoized)
+  const top5 = useMemo(() => sorted.slice(0, 5), [sorted]);
+  const flop5 = useMemo(
+    () => sorted.length > 5 ? sorted.slice(-5).reverse() : [],
+    [sorted],
+  );
 
-  const renderProductCard = useCallback((p: ProductWithMargin) => {
-    const servings = p.servings || [];
-    const accent = MARGIN_COLOR_MAP[p.computed.colorCode];
+  // Pre-compute serving margins for all products (avoids recalc in render)
+  const productsWithServingMargins = useMemo(() => {
+    return sorted.map((p) => ({
+      product: p,
+      accent: MARGIN_COLOR_MAP[p.computed.colorCode],
+      servingMargins: (p.servings || []).map((s) => ({
+        serving: s,
+        margin: calculateServingMargin(
+          p.purchasePriceHT, p.containerVolumeCl, p.tvaRate,
+          s.servingType, s.sellingPriceTTC,
+        ),
+      })),
+    }));
+  }, [sorted]);
+
+  const renderProductCard = useCallback((item: typeof productsWithServingMargins[number]) => {
+    const { product: p, accent, servingMargins } = item;
 
     return (
       <TouchableOpacity key={p.id} activeOpacity={0.7} onPress={() => navigateToProduct(p.id)}>
@@ -130,36 +147,29 @@ export function DashboardScreen() {
             <Ionicons name="chevron-forward" size={18} color={colors.tabBarInactive} />
           </View>
 
-          {servings.length > 0 && (
+          {servingMargins.length > 0 && (
             <View style={styles.servingsTable}>
               <View style={styles.tableHeaderRow}>
-                <Text style={[styles.tableHeader, { flex: 2 }]}>SERVICE</Text>
-                <Text style={[styles.tableHeader, { flex: 1.2, textAlign: 'right' }]}>PRIX TTC</Text>
-                <Text style={[styles.tableHeader, { flex: 1.2, textAlign: 'right' }]}>MARGE</Text>
-                <Text style={[styles.tableHeader, { flex: 1, textAlign: 'right' }]}>COEFF</Text>
+                <Text style={styles.thService}>SERVICE</Text>
+                <Text style={styles.thRight12}>PRIX TTC</Text>
+                <Text style={styles.thRight12}>MARGE</Text>
+                <Text style={styles.thRight1}>COEFF</Text>
               </View>
-              {servings.map((s) => {
-                const margin = calculateServingMargin(
-                  p.purchasePriceHT,
-                  p.containerVolumeCl,
-                  p.tvaRate,
-                  s.servingType,
-                  s.sellingPriceTTC,
-                );
+              {servingMargins.map(({ serving: s, margin }) => {
                 const rowColor = MARGIN_COLOR_MAP[margin.colorCode];
                 return (
                   <View key={s.id} style={styles.tableRow}>
-                    <View style={{ flex: 2 }}>
+                    <View style={styles.cellFlex2}>
                       <Text style={styles.servingName}>{s.servingType.name}</Text>
                       <Text style={styles.servingVolume}>{s.servingType.volumeCl} cl</Text>
                     </View>
-                    <Text style={[styles.tableCell, { flex: 1.2, textAlign: 'right' }]}>
+                    <Text style={styles.cellRight12}>
                       {formatPrice(s.sellingPriceTTC)}
                     </Text>
-                    <Text style={[styles.tableCellBold, { flex: 1.2, textAlign: 'right', color: rowColor }]}>
+                    <Text style={[styles.cellRight12Bold, { color: rowColor }]}>
                       {formatPercent(margin.marginPercent)}
                     </Text>
-                    <Text style={[styles.tableCell, { flex: 1, textAlign: 'right' }]}>
+                    <Text style={styles.cellRight1}>
                       x {margin.servingsPerContainer > 0
                         ? (margin.sellingPriceHT / margin.costPerServingHT).toFixed(1)
                         : '-'}
@@ -172,7 +182,7 @@ export function DashboardScreen() {
         </View>
       </TouchableOpacity>
     );
-  }, []);
+  }, [navigateToProduct]);
 
   // Bar chart rendering
   const barChartHeight = 160;
@@ -334,7 +344,7 @@ export function DashboardScreen() {
       <DecorativeCurve variant="middle" />
 
       {/* All products with serving tables */}
-      {sorted.map((p) => renderProductCard(p))}
+      {productsWithServingMargins.map((item) => renderProductCard(item))}
 
       {products.length === 0 && !loadingPref && (
         <View style={styles.emptyState}>
@@ -585,5 +595,56 @@ const styles = StyleSheet.create({
     ...typography.body,
     color: colors.tabBarInactive,
     textAlign: 'center',
+  },
+  // Extracted inline styles for table header / cells
+  thService: {
+    ...typography.caption,
+    color: colors.tabBarInactive,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    fontSize: 10,
+    flex: 2,
+  },
+  thRight12: {
+    ...typography.caption,
+    color: colors.tabBarInactive,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    fontSize: 10,
+    flex: 1.2,
+    textAlign: 'right',
+  },
+  thRight1: {
+    ...typography.caption,
+    color: colors.tabBarInactive,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    fontSize: 10,
+    flex: 1,
+    textAlign: 'right',
+  },
+  cellFlex2: {
+    flex: 2,
+  },
+  cellRight12: {
+    ...typography.bodySmall,
+    color: colors.text,
+    flex: 1.2,
+    textAlign: 'right',
+  },
+  cellRight12Bold: {
+    ...typography.bodySmall,
+    fontWeight: '700',
+    flex: 1.2,
+    textAlign: 'right',
+  },
+  cellRight1: {
+    ...typography.bodySmall,
+    color: colors.text,
+    flex: 1,
+    textAlign: 'right',
   },
 });

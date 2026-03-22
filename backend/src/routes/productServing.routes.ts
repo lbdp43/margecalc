@@ -1,10 +1,9 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
-import { PrismaClient } from '@prisma/client';
 import { authenticate } from '../middleware/auth';
 import { calculateServingMargin } from '@margebar/shared';
+import { prisma } from '../config/database';
 
-const prisma = new PrismaClient();
 const router = Router();
 
 const upsertSchema = z.object({
@@ -32,7 +31,6 @@ router.get('/:productId/servings', async (req: Request, res: Response) => {
       include: { servingType: true },
     });
 
-    // Calculate margin for each serving
     const results = productServings.map((ps) => {
       return calculateServingMargin(
         product.purchasePriceHT,
@@ -51,8 +49,8 @@ router.get('/:productId/servings', async (req: Request, res: Response) => {
     });
 
     res.json(results);
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
+  } catch {
+    res.status(500).json({ error: 'Erreur lors de la récupération des services' });
   }
 });
 
@@ -68,25 +66,27 @@ router.put('/:productId/servings', async (req: Request, res: Response) => {
       return;
     }
 
-    // Upsert each serving
-    for (const s of servings) {
-      await prisma.productServing.upsert({
-        where: {
-          productId_servingTypeId: {
+    // Batch upserts in a single transaction
+    await prisma.$transaction(
+      servings.map((s) =>
+        prisma.productServing.upsert({
+          where: {
+            productId_servingTypeId: {
+              productId: product.id,
+              servingTypeId: s.servingTypeId,
+            },
+          },
+          create: {
             productId: product.id,
             servingTypeId: s.servingTypeId,
+            sellingPriceTTC: s.sellingPriceTTC,
           },
-        },
-        create: {
-          productId: product.id,
-          servingTypeId: s.servingTypeId,
-          sellingPriceTTC: s.sellingPriceTTC,
-        },
-        update: {
-          sellingPriceTTC: s.sellingPriceTTC,
-        },
-      });
-    }
+          update: {
+            sellingPriceTTC: s.sellingPriceTTC,
+          },
+        })
+      )
+    );
 
     // Return updated results with margin calculations
     const productServings = await prisma.productServing.findMany({
@@ -113,8 +113,11 @@ router.put('/:productId/servings', async (req: Request, res: Response) => {
 
     res.json(results);
   } catch (err: any) {
-    const status = err.name === 'ZodError' ? 400 : 500;
-    res.status(status).json({ error: err.message });
+    if (err.name === 'ZodError') {
+      res.status(400).json({ error: 'Données de services invalides' });
+      return;
+    }
+    res.status(500).json({ error: 'Erreur lors de la mise à jour des services' });
   }
 });
 
@@ -137,8 +140,8 @@ router.delete('/:productId/servings/:servingTypeId', async (req: Request, res: R
     });
 
     res.status(204).send();
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
+  } catch {
+    res.status(500).json({ error: 'Erreur lors de la suppression du service' });
   }
 });
 

@@ -117,29 +117,39 @@ export function InvoiceScanScreen({ navigation }: Props) {
       const defaultContainer = user?.defaultContainerVolumeCl || 70;
       const tvaRate = user?.isAutoEntrepreneur ? 0 : TVA_RATES.RATE_20;
 
-      for (const p of selected) {
-        const matchedCat = categories.find((c) => c.slug === p.category);
-
-        await productService.createProduct({
-          name: p.name,
-          categoryId: matchedCat?.id || categories[0]?.id || '',
-          purchasePriceHT: p.purchasePriceHT || 0,
-          containerVolumeCl: p.containerVolumeCl || defaultContainer,
-          doseVolumeCl: 5,
-          marginMode: MarginMode.FIX_SELLING_PRICE,
-          sellingPriceTTC: 0,
-          tvaRate,
-          supplier: supplier || undefined,
-        });
-        importCount++;
-      }
+      const results = await Promise.allSettled(
+        selected.map((p) => {
+          const matchedCat = categories.find((c) => c.slug === p.category);
+          return productService.createProduct({
+            name: p.name,
+            categoryId: matchedCat?.id || categories[0]?.id || '',
+            purchasePriceHT: p.purchasePriceHT || 0,
+            containerVolumeCl: p.containerVolumeCl || defaultContainer,
+            doseVolumeCl: 5,
+            marginMode: MarginMode.FIX_SELLING_PRICE,
+            sellingPriceTTC: 0,
+            tvaRate,
+            supplier: supplier || undefined,
+          });
+        })
+      );
+      importCount = results.filter((r) => r.status === 'fulfilled').length;
+      const failCount = results.length - importCount;
 
       queryClient.invalidateQueries({ queryKey: ['products'] });
-      Alert.alert(
-        'Import terminé',
-        `${importCount} produit${importCount > 1 ? 's' : ''} importé${importCount > 1 ? 's' : ''}. Configurez les prix de vente dans chaque fiche produit.`,
-        [{ text: 'OK', onPress: () => navigation.goBack() }]
-      );
+      if (failCount > 0) {
+        Alert.alert(
+          'Import partiel',
+          `${importCount} importé(s), ${failCount} échoué(s). Configurez les prix de vente dans chaque fiche produit.`,
+          [{ text: 'OK', onPress: () => navigation.goBack() }]
+        );
+      } else {
+        Alert.alert(
+          'Import terminé',
+          `${importCount} produit${importCount > 1 ? 's' : ''} importé${importCount > 1 ? 's' : ''}. Configurez les prix de vente dans chaque fiche produit.`,
+          [{ text: 'OK', onPress: () => navigation.goBack() }]
+        );
+      }
     } catch (err: any) {
       Alert.alert(
         'Erreur',
