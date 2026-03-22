@@ -1,10 +1,11 @@
 import React, { useState, useCallback } from 'react';
-import { View, Text, FlatList, StyleSheet, TouchableOpacity, ActivityIndicator, TextInput } from 'react-native';
+import { View, Text, FlatList, StyleSheet, TouchableOpacity, TextInput } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useQuery } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import { ProductWithMargin, Category } from '@margebar/shared';
 import { ScreenWrapper } from '../../components/ui/ScreenWrapper';
+import { YinYangSpinner } from '../../components/ui/YinYangSpinner';
 import { ProductCard } from '../../components/product/ProductCard';
 import { CategoryTabs } from '../../components/product/CategoryTabs';
 import * as productService from '../../services/product.service';
@@ -123,7 +124,7 @@ export function ProductListScreen({ navigation }: Props) {
 
       {/* Product list */}
       {isLoading ? (
-        <ActivityIndicator color={colors.primary} style={styles.loader} size="large" />
+        <YinYangSpinner size={80} message="Chargement des produits…" />
       ) : (
         <FlatList
           data={filtered}

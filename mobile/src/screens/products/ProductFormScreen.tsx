@@ -8,6 +8,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
+import { ServingTypeIcon } from '../../components/ui/ServingTypeIcon';
 import {
   MarginMode, TVA_RATES, Category, CONTAINER_PRESETS,
   parseLocaleFloat, ServingType, calculateServingMargin,
@@ -491,9 +492,12 @@ export function ProductFormScreen({ route, navigation }: Props) {
                   style={[styles.servingToggle, isOn && styles.servingToggleActive]}
                   onPress={() => toggleServing(st.id)}
                 >
-                  <Text style={[styles.servingToggleText, isOn && styles.servingToggleTextActive]}>
-                    {st.icon} {st.name}
-                  </Text>
+                  <View style={styles.servingToggleRow}>
+                    <ServingTypeIcon name={st.name} icon={st.icon} size={28} />
+                    <Text style={[styles.servingToggleText, isOn && styles.servingToggleTextActive]}>
+                      {st.name}
+                    </Text>
+                  </View>
                   <Text style={[styles.servingToggleVol, isOn && styles.servingToggleTextActive]}>
                     {st.volumeCl} cl
                   </Text>
@@ -515,9 +519,12 @@ export function ProductFormScreen({ route, navigation }: Props) {
               return (
                 <Card key={st.id} style={styles.servingCard}>
                   <View style={styles.servingCardHeader}>
-                    <Text style={styles.servingCardName}>
-                      {st.icon} {st.name} ({st.volumeCl} cl)
-                    </Text>
+                    <View style={styles.servingCardNameRow}>
+                      <ServingTypeIcon name={st.name} icon={st.icon} size={28} />
+                      <Text style={styles.servingCardName}>
+                        {st.name} ({st.volumeCl} cl)
+                      </Text>
+                    </View>
                     <Text style={styles.servingCardMeta}>
                       {nbServings.toFixed(1)} / contenant
                     </Text>
@@ -742,6 +749,7 @@ const styles = StyleSheet.create({
     minWidth: 90,
   },
   servingToggleActive: { borderColor: colors.primary, backgroundColor: colors.light },
+  servingToggleRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   servingToggleText: { ...typography.bodySmall, fontWeight: '600', color: colors.textSecondary },
   servingToggleTextActive: { color: colors.primary },
   servingToggleVol: { ...typography.caption, color: colors.grayMedium, marginTop: 2 },
@@ -753,6 +761,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: spacing.sm,
   },
+  servingCardNameRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   servingCardName: { ...typography.body, fontWeight: '700', color: colors.text },
   servingCardMeta: { ...typography.caption, color: colors.textSecondary },
   modeTabs: {

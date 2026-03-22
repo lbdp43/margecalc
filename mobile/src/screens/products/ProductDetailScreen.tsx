@@ -1,11 +1,13 @@
 import React, { useState, useCallback } from 'react';
-import { View, Text, StyleSheet, TextInput, Alert, ActivityIndicator, Image, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, TextInput, Alert, Image, TouchableOpacity } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import { Product, ServingType, ServingMarginResult, calculateServingMargin, MARGIN_COLOR_MAP } from '@margebar/shared';
 import { ScreenWrapper } from '../../components/ui/ScreenWrapper';
+import { YinYangSpinner } from '../../components/ui/YinYangSpinner';
+import { ServingTypeIcon } from '../../components/ui/ServingTypeIcon';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
 import * as servingService from '../../services/serving.service';
@@ -115,7 +117,7 @@ export function ProductDetailScreen({ route, navigation }: Props) {
     return (
       <ScreenWrapper>
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={colors.primary} />
+          <YinYangSpinner size={80} message="Chargement du produit…" />
         </View>
       </ScreenWrapper>
     );
@@ -177,7 +179,7 @@ export function ProductDetailScreen({ route, navigation }: Props) {
             <View key={st.id} style={styles.servingBlock}>
               <View style={styles.servingHeader}>
                 <View style={styles.servingNameRow}>
-                  <Text style={styles.servingIcon}>{st.icon}</Text>
+                  <ServingTypeIcon name={st.name} icon={st.icon} size={36} />
                   <View>
                     <Text style={styles.servingName}>{st.name}</Text>
                     <Text style={styles.servingMeta}>{st.volumeCl} cl · {nbServings.toFixed(1)} / bouteille</Text>
@@ -382,9 +384,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
-  },
-  servingIcon: {
-    fontSize: 24,
   },
   servingName: {
     ...typography.body,

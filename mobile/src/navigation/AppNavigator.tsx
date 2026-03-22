@@ -15,16 +15,6 @@ import { CurvedTabBar } from '../components/ui/CurvedTabBar';
 
 const Tab = createBottomTabNavigator();
 const ProductStack = createAppStackNavigator();
-const DashboardStack = createAppStackNavigator();
-
-function DashboardNavigator() {
-  return (
-    <DashboardStack.Navigator screenOptions={{ headerShown: false }}>
-      <DashboardStack.Screen name="DashboardMain" component={DashboardScreen} />
-      <DashboardStack.Screen name="Settings" component={SettingsScreen} />
-    </DashboardStack.Navigator>
-  );
-}
 
 function ProductsNavigator() {
   return (
@@ -54,7 +44,7 @@ function ScanTabButton() {
         onPress={() => setMenuVisible(true)}
       >
         <View style={scanStyles.innerCircle}>
-          <Ionicons name="scan" size={26} color={colors.white} />
+          <Ionicons name="scan" size={28} color={colors.white} />
         </View>
       </TouchableOpacity>
 
@@ -99,8 +89,9 @@ function EmptyScreen() {
 }
 
 const TAB_ICONS: Record<string, { focused: string; default: string }> = {
-  'Tableau de bord': { focused: 'stats-chart', default: 'stats-chart-outline' },
+  'Réglages': { focused: 'settings', default: 'settings-outline' },
   'Produits': { focused: 'grid', default: 'grid-outline' },
+  'Tableau de bord': { focused: 'stats-chart', default: 'stats-chart-outline' },
 };
 
 export function AppNavigator() {
@@ -119,16 +110,7 @@ export function AppNavigator() {
         tabBarInactiveTintColor: colors.tabBarInactive,
       })}
     >
-      <Tab.Screen
-        name="Tableau de bord"
-        component={DashboardNavigator}
-        listeners={({ navigation }) => ({
-          tabPress: (e) => {
-            e.preventDefault();
-            navigation.navigate('Tableau de bord', { screen: 'DashboardMain' });
-          },
-        })}
-      />
+      <Tab.Screen name="Réglages" component={SettingsScreen} />
       <Tab.Screen
         name="Produits"
         component={ProductsNavigator}
@@ -147,6 +129,7 @@ export function AppNavigator() {
           tabBarButton: () => <ScanTabButton />,
         }}
       />
+      <Tab.Screen name="Tableau de bord" component={DashboardScreen} />
     </Tab.Navigator>
   );
 }
@@ -156,21 +139,21 @@ const scanStyles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     flex: 1,
-    top: -10,
+    top: -14,
   },
   button: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: 64,
+    height: 64,
+    borderRadius: 32,
     backgroundColor: colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
     ...shadows.lg,
   },
   innerCircle: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
     backgroundColor: colors.secondary,
     alignItems: 'center',
     justifyContent: 'center',

@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, View } from 'react-native';
+import { View } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuthStore } from '../store/auth.store';
 import { AuthNavigator } from './AuthNavigator';
 import { AppNavigator } from './AppNavigator';
 import { SubscriptionScreen } from '../screens/subscription/SubscriptionScreen';
+import { YinYangSpinner } from '../components/ui/YinYangSpinner';
 import { colors } from '../theme';
 
 const PAYWALL_SEEN_KEY = 'margebar_paywall_seen';
@@ -30,7 +31,7 @@ export function RootNavigator() {
   if (isLoading) {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background }}>
-        <ActivityIndicator size="large" color={colors.primary} />
+        <YinYangSpinner size={80} />
       </View>
     );
   }
@@ -56,7 +57,7 @@ export function RootNavigator() {
   if (paywallSeen === null) {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background }}>
-        <ActivityIndicator size="large" color={colors.primary} />
+        <YinYangSpinner size={80} />
       </View>
     );
   }

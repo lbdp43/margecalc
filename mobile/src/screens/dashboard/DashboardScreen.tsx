@@ -207,15 +207,6 @@ export function DashboardScreen() {
         </View>
       )}
 
-      {/* Settings button */}
-      <TouchableOpacity
-        style={styles.settingsButton}
-        activeOpacity={0.8}
-        onPress={() => navigation.navigate('Settings')}
-      >
-        <Ionicons name="settings-outline" size={20} color={colors.white} />
-        <Text style={styles.settingsButtonText}>Réglages</Text>
-      </TouchableOpacity>
     </ScreenWrapper>
   );
 }
@@ -407,23 +398,5 @@ const styles = StyleSheet.create({
     ...typography.body,
     color: colors.tabBarInactive,
     textAlign: 'center',
-  },
-  settingsButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.secondary,
-    borderRadius: borderRadius.lg,
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.lg,
-    marginTop: spacing.xl,
-    marginBottom: spacing.lg,
-    gap: spacing.sm,
-    ...shadows.sm,
-  },
-  settingsButtonText: {
-    ...typography.body,
-    fontWeight: '700',
-    color: colors.white,
   },
 });

@@ -6,6 +6,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { TVA_RATES, CONTAINER_PRESETS, ServingType, DEFAULT_MARGIN_THRESHOLDS, Category, CustomContainer } from '@margebar/shared';
 import { ScreenWrapper } from '../../components/ui/ScreenWrapper';
 import { DecorativeCurve } from '../../components/ui/DecorativeCurve';
+import { ServingTypeIcon } from '../../components/ui/ServingTypeIcon';
 import { Input } from '../../components/ui/Input';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
@@ -531,9 +532,7 @@ export function SettingsScreen() {
               ) : (
                 <>
                   <View style={styles.servingInfo}>
-                    <View style={styles.servingIconBadge}>
-                      <Text style={styles.servingIconEmoji}>{st.icon || '🍷'}</Text>
-                    </View>
+                    <ServingTypeIcon name={st.name} icon={st.icon} size={40} />
                     <View style={styles.servingTextBlock}>
                       <Text style={styles.servingName}>{st.name}</Text>
                       <Text style={styles.servingVolume}>{st.volumeCl} cl</Text>
@@ -876,9 +875,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     ...shadows.sm,
-  },
-  servingIconEmoji: {
-    fontSize: 22,
   },
   servingTextBlock: {
     marginLeft: spacing.sm,
