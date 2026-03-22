@@ -5,28 +5,17 @@ import { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { colors, shadows } from '../../theme';
 
 const TAB_HEIGHT = 70;
-const WAVE_HEIGHT = 28; // how tall the S-curve wave is
+const CURVE_HEIGHT = 30; // depth of the concave curve
 
 export function CurvedTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
   const { width } = useWindowDimensions();
-  const totalHeight = TAB_HEIGHT + WAVE_HEIGHT;
+  const totalHeight = TAB_HEIGHT + CURVE_HEIGHT;
 
-  // Yin-yang S-curve: left side rises up, right side stays low
-  // Creates a visible organic wave across the full width
-  const top = 2; // highest point (left side)
-  const bottom = WAVE_HEIGHT; // lowest point (right side)
-
+  // Concave curve: edges start high, center dips down — like a bowl
   const tabBarPath = `
-    M0,${bottom - 4}
-    C${width * 0.08},${top + 6}
-     ${width * 0.20},${top}
-     ${width * 0.35},${top + 4}
-    C${width * 0.50},${top + 8}
-     ${width * 0.55},${bottom - 2}
-     ${width * 0.65},${bottom}
-    C${width * 0.75},${bottom + 2}
-     ${width * 0.88},${bottom - 6}
-     ${width},${bottom - 8}
+    M0,0
+    Q${width * 0.5},${CURVE_HEIGHT * 2}
+     ${width},0
     L${width},${totalHeight}
     L0,${totalHeight}
     Z
