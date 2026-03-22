@@ -52,27 +52,27 @@ export function CurvedTabBar({ state, descriptors, navigation }: BottomTabBarPro
             }
           };
 
-          const iconElement = options.tabBarIcon?.({
-            focused: isFocused,
-            color: isFocused ? colors.white : 'rgba(255,255,255,0.5)',
-            size: 22,
-          });
-
           const label = typeof options.tabBarLabel === 'string'
             ? options.tabBarLabel
             : options.title ?? route.name;
+
+          const isDashboard = route.name === 'Tableau de bord';
 
           return (
             <TouchableOpacity
               key={route.key}
               onPress={onPress}
               activeOpacity={0.7}
-              style={styles.tabItem}
+              style={[styles.tabItem, isDashboard && styles.dashboardTabItem]}
             >
-              {iconElement}
+              {options.tabBarIcon?.({
+                focused: isFocused,
+                color: isFocused ? colors.white : 'rgba(255,255,255,0.5)',
+                size: isDashboard ? 26 : 22,
+              })}
               <Text
                 style={[
-                  styles.tabLabel,
+                  isDashboard ? styles.dashboardTabLabel : styles.tabLabel,
                   { color: isFocused ? colors.white : 'rgba(255,255,255,0.5)' },
                 ]}
               >
@@ -123,5 +123,13 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '600',
     marginTop: 2,
+  },
+  dashboardTabItem: {
+    flex: 1.4,
+  },
+  dashboardTabLabel: {
+    fontSize: 13,
+    fontWeight: '700',
+    marginTop: 3,
   },
 });

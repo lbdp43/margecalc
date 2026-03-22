@@ -15,6 +15,16 @@ import { CurvedTabBar } from '../components/ui/CurvedTabBar';
 
 const Tab = createBottomTabNavigator();
 const ProductStack = createAppStackNavigator();
+const DashboardStack = createAppStackNavigator();
+
+function DashboardNavigator() {
+  return (
+    <DashboardStack.Navigator screenOptions={{ headerShown: false }}>
+      <DashboardStack.Screen name="DashboardMain" component={DashboardScreen} />
+      <DashboardStack.Screen name="Settings" component={SettingsScreen} />
+    </DashboardStack.Navigator>
+  );
+}
 
 function ProductsNavigator() {
   return (
@@ -91,7 +101,6 @@ function EmptyScreen() {
 const TAB_ICONS: Record<string, { focused: string; default: string }> = {
   'Tableau de bord': { focused: 'stats-chart', default: 'stats-chart-outline' },
   'Produits': { focused: 'grid', default: 'grid-outline' },
-  'Réglages': { focused: 'settings', default: 'settings-outline' },
 };
 
 export function AppNavigator() {
@@ -110,7 +119,16 @@ export function AppNavigator() {
         tabBarInactiveTintColor: colors.tabBarInactive,
       })}
     >
-      <Tab.Screen name="Tableau de bord" component={DashboardScreen} />
+      <Tab.Screen
+        name="Tableau de bord"
+        component={DashboardNavigator}
+        listeners={({ navigation }) => ({
+          tabPress: (e) => {
+            e.preventDefault();
+            navigation.navigate('Tableau de bord', { screen: 'DashboardMain' });
+          },
+        })}
+      />
       <Tab.Screen
         name="Produits"
         component={ProductsNavigator}
@@ -129,7 +147,6 @@ export function AppNavigator() {
           tabBarButton: () => <ScanTabButton />,
         }}
       />
-      <Tab.Screen name="Réglages" component={SettingsScreen} />
     </Tab.Navigator>
   );
 }

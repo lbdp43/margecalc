@@ -93,7 +93,7 @@ export function YinYangSpinner({
           <Path
             d={`M0,${waveH * 0.7} C${waveW * 0.3},${waveH * 0.7} ${waveW * 0.7},${waveH * 0.15} ${waveW},${waveH * 0.15}`}
             fill="none"
-            stroke="#8B5CF6"
+            stroke={colors.accent}
             strokeWidth={1.5}
             opacity={0.2}
           />
@@ -112,13 +112,13 @@ export function YinYangSpinner({
             d={`M${r},0 A${r},${r} 0 0 1 ${r},${size} A${r / 2},${r / 2} 0 0 1 ${r},${r} A${r / 2},${r / 2} 0 0 0 ${r},0 Z`}
             fill={colors.primary}
           />
-          {/* Right half (purple) */}
+          {/* Right half (accent green) */}
           <Path
             d={`M${r},0 A${r},${r} 0 0 0 ${r},${size} A${r / 2},${r / 2} 0 0 0 ${r},${r} A${r / 2},${r / 2} 0 0 1 ${r},0 Z`}
-            fill="#8B5CF6"
+            fill={colors.accent}
           />
           {/* Dots */}
-          <Circle cx={r} cy={r / 2} r={dotR} fill="#8B5CF6" />
+          <Circle cx={r} cy={r / 2} r={dotR} fill={colors.accent} />
           <Circle cx={r} cy={r + r / 2} r={dotR} fill={colors.primary} />
         </Svg>
       </Animated.View>
