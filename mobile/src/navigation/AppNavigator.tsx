@@ -11,7 +11,7 @@ import { ProductFormScreen } from '../screens/products/ProductFormScreen';
 import { InvoiceScanScreen } from '../screens/products/InvoiceScanScreen';
 import { SettingsScreen } from '../screens/settings/SettingsScreen';
 import { colors, shadows } from '../theme';
-import { CurvedTabBar } from '../components/ui/CurvedTabBar';
+import { CurvedTabBar, CURVE_DEPTH, NOTCH_RADIUS, NOTCH_MARGIN } from '../components/ui/CurvedTabBar';
 
 const Tab = createBottomTabNavigator();
 const ProductStack = createAppStackNavigator();
@@ -44,7 +44,7 @@ function ScanTabButton() {
         onPress={() => setMenuVisible(true)}
       >
         <View style={scanStyles.innerCircle}>
-          <Ionicons name="scan" size={24} color={colors.white} />
+          <Ionicons name="scan" size={30} color={colors.white} />
         </View>
       </TouchableOpacity>
 
@@ -138,22 +138,22 @@ const scanStyles = StyleSheet.create({
   wrapper: {
     alignItems: 'center',
     justifyContent: 'center',
-    width: 68,
-    top: -14,
+    width: (NOTCH_RADIUS + NOTCH_MARGIN) * 2,
+    top: -(CURVE_DEPTH + NOTCH_RADIUS * 0.35),
   },
   button: {
-    width: 58,
-    height: 58,
-    borderRadius: 29,
+    width: NOTCH_RADIUS * 2,
+    height: NOTCH_RADIUS * 2,
+    borderRadius: NOTCH_RADIUS,
     backgroundColor: colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
     ...shadows.lg,
   },
   innerCircle: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: NOTCH_RADIUS * 2 - 12,
+    height: NOTCH_RADIUS * 2 - 12,
+    borderRadius: (NOTCH_RADIUS * 2 - 12) / 2,
     backgroundColor: colors.secondary,
     alignItems: 'center',
     justifyContent: 'center',

@@ -4,25 +4,29 @@ import Svg, { Path } from 'react-native-svg';
 import { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { colors, shadows } from '../../theme';
 
+const TAB_HEIGHT = 64;
+const NOTCH_RADIUS = 38;
+const NOTCH_MARGIN = 8;
+const CURVE_DEPTH = NOTCH_RADIUS + NOTCH_MARGIN;
+
 export function CurvedTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
   const { width } = useWindowDimensions();
-  const TAB_HEIGHT = 64;
-  const CURVE_HEIGHT = 28;
-  const totalHeight = TAB_HEIGHT + CURVE_HEIGHT;
+  const totalHeight = TAB_HEIGHT + CURVE_DEPTH;
+  const cx = width / 2; // center x of notch
+  const r = NOTCH_RADIUS + NOTCH_MARGIN; // radius of the semicircular cutout
 
-  // Build the wavy top edge path
-  // Creates a smooth S-curve across the top of the tab bar
-  const curvePath = `
-    M0,${CURVE_HEIGHT}
-    C${width * 0.08},${CURVE_HEIGHT - 18}
-     ${width * 0.18},${CURVE_HEIGHT + 6}
-     ${width * 0.32},${CURVE_HEIGHT - 8}
-    S${width * 0.48},${CURVE_HEIGHT + 10}
-     ${width * 0.5},${CURVE_HEIGHT - 14}
-    S${width * 0.62},${CURVE_HEIGHT + 4}
-     ${width * 0.72},${CURVE_HEIGHT - 6}
-    S${width * 0.88},${CURVE_HEIGHT + 8}
-     ${width},${CURVE_HEIGHT - 4}
+  // Path: flat left → semicircular notch in center → flat right → fill down
+  const tabBarPath = `
+    M0,${CURVE_DEPTH}
+    L${cx - r},${CURVE_DEPTH}
+    C${cx - r},${CURVE_DEPTH}
+     ${cx - r + 4},${CURVE_DEPTH - r * 0.15}
+     ${cx - r + r * 0.4},${CURVE_DEPTH - r * 0.75}
+    A${r},${r} 0 0 1 ${cx + r - r * 0.4},${CURVE_DEPTH - r * 0.75}
+    C${cx + r - 4},${CURVE_DEPTH - r * 0.15}
+     ${cx + r},${CURVE_DEPTH}
+     ${cx + r},${CURVE_DEPTH}
+    L${width},${CURVE_DEPTH}
     L${width},${totalHeight}
     L0,${totalHeight}
     Z
@@ -30,10 +34,10 @@ export function CurvedTabBar({ state, descriptors, navigation }: BottomTabBarPro
 
   return (
     <View style={[styles.container, { height: totalHeight }]}>
-      {/* SVG wave background */}
+      {/* SVG background with notch */}
       <View style={styles.svgWrap}>
         <Svg width={width} height={totalHeight} style={styles.svg}>
-          <Path d={curvePath} fill={colors.white} />
+          <Path d={tabBarPath} fill={colors.white} />
         </Svg>
       </View>
 
@@ -94,6 +98,8 @@ export function CurvedTabBar({ state, descriptors, navigation }: BottomTabBarPro
     </View>
   );
 }
+
+export { NOTCH_RADIUS, NOTCH_MARGIN, CURVE_DEPTH };
 
 const styles = StyleSheet.create({
   container: {
