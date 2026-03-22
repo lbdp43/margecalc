@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, Alert, Image, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, Alert, Image } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -11,6 +11,7 @@ import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
 import * as scanService from '../../services/scan.service';
 import * as categoryService from '../../services/category.service';
+import { YinYangSpinner } from '../../components/ui/YinYangSpinner';
 import { colors, spacing, borderRadius, typography } from '../../theme';
 
 type Props = NativeStackScreenProps<any, 'Scan'>;
@@ -130,8 +131,11 @@ export function ScanScreen({ navigation }: Props) {
 
       {scanning && (
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={colors.primary} />
-          <Text style={styles.loadingText}>Analyse en cours...</Text>
+          <YinYangSpinner
+            size={100}
+            message="Analyse en cours..."
+            submessage="Reconnaissance du produit..."
+          />
         </View>
       )}
 

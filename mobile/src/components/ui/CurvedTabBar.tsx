@@ -11,21 +11,10 @@ export function CurvedTabBar({ state, descriptors, navigation }: BottomTabBarPro
   const { width } = useWindowDimensions();
   const totalHeight = TAB_HEIGHT + WAVE_HEIGHT;
 
-  // S-curve: drops down 90° on left, flat in center, rises up 90° on right
-  const top = 0;
-  const bottom = WAVE_HEIGHT;
-  const r = WAVE_HEIGHT; // radius of the 90° curves
+  // Smooth S-curve: mirrors the hero curve (left high, right low)
   const tabBarPath = `
-    M0,${top}
-    L${width * 0.2 - r},${top}
-    C${width * 0.2},${top}
-     ${width * 0.2},${bottom}
-     ${width * 0.2 + r},${bottom}
-    L${width * 0.8 - r},${bottom}
-    C${width * 0.8},${bottom}
-     ${width * 0.8},${top}
-     ${width * 0.8 + r},${top}
-    L${width},${top}
+    M0,0
+    C${width * 0.35},0 ${width * 0.65},${WAVE_HEIGHT} ${width},${WAVE_HEIGHT}
     L${width},${totalHeight}
     L0,${totalHeight}
     Z
