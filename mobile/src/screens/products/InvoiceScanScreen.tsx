@@ -11,6 +11,7 @@ import * as ImageManipulator from 'expo-image-manipulator';
 import { Category, MarginMode, TVA_RATES, CONTAINER_PRESETS } from '@margebar/shared';
 import { ScreenWrapper } from '../../components/ui/ScreenWrapper';
 import { DecorativeCurve } from '../../components/ui/DecorativeCurve';
+import { YinYangSpinner } from '../../components/ui/YinYangSpinner';
 import { useAuthStore } from '../../store/auth.store';
 import * as scanService from '../../services/scan.service';
 import * as productService from '../../services/product.service';
@@ -184,9 +185,11 @@ export function InvoiceScanScreen({ navigation }: Props) {
 
         {scanning ? (
           <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color={colors.primary} />
-            <Text style={styles.loadingText}>Analyse de la facture en cours...</Text>
-            <Text style={styles.loadingSubtext}>Cela peut prendre jusqu'à 2 minutes</Text>
+            <YinYangSpinner
+              size={120}
+              message="Analyse de la facture en cours..."
+              submessage="Cela peut prendre jusqu'à 2 minutes"
+            />
           </View>
         ) : (
           <>
