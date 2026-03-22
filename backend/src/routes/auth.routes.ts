@@ -22,8 +22,12 @@ router.post('/register', async (req: Request, res: Response) => {
     const result = await authService.register(data.email, data.password, data.businessName, data.isAutoEntrepreneur);
     res.status(201).json(result);
   } catch (err: any) {
-    const status = err.name === 'ZodError' ? 400 : 409;
-    res.status(status).json({ error: err.message || 'Erreur inscription' });
+    if (err.name === 'ZodError') {
+      res.status(400).json({ error: err.message });
+    } else {
+      // Known: "Un compte existe déjà avec cet email"
+      res.status(409).json({ error: 'Un compte existe déjà avec cet email' });
+    }
   }
 });
 
@@ -33,8 +37,11 @@ router.post('/login', async (req: Request, res: Response) => {
     const result = await authService.login(data.email, data.password);
     res.json(result);
   } catch (err: any) {
-    const status = err.name === 'ZodError' ? 400 : 401;
-    res.status(status).json({ error: err.message || 'Erreur connexion' });
+    if (err.name === 'ZodError') {
+      res.status(400).json({ error: err.message });
+    } else {
+      res.status(401).json({ error: 'Email ou mot de passe incorrect' });
+    }
   }
 });
 

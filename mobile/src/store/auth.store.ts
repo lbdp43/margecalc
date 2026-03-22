@@ -28,11 +28,13 @@ export const useAuthStore = create<AuthState>((set) => ({
     set({ token, user, isAuthenticated: true });
   },
 
-  logout: () => {
-    AsyncStorage.multiRemove([TOKEN_KEY, USER_KEY]);
-    // Clear all offline cache and pending ops to prevent data leak
-    clearAllOfflineData();
+  logout: async () => {
     set({ token: null, user: null, isAuthenticated: false });
+    // Clear auth + all offline data to prevent data leak to next user
+    await Promise.all([
+      AsyncStorage.multiRemove([TOKEN_KEY, USER_KEY]),
+      clearAllOfflineData(),
+    ]);
   },
 
   loadStoredAuth: async () => {

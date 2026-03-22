@@ -7,7 +7,7 @@ import { AppNavigator } from './AppNavigator';
 import { SubscriptionScreen } from '../screens/subscription/SubscriptionScreen';
 import { YinYangSpinner } from '../components/ui/YinYangSpinner';
 import { OfflineBanner } from '../components/ui/OfflineBanner';
-import { initOfflineMode } from '../services/offline';
+import { initOfflineMode, cleanupOfflineMode } from '../services/offline';
 import { colors } from '../theme';
 
 const PAYWALL_SEEN_KEY = 'margebar_paywall_seen';
@@ -19,16 +19,19 @@ export function RootNavigator() {
   useEffect(() => {
     loadStoredAuth();
     initOfflineMode();
+    return () => { cleanupOfflineMode(); };
   }, []);
 
   useEffect(() => {
+    let mounted = true;
     if (isAuthenticated) {
       AsyncStorage.getItem(PAYWALL_SEEN_KEY).then((val) => {
-        setPaywallSeen(val === 'true');
+        if (mounted) setPaywallSeen(val === 'true');
       });
     } else {
       setPaywallSeen(null);
     }
+    return () => { mounted = false; };
   }, [isAuthenticated]);
 
   if (isLoading) {

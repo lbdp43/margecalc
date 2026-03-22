@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, FlatList } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
@@ -28,7 +28,7 @@ export function CocktailListScreen() {
 
   const recipes = tab === 'mine' ? myRecipes : communityRecipes;
 
-  const renderRecipe = ({ item }: { item: RecipeWithCost }) => {
+  const renderRecipe = useCallback(({ item }: { item: RecipeWithCost }) => {
     const accent = MARGIN_COLOR_MAP[item.computed.colorCode];
     return (
       <TouchableOpacity
@@ -68,7 +68,7 @@ export function CocktailListScreen() {
         </View>
       </TouchableOpacity>
     );
-  };
+  }, [navigation, tab]);
 
   return (
     <ScreenWrapper scrollable={false}>

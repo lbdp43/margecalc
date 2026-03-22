@@ -4,7 +4,8 @@ import {
   TouchableOpacity, Image, ActivityIndicator,
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useOfflineQuery } from '../../hooks/useOfflineQuery';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
@@ -79,27 +80,27 @@ export function ProductFormScreen({ route, navigation }: Props) {
   const [servingPrices, setServingPrices] = useState<Record<string, number>>({});
   const [servingModes, setServingModes] = useState<Record<string, ServingMode>>({});
 
-  const { data: categories = [] } = useQuery<Category[]>({
-    queryKey: ['categories'],
-    queryFn: categoryService.getCategories,
-  });
+  const { data: categories = [] } = useOfflineQuery<Category[]>(
+    ['categories'],
+    categoryService.getCategories,
+  );
 
-  const { data: servingTypes = [] } = useQuery<ServingType[]>({
-    queryKey: ['servingTypes'],
-    queryFn: servingService.getServingTypes,
-  });
+  const { data: servingTypes = [] } = useOfflineQuery<ServingType[]>(
+    ['servingTypes'],
+    servingService.getServingTypes,
+  );
 
-  const { data: existingProduct } = useQuery({
-    queryKey: ['product', productId],
-    queryFn: () => productService.getProduct(productId!),
-    enabled: isEditing,
-  });
+  const { data: existingProduct } = useOfflineQuery(
+    ['product', productId],
+    () => productService.getProduct(productId!),
+    { enabled: isEditing },
+  );
 
-  const { data: existingServings } = useQuery({
-    queryKey: ['productServings', productId],
-    queryFn: () => servingService.getProductServings(productId!),
-    enabled: isEditing,
-  });
+  const { data: existingServings } = useOfflineQuery(
+    ['productServings', productId],
+    () => servingService.getProductServings(productId!),
+    { enabled: isEditing },
+  );
 
   useEffect(() => {
     if (existingProduct) {

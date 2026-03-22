@@ -13,7 +13,6 @@ import { Card } from '../../components/ui/Card';
 import * as servingService from '../../services/serving.service';
 import * as productService from '../../services/product.service';
 import { PriceHistoryEntry } from '../../services/product.service';
-import { api } from '../../services/api';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 
 type Props = NativeStackScreenProps<any, 'ProductDetail'>;
@@ -40,36 +39,39 @@ export function ProductDetailScreen({ route, navigation }: Props) {
 
   useFocusEffect(
     useCallback(() => {
+      let mounted = true;
+      const loadData = async () => {
+        setLoading(true);
+        try {
+          const [productRes, typesRes, servingsRes] = await Promise.all([
+            productService.getProduct(productId),
+            servingService.getServingTypes(),
+            servingService.getProductServings(productId),
+          ]);
+          if (!mounted) return;
+          setProduct(productRes as any);
+          setServingTypes(typesRes);
+          setSavedServings(servingsRes);
+
+          const historyRes = await productService.getPriceHistory(productId);
+          if (!mounted) return;
+          setPriceHistory(historyRes);
+
+          const priceMap: Record<string, string> = {};
+          for (const s of servingsRes) {
+            priceMap[s.servingType.id] = s.sellingPriceTTC.toFixed(2).replace('.', ',');
+          }
+          setPrices(priceMap);
+        } catch {
+          if (mounted) Alert.alert('Erreur', 'Impossible de charger le produit');
+        } finally {
+          if (mounted) setLoading(false);
+        }
+      };
       loadData();
+      return () => { mounted = false; };
     }, [productId])
   );
-
-  const loadData = async () => {
-    setLoading(true);
-    try {
-      const [productRes, typesRes, servingsRes] = await Promise.all([
-        api.get<Product>(`/products/${productId}`),
-        servingService.getServingTypes(),
-        servingService.getProductServings(productId),
-      ]);
-      setProduct(productRes.data);
-      setServingTypes(typesRes);
-      setSavedServings(servingsRes);
-
-      const historyRes = await productService.getPriceHistory(productId);
-      setPriceHistory(historyRes);
-
-      const priceMap: Record<string, string> = {};
-      for (const s of servingsRes) {
-        priceMap[s.servingType.id] = s.sellingPriceTTC.toFixed(2).replace('.', ',');
-      }
-      setPrices(priceMap);
-    } catch {
-      Alert.alert('Erreur', 'Impossible de charger le produit');
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const getLocalMargin = (st: ServingType): ServingMarginResult | null => {
     if (!product) return null;

@@ -48,11 +48,16 @@ app.use(express.json({
   verify: (req: any, _res, buf) => { req.rawBody = buf; },
 }));
 
-// HTTPS enforcement in production
+// HTTPS enforcement in production — validate Host header to prevent injection
 if (config.isProd) {
+  const trustedHost = new URL(config.appUrl).host;
   app.use((req, res, next) => {
     if (req.header('x-forwarded-proto') !== 'https') {
-      return res.redirect(`https://${req.header('host')}${req.url}`);
+      const host = req.header('host');
+      if (!host || host !== trustedHost) {
+        return res.status(400).json({ error: 'Invalid request' });
+      }
+      return res.redirect(`https://${trustedHost}${req.url}`);
     }
     next();
   });

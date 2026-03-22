@@ -47,7 +47,7 @@ router.get('/', async (req: Request, res: Response) => {
 
     res.json(servingTypes);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Erreur serveur' });
   }
 });
 
@@ -64,7 +64,7 @@ router.post('/', async (req: Request, res: Response) => {
     res.status(201).json(servingType);
   } catch (err: any) {
     const status = err.name === 'ZodError' ? 400 : 500;
-    res.status(status).json({ error: err.message });
+    res.status(status).json({ error: err.name === 'ZodError' ? err.message : 'Erreur serveur' });
   }
 });
 
@@ -84,7 +84,7 @@ router.put('/:id', async (req: Request, res: Response) => {
     res.json(updated);
   } catch (err: any) {
     const status = err.name === 'ZodError' ? 400 : 500;
-    res.status(status).json({ error: err.message });
+    res.status(status).json({ error: err.name === 'ZodError' ? err.message : 'Erreur serveur' });
   }
 });
 
@@ -100,7 +100,7 @@ router.delete('/:id', async (req: Request, res: Response) => {
     }
     res.status(204).send();
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Erreur serveur' });
   }
 });
 

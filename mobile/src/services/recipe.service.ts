@@ -60,7 +60,27 @@ export async function createRecipe(data: CreateRecipeInput): Promise<RecipeWithC
 export async function updateRecipe(id: string, data: Partial<CreateRecipeInput>): Promise<RecipeWithCost> {
   if (!isOnline()) {
     await queueOperation('PUT', `/recipes/${id}`, data);
-    return { id, ...data } as any;
+    // Return safe placeholder — callers should invalidate queries on sync
+    return {
+      id,
+      userId: '',
+      name: data.name ?? '',
+      description: data.description ?? null,
+      sellingPriceTTC: data.sellingPriceTTC ?? null,
+      tvaRate: data.tvaRate ?? 0.20,
+      imageUrl: null,
+      isPublic: data.isPublic ?? false,
+      authorName: null,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      ingredients: [],
+      consumables: [],
+      computed: {
+        totalIngredientCost: 0, totalConsumableCost: 0, totalCostHT: 0,
+        sellingPriceTTC: 0, sellingPriceHT: 0, marginHT: 0,
+        marginPercent: 0, coefficient: 0, colorCode: 'red',
+      },
+    } as RecipeWithCost;
   }
   const res = await api.put<RecipeWithCost>(`/recipes/${id}`, data);
   return res.data;

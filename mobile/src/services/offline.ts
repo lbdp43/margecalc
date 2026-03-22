@@ -36,6 +36,14 @@ export function initOfflineMode() {
   });
 }
 
+export function cleanupOfflineMode() {
+  if (_unsubNetInfo) {
+    _unsubNetInfo();
+    _unsubNetInfo = null;
+  }
+  _listeners = [];
+}
+
 // --- Cache layer with TTL ---
 
 export async function getCached<T>(key: string): Promise<T | null> {
@@ -113,12 +121,18 @@ async function savePendingOps(ops: PendingOperation[]): Promise<void> {
   await AsyncStorage.setItem(PENDING_OPS_KEY, JSON.stringify(ops));
 }
 
+const MAX_PENDING_OPS = 100;
+
 export async function queueOperation(
   method: 'POST' | 'PUT' | 'DELETE',
   url: string,
   body?: any,
 ): Promise<void> {
   const ops = await getPendingOps();
+  // Prevent unbounded queue growth
+  if (ops.length >= MAX_PENDING_OPS) {
+    throw new Error('Trop d\'opérations en attente. Reconnectez-vous pour synchroniser.');
+  }
 
   // Deduplicate: remove prior op on same URL+method (last-write-wins)
   const filtered = ops.filter((o) => !(o.url === url && o.method === method));

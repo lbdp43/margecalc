@@ -81,9 +81,12 @@ export function DashboardScreen() {
     [products],
   );
 
-  const avgMargin = products.length > 0
-    ? products.reduce((sum, p) => sum + p.computed.marginPercent, 0) / products.length
-    : 0;
+  const avgMargin = useMemo(
+    () => products.length > 0
+      ? products.reduce((sum, p) => sum + p.computed.marginPercent, 0) / products.length
+      : 0,
+    [products],
+  );
 
   // Category margin data for bar chart
   const categoryData = useMemo(() => {

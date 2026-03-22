@@ -18,8 +18,8 @@ router.get('/me', async (req: Request, res: Response) => {
   try {
     const user = await userService.getUser(req.user!.userId);
     res.json(user);
-  } catch (err: any) {
-    res.status(404).json({ error: err.message });
+  } catch {
+    res.status(404).json({ error: 'Utilisateur non trouvé' });
   }
 });
 
@@ -29,7 +29,8 @@ router.patch('/me', async (req: Request, res: Response) => {
     const user = await userService.updateUser(req.user!.userId, data);
     res.json(user);
   } catch (err: any) {
-    res.status(400).json({ error: err.message });
+    const status = err.name === 'ZodError' ? 400 : 500;
+    res.status(status).json({ error: err.name === 'ZodError' ? err.message : 'Erreur serveur' });
   }
 });
 
