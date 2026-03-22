@@ -370,6 +370,8 @@ export function DashboardScreen() {
                 placeholderTextColor={colors.tabBarInactive}
               />
 
+              <Text style={styles.calcHint}>Applicable aux alcools de plus de 15°</Text>
+
               {calcTax.price > 0 && (
                 <View style={styles.calcResult}>
                   <View style={styles.calcResultRow}>
@@ -897,6 +899,12 @@ const styles = StyleSheet.create({
   },
   presetChipTextActive: {
     color: colors.textLight,
+  },
+  calcHint: {
+    ...typography.caption,
+    color: colors.tabBarInactive,
+    fontStyle: 'italic',
+    marginTop: spacing.sm,
   },
   calcResult: {
     marginTop: spacing.lg,
