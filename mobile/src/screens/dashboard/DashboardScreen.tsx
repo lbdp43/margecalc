@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert, useWindowDimensions } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Alert, useWindowDimensions, Modal, TextInput, KeyboardAvoidingView, Platform } from 'react-native';
 import Svg, { Path, Rect, Text as SvgText } from 'react-native-svg';
 import { useNavigation } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -8,6 +8,7 @@ import {
   ProductWithMargin,
   formatPercent, formatPrice, MARGIN_COLOR_MAP,
   calculateServingMargin, CONTAINER_PRESETS,
+  calculateAlcoholTax, parseLocaleFloat,
 } from '@margebar/shared';
 import { ScreenWrapper } from '../../components/ui/ScreenWrapper';
 import { DecorativeCurve } from '../../components/ui/DecorativeCurve';
@@ -44,12 +45,28 @@ export function DashboardScreen() {
 
   const [welcomeVisible, setWelcomeVisible] = useState(true);
   const [loadingPref, setLoadingPref] = useState(true);
+  const [calcVisible, setCalcVisible] = useState(false);
+  const [calcPriceHD, setCalcPriceHD] = useState('');
+  const [calcContainer, setCalcContainer] = useState('70');
+  const [calcDegree, setCalcDegree] = useState('');
+  const [alcoholTaxRates, setAlcoholTaxRates] = useState({ droitAccise: 0, cotisationSecu: 0 });
+
   useEffect(() => {
     let mounted = true;
     AsyncStorage.getItem(WELCOME_DISMISSED_KEY).then((val) => {
       if (!mounted) return;
       if (val === 'true') setWelcomeVisible(false);
       setLoadingPref(false);
+    });
+    AsyncStorage.getItem('margebar_alcohol_tax').then((val) => {
+      if (!mounted) return;
+      if (val) {
+        const parsed = JSON.parse(val);
+        setAlcoholTaxRates({
+          droitAccise: parsed.droitAccise || 0,
+          cotisationSecu: parsed.cotisationSecu || 0,
+        });
+      }
     });
     return () => { mounted = false; };
   }, []);
@@ -126,6 +143,21 @@ export function DashboardScreen() {
       })),
     }));
   }, [sorted]);
+
+  const calcTax = useMemo(() => {
+    const price = parseLocaleFloat(calcPriceHD) || 0;
+    const vol = parseLocaleFloat(calcContainer) || 0;
+    const deg = parseLocaleFloat(calcDegree) || 0;
+    const tax = calculateAlcoholTax(vol, deg, alcoholTaxRates.droitAccise, alcoholTaxRates.cotisationSecu);
+    return { price, tax, total: price + tax };
+  }, [calcPriceHD, calcContainer, calcDegree, alcoholTaxRates]);
+
+  const openCalc = useCallback(() => {
+    setCalcPriceHD('');
+    setCalcContainer('70');
+    setCalcDegree('');
+    setCalcVisible(true);
+  }, []);
 
   const renderProductCard = useCallback((item: typeof productsWithServingMargins[number]) => {
     const { product: p, accent, servingMargins } = item;
@@ -242,7 +274,88 @@ export function DashboardScreen() {
           <Text style={styles.statValue}>{formatPercent(avgMargin)}</Text>
           <Text style={styles.statLabel}>Marge moyenne</Text>
         </View>
+        <TouchableOpacity style={styles.statCard} onPress={openCalc} activeOpacity={0.7}>
+          <Ionicons name="calculator-outline" size={20} color={colors.primary} />
+          <Text style={styles.statValue}>HT</Text>
+          <Text style={styles.statLabel}>Calculateur</Text>
+        </TouchableOpacity>
       </View>
+
+      {/* Alcohol Tax Calculator Modal */}
+      <Modal visible={calcVisible} transparent animationType="slide" onRequestClose={() => setCalcVisible(false)}>
+        <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Calculateur prix HT</Text>
+              <TouchableOpacity onPress={() => setCalcVisible(false)} hitSlop={styles.hitSlop}>
+                <Ionicons name="close" size={24} color={colors.text} />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.calcLabel}>Prix d'achat HT hors droit</Text>
+            <TextInput
+              style={styles.calcInput}
+              value={calcPriceHD}
+              onChangeText={setCalcPriceHD}
+              placeholder="Ex : 10.50"
+              keyboardType="decimal-pad"
+              placeholderTextColor={colors.tabBarInactive}
+            />
+
+            <Text style={styles.calcLabel}>Contenant (cl)</Text>
+            <View style={styles.presetRow}>
+              {CONTAINER_PRESETS.slice(0, 4).map((p) => (
+                <TouchableOpacity
+                  key={p.volumeCl}
+                  style={[styles.presetChip, calcContainer === String(p.volumeCl) && styles.presetChipActive]}
+                  onPress={() => setCalcContainer(String(p.volumeCl))}
+                >
+                  <Text style={[styles.presetChipText, calcContainer === String(p.volumeCl) && styles.presetChipTextActive]}>
+                    {p.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <TextInput
+              style={styles.calcInput}
+              value={calcContainer}
+              onChangeText={setCalcContainer}
+              placeholder="Volume en cl"
+              keyboardType="decimal-pad"
+              placeholderTextColor={colors.tabBarInactive}
+            />
+
+            <Text style={styles.calcLabel}>Degré d'alcool (%)</Text>
+            <TextInput
+              style={styles.calcInput}
+              value={calcDegree}
+              onChangeText={setCalcDegree}
+              placeholder="Ex : 40"
+              keyboardType="decimal-pad"
+              placeholderTextColor={colors.tabBarInactive}
+            />
+
+            {calcTax.price > 0 && (
+              <View style={styles.calcResult}>
+                <View style={styles.calcResultRow}>
+                  <Text style={styles.calcResultLabel}>Prix HT hors droit</Text>
+                  <Text style={styles.calcResultValue}>{formatPrice(calcTax.price)}</Text>
+                </View>
+                {calcTax.tax > 0 && (
+                  <View style={styles.calcResultRow}>
+                    <Text style={styles.calcResultLabel}>Droits d'accise + Sécu</Text>
+                    <Text style={styles.calcResultValue}>{formatPrice(calcTax.tax)}</Text>
+                  </View>
+                )}
+                <View style={[styles.calcResultRow, styles.calcResultTotal]}>
+                  <Text style={styles.calcResultTotalLabel}>Prix HT (avec droits)</Text>
+                  <Text style={styles.calcResultTotalValue}>{formatPrice(calcTax.total)}</Text>
+                </View>
+              </View>
+            )}
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
 
       {/* Margin by Category Chart */}
       {categoryData.length > 0 && (
@@ -595,6 +708,115 @@ const styles = StyleSheet.create({
     ...typography.body,
     color: colors.tabBarInactive,
     textAlign: 'center',
+  },
+
+  /* Calculator Modal */
+  hitSlop: {
+    top: 12,
+    bottom: 12,
+    left: 12,
+    right: 12,
+  } as any,
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: colors.cardBackground,
+    borderTopLeftRadius: borderRadius.xxl,
+    borderTopRightRadius: borderRadius.xxl,
+    padding: spacing.lg,
+    paddingBottom: spacing.xxl,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.lg,
+  },
+  modalTitle: {
+    ...typography.h3,
+    color: colors.text,
+  },
+  calcLabel: {
+    ...typography.bodySmall,
+    color: colors.textSecondary,
+    fontWeight: '600',
+    marginBottom: spacing.xs,
+    marginTop: spacing.sm,
+  },
+  calcInput: {
+    backgroundColor: colors.inputBackground,
+    borderRadius: borderRadius.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm + 4,
+    ...typography.body,
+    color: colors.text,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  presetRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  presetChip: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs + 2,
+    borderRadius: borderRadius.full,
+    backgroundColor: colors.inputBackground,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  presetChipActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  presetChipText: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    fontWeight: '600',
+  },
+  presetChipTextActive: {
+    color: colors.textLight,
+  },
+  calcResult: {
+    marginTop: spacing.lg,
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+  },
+  calcResultRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: spacing.xs + 2,
+  },
+  calcResultLabel: {
+    ...typography.bodySmall,
+    color: colors.textSecondary,
+  },
+  calcResultValue: {
+    ...typography.bodySmall,
+    color: colors.text,
+    fontWeight: '600',
+  },
+  calcResultTotal: {
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    marginTop: spacing.xs,
+    paddingTop: spacing.sm,
+  },
+  calcResultTotalLabel: {
+    ...typography.body,
+    color: colors.text,
+    fontWeight: '700',
+  },
+  calcResultTotalValue: {
+    ...typography.h3,
+    color: colors.primary,
+    fontWeight: '800',
   },
   // Extracted inline styles for table header / cells
   thService: {
