@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Alert, ScrollView, useWindowDimensions } from 'react-native';
+import Svg, { Path } from 'react-native-svg';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigation } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -24,9 +25,12 @@ function getContainerLabel(volumeCl: number): string {
   return `${volumeCl} cl`;
 }
 
+const CURVE_HEIGHT = 28;
+
 export function DashboardScreen() {
   const user = useAuthStore((s) => s.user);
   const navigation = useNavigation<any>();
+  const { width } = useWindowDimensions();
   const { data: products = [] } = useQuery<ProductWithMargin[]>({
     queryKey: ['products'],
     queryFn: () => productService.getProducts(),
@@ -166,6 +170,16 @@ export function DashboardScreen() {
         )}
       </View>
 
+      {/* S-curve bottom edge of hero */}
+      <View style={styles.heroCurve}>
+        <Svg width={width} height={CURVE_HEIGHT}>
+          <Path
+            d={`M0,0 L${width * 0.2 - CURVE_HEIGHT},0 C${width * 0.2},0 ${width * 0.2},${CURVE_HEIGHT} ${width * 0.2 + CURVE_HEIGHT},${CURVE_HEIGHT} L${width * 0.8 - CURVE_HEIGHT},${CURVE_HEIGHT} C${width * 0.8},${CURVE_HEIGHT} ${width * 0.8},0 ${width * 0.8 + CURVE_HEIGHT},0 L${width},0 Z`}
+            fill={colors.primary}
+          />
+        </Svg>
+      </View>
+
       {/* Stats Row */}
       <View style={styles.statsRow}>
         <View style={styles.statCard}>
@@ -199,10 +213,18 @@ export function DashboardScreen() {
 const styles = StyleSheet.create({
   heroCard: {
     backgroundColor: colors.primary,
-    borderRadius: borderRadius.xxl,
-    marginBottom: spacing.lg,
-    overflow: 'hidden',
+    borderTopLeftRadius: borderRadius.xxl,
+    borderTopRightRadius: borderRadius.xxl,
+    borderBottomLeftRadius: 0,
+    borderBottomRightRadius: 0,
+    marginBottom: 0,
+    overflow: 'visible',
     ...shadows.lg,
+  },
+  heroCurve: {
+    marginTop: -1,
+    marginBottom: spacing.lg,
+    height: CURVE_HEIGHT,
   },
   heroContent: {
     paddingHorizontal: spacing.lg,
