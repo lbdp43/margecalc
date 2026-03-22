@@ -17,6 +17,7 @@ const createSchema = z.object({
   targetMarginPercent: z.number().optional(),
   coefficient: z.number().positive().optional(),
   tvaRate: z.number().min(0).max(1),
+  alcoholDegree: z.number().min(0).max(100).optional(),
   supplier: z.string().optional(),
 });
 

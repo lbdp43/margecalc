@@ -39,6 +39,10 @@ export function SettingsScreen() {
   const [greenThreshold, setGreenThreshold] = useState(String(DEFAULT_MARGIN_THRESHOLDS.good));
   const [orangeThreshold, setOrangeThreshold] = useState(String(DEFAULT_MARGIN_THRESHOLDS.medium));
 
+  // Alcohol tax (droits d'alcool)
+  const [droitAccise, setDroitAccise] = useState('');
+  const [cotisationSecu, setCotisationSecu] = useState('');
+
   // Categories
   const [categories, setCategories] = useState<Category[]>([]);
   const [newCategoryName, setNewCategoryName] = useState('');
@@ -68,6 +72,13 @@ export function SettingsScreen() {
           const parsed = JSON.parse(val);
           setGreenThreshold(String(parsed.good));
           setOrangeThreshold(String(parsed.medium));
+        }
+      });
+      AsyncStorage.getItem('margebar_alcohol_tax').then((val) => {
+        if (val) {
+          const parsed = JSON.parse(val);
+          setDroitAccise(String(parsed.droitAccise || ''));
+          setCotisationSecu(String(parsed.cotisationSecu || ''));
         }
       });
     }, [])
@@ -263,6 +274,10 @@ export function SettingsScreen() {
         good: parseFloat(greenThreshold.replace(',', '.')) || DEFAULT_MARGIN_THRESHOLDS.good,
         medium: parseFloat(orangeThreshold.replace(',', '.')) || DEFAULT_MARGIN_THRESHOLDS.medium,
       }));
+      await AsyncStorage.setItem('margebar_alcohol_tax', JSON.stringify({
+        droitAccise: parseFloat(droitAccise.replace(',', '.')) || 0,
+        cotisationSecu: parseFloat(cotisationSecu.replace(',', '.')) || 0,
+      }));
       const res = await api.patch('/users/me', {
         businessName: businessName || null,
         isAutoEntrepreneur,
@@ -329,6 +344,47 @@ export function SettingsScreen() {
               trackColor={{ false: colors.border, true: colors.accent }}
               thumbColor={colors.cardBackground}
             />
+          </View>
+        </View>
+      </View>
+
+      {/* Droits d'alcool */}
+      <View style={styles.sectionCard}>
+        <View style={styles.sectionHeader}>
+          <View style={styles.sectionAccent} />
+          <Text style={styles.sectionTitle}>Droits d'alcool</Text>
+        </View>
+        <View style={styles.sectionBody}>
+          <Text style={styles.sectionDesc}>
+            Prix par hectolitre d'alcool pur (hlAP). Utilisé pour calculer la taxe sur les produits alcoolisés.
+          </Text>
+          <View style={styles.thresholdCard}>
+            <Text style={[styles.thresholdLabel, { flex: 1 }]}>Droit d'accise</Text>
+            <View style={styles.thresholdInputWrap}>
+              <TextInput
+                style={[styles.thresholdInput, { width: 80 }]}
+                value={droitAccise}
+                onChangeText={setDroitAccise}
+                keyboardType="decimal-pad"
+                placeholder="0"
+                placeholderTextColor={colors.textSecondary}
+              />
+              <Text style={styles.thresholdUnit}>€/hlAP</Text>
+            </View>
+          </View>
+          <View style={styles.thresholdCard}>
+            <Text style={[styles.thresholdLabel, { flex: 1 }]}>Cotisation sécu. sociale</Text>
+            <View style={styles.thresholdInputWrap}>
+              <TextInput
+                style={[styles.thresholdInput, { width: 80 }]}
+                value={cotisationSecu}
+                onChangeText={setCotisationSecu}
+                keyboardType="decimal-pad"
+                placeholder="0"
+                placeholderTextColor={colors.textSecondary}
+              />
+              <Text style={styles.thresholdUnit}>€/hlAP</Text>
+            </View>
           </View>
         </View>
       </View>

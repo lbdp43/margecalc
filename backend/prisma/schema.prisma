@@ -62,6 +62,7 @@ model Product {
   targetMarginPercent Float?
   coefficient         Float?
   tvaRate             Float            @default(0.20)
+  alcoholDegree       Float            @default(0)
   supplier            String?
   imageUrl            String?
   createdAt           DateTime         @default(now())

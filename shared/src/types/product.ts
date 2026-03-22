@@ -26,6 +26,7 @@ export interface Product {
   targetMarginPercent: number | null;
   coefficient: number | null;
   tvaRate: number;
+  alcoholDegree: number;
   supplier: string | null;
   imageUrl: string | null;
   createdAt: string;
@@ -80,6 +81,7 @@ export interface CreateProductInput {
   targetMarginPercent?: number;
   coefficient?: number;
   tvaRate: number;
+  alcoholDegree?: number;
   supplier?: string;
   imageUrl?: string;
 }

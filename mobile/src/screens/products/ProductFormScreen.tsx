@@ -9,10 +9,12 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
 import { ServingTypeIcon } from '../../components/ui/ServingTypeIcon';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   MarginMode, TVA_RATES, Category, CONTAINER_PRESETS,
   parseLocaleFloat, ServingType, calculateServingMargin,
   ServingMarginResult, MARGIN_COLOR_MAP, formatPrice, formatPercent,
+  calculateAlcoholTax,
 } from '@margebar/shared';
 import { ScreenWrapper } from '../../components/ui/ScreenWrapper';
 import { Input } from '../../components/ui/Input';
@@ -52,6 +54,22 @@ export function ProductFormScreen({ route, navigation }: Props) {
   const [containerVolume, setContainerVolume] = useState(String(defaultContainer));
   const [tvaRate, setTvaRate] = useState(user?.isAutoEntrepreneur ? 0 : TVA_RATES.RATE_20);
   const [supplier, setSupplier] = useState('');
+  const [alcoholDegree, setAlcoholDegree] = useState('');
+
+  // Alcohol tax settings from AsyncStorage
+  const [alcoholTaxRates, setAlcoholTaxRates] = useState({ droitAccise: 0, cotisationSecu: 0 });
+
+  useEffect(() => {
+    AsyncStorage.getItem('margebar_alcohol_tax').then((val) => {
+      if (val) {
+        const parsed = JSON.parse(val);
+        setAlcoholTaxRates({
+          droitAccise: parsed.droitAccise || 0,
+          cotisationSecu: parsed.cotisationSecu || 0,
+        });
+      }
+    });
+  }, []);
 
   // Serving state
   const [enabledServings, setEnabledServings] = useState<Set<string>>(new Set());
@@ -87,6 +105,7 @@ export function ProductFormScreen({ route, navigation }: Props) {
       setPurchasePrice(String(existingProduct.purchasePriceHT));
       setContainerVolume(String(existingProduct.containerVolumeCl));
       setTvaRate(existingProduct.tvaRate);
+      setAlcoholDegree(existingProduct.alcoholDegree ? String(existingProduct.alcoholDegree) : '');
       setSupplier(existingProduct.supplier || '');
     }
   }, [existingProduct]);
@@ -168,7 +187,13 @@ export function ProductFormScreen({ route, navigation }: Props) {
 
   // === FORM LOGIC ===
   const currentContainerVol = parseLocaleFloat(containerVolume) || 0;
-  const currentPurchasePrice = parseLocaleFloat(purchasePrice) || 0;
+  const currentPurchasePriceHorsDroit = parseLocaleFloat(purchasePrice) || 0;
+  const currentAlcoholDegree = parseLocaleFloat(alcoholDegree) || 0;
+  const alcoholTax = calculateAlcoholTax(
+    currentContainerVol, currentAlcoholDegree,
+    alcoholTaxRates.droitAccise, alcoholTaxRates.cotisationSecu,
+  );
+  const currentPurchasePrice = currentPurchasePriceHorsDroit + alcoholTax;
 
   const toggleServing = (id: string) => {
     setEnabledServings((prev) => {
@@ -262,12 +287,13 @@ export function ProductFormScreen({ route, navigation }: Props) {
       const productData = {
         name,
         categoryId,
-        purchasePriceHT: parseLocaleFloat(purchasePrice),
+        purchasePriceHT: currentPurchasePrice,
         containerVolumeCl: parseLocaleFloat(containerVolume),
         doseVolumeCl: firstST?.volumeCl || 5,
         marginMode: MarginMode.FIX_SELLING_PRICE,
         sellingPriceTTC: servings[0].sellingPriceTTC,
         tvaRate,
+        alcoholDegree: parseLocaleFloat(alcoholDegree) || 0,
         supplier: supplier || undefined,
         imageUrl: imageUri || undefined,
       };
@@ -305,7 +331,7 @@ export function ProductFormScreen({ route, navigation }: Props) {
     saveMutation.mutate();
   };
 
-  const hasValidProduct = name && currentPurchasePrice > 0 && currentContainerVol > 0;
+  const hasValidProduct = name && currentPurchasePriceHorsDroit > 0 && currentContainerVol > 0;
   const tvaOptions = [
     { label: '20%', value: TVA_RATES.RATE_20 },
     { label: '10%', value: TVA_RATES.RATE_10 },
@@ -408,13 +434,35 @@ export function ProductFormScreen({ route, navigation }: Props) {
       </View>
 
       <Input
-        label="Prix d'achat HT *"
+        label="Prix d'achat HT hors droit *"
         value={purchasePrice}
         onChangeText={setPurchasePrice}
         keyboardType="decimal-pad"
         placeholder="0,00"
         suffix="€"
       />
+
+      <Input
+        label="Degré d'alcool"
+        value={alcoholDegree}
+        onChangeText={setAlcoholDegree}
+        keyboardType="decimal-pad"
+        placeholder="0"
+        suffix="%"
+      />
+
+      {alcoholTax > 0 && (
+        <View style={styles.taxInfoCard}>
+          <View style={styles.taxInfoRow}>
+            <Text style={styles.taxInfoLabel}>Droit d'accise + Sécu. sociale</Text>
+            <Text style={styles.taxInfoValue}>{formatPrice(alcoholTax)}</Text>
+          </View>
+          <View style={[styles.taxInfoRow, styles.taxInfoTotal]}>
+            <Text style={styles.taxInfoTotalLabel}>Prix d'achat HT (avec droits)</Text>
+            <Text style={styles.taxInfoTotalValue}>{formatPrice(currentPurchasePrice)}</Text>
+          </View>
+        </View>
+      )}
 
       {/* === Contenant === */}
       <View style={styles.section}>
@@ -796,4 +844,41 @@ const styles = StyleSheet.create({
   saveBtn: { marginTop: spacing.md },
   deleteBtn: { marginTop: spacing.sm, borderColor: colors.marginRed },
   bottomSpacer: { height: spacing.xl },
+  taxInfoCard: {
+    backgroundColor: colors.inputBackground,
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+  },
+  taxInfoRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.xs,
+  },
+  taxInfoLabel: {
+    ...typography.caption,
+    color: colors.textSecondary,
+  },
+  taxInfoValue: {
+    ...typography.bodySmall,
+    color: colors.text,
+  },
+  taxInfoTotal: {
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    paddingTop: spacing.sm,
+    marginTop: spacing.xs,
+    marginBottom: 0,
+  },
+  taxInfoTotalLabel: {
+    ...typography.bodySmall,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  taxInfoTotalValue: {
+    ...typography.bodySmall,
+    fontWeight: '700',
+    color: colors.primary,
+  },
 });

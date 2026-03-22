@@ -24,6 +24,26 @@ export function lToCl(l: number): number {
   return l * 100;
 }
 
+/**
+ * Calculate alcohol tax for a container.
+ * @param containerVolumeCl - Volume of the container in centiliters
+ * @param alcoholDegree - Alcohol percentage (e.g. 40 for 40%)
+ * @param droitAccise - Excise duty rate in €/hlAP (hectoliter of pure alcohol)
+ * @param cotisationSecu - Social security rate in €/hlAP
+ * @returns Tax amount in euros for the container
+ */
+export function calculateAlcoholTax(
+  containerVolumeCl: number,
+  alcoholDegree: number,
+  droitAccise: number,
+  cotisationSecu: number,
+): number {
+  if (alcoholDegree <= 0 || containerVolumeCl <= 0) return 0;
+  const volumeHl = containerVolumeCl / 10000; // cl to hectoliters
+  const pureAlcoholHl = volumeHl * (alcoholDegree / 100);
+  return round2(pureAlcoholHl * (droitAccise + cotisationSecu));
+}
+
 export function calculateMargin(input: MarginInput): MarginResult {
   const { purchasePriceHT, containerVolumeCl, doseVolumeCl, marginMode, tvaRate } = input;
 

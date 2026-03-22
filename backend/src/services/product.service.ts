@@ -52,6 +52,7 @@ export async function createProduct(userId: string, data: CreateProductInput) {
       targetMarginPercent: data.targetMarginPercent ?? null,
       coefficient: data.coefficient ?? null,
       tvaRate: data.tvaRate,
+      alcoholDegree: data.alcoholDegree ?? 0,
       supplier: data.supplier ?? null,
       imageUrl: data.imageUrl ?? null,
     },
