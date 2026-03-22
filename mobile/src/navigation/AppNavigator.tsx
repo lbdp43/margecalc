@@ -100,11 +100,11 @@ export function AppNavigator() {
       tabBar={(props) => <CurvedTabBar {...props} />}
       screenOptions={({ route }) => ({
         headerShown: false,
-        tabBarIcon: ({ focused, color }) => {
+        tabBarIcon: ({ focused, color, size }) => {
           const icons = TAB_ICONS[route.name];
           if (!icons) return null;
           const iconName = focused ? icons.focused : icons.default;
-          return <Ionicons name={iconName as any} size={22} color={color} />;
+          return <Ionicons name={iconName as any} size={size} color={color} />;
         },
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.tabBarInactive,
