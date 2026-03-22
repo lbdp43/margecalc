@@ -30,7 +30,7 @@ export function CurvedTabBar({ state, descriptors, navigation }: BottomTabBarPro
       {/* SVG wave background */}
       <View style={styles.svgWrap}>
         <Svg width={width} height={totalHeight} style={styles.svg}>
-          <Path d={tabBarPath} fill={colors.white} />
+          <Path d={tabBarPath} fill={colors.primary} />
         </Svg>
       </View>
 
@@ -59,7 +59,7 @@ export function CurvedTabBar({ state, descriptors, navigation }: BottomTabBarPro
 
           const iconElement = options.tabBarIcon?.({
             focused: isFocused,
-            color: isFocused ? colors.primary : colors.tabBarInactive,
+            color: isFocused ? colors.white : 'rgba(255,255,255,0.5)',
             size: 22,
           });
 
@@ -78,7 +78,7 @@ export function CurvedTabBar({ state, descriptors, navigation }: BottomTabBarPro
               <Text
                 style={[
                   styles.tabLabel,
-                  { color: isFocused ? colors.primary : colors.tabBarInactive },
+                  { color: isFocused ? colors.white : 'rgba(255,255,255,0.5)' },
                 ]}
               >
                 {label}
