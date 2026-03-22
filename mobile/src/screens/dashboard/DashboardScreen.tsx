@@ -170,12 +170,20 @@ export function DashboardScreen() {
         )}
       </View>
 
-      {/* S-curve bottom edge of hero */}
+      {/* U-curve bottom edge of hero: left wall up, flat middle, right wall up, with purple stroke */}
       <View style={styles.heroCurve}>
         <Svg width={width} height={CURVE_HEIGHT}>
+          {/* Primary fill: U-shape from left edge to right edge */}
           <Path
-            d={`M0,0 L${width * 0.2 - CURVE_HEIGHT},0 C${width * 0.2},0 ${width * 0.2},${CURVE_HEIGHT} ${width * 0.2 + CURVE_HEIGHT},${CURVE_HEIGHT} L${width * 0.8 - CURVE_HEIGHT},${CURVE_HEIGHT} C${width * 0.8},${CURVE_HEIGHT} ${width * 0.8},0 ${width * 0.8 + CURVE_HEIGHT},0 L${width},0 Z`}
+            d={`M0,0 A${CURVE_HEIGHT},${CURVE_HEIGHT} 0 0 1 ${CURVE_HEIGHT},${CURVE_HEIGHT} L${width - CURVE_HEIGHT},${CURVE_HEIGHT} A${CURVE_HEIGHT},${CURVE_HEIGHT} 0 0 1 ${width},0 Z`}
             fill={colors.primary}
+          />
+          {/* Purple stroke along the curved bottom edge */}
+          <Path
+            d={`M0,0 A${CURVE_HEIGHT},${CURVE_HEIGHT} 0 0 1 ${CURVE_HEIGHT},${CURVE_HEIGHT} L${width - CURVE_HEIGHT},${CURVE_HEIGHT} A${CURVE_HEIGHT},${CURVE_HEIGHT} 0 0 1 ${width},0`}
+            fill="none"
+            stroke="#8B5CF6"
+            strokeWidth={2.5}
           />
         </Svg>
       </View>
