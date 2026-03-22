@@ -44,7 +44,7 @@ function ScanTabButton() {
         onPress={() => setMenuVisible(true)}
       >
         <View style={scanStyles.innerCircle}>
-          <Ionicons name="scan" size={28} color={colors.white} />
+          <Ionicons name="scan" size={32} color={colors.white} />
         </View>
       </TouchableOpacity>
 
@@ -139,21 +139,21 @@ const scanStyles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     flex: 1,
-    top: -14,
+    top: -18,
   },
   button: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
+    width: 72,
+    height: 72,
+    borderRadius: 36,
     backgroundColor: colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
     ...shadows.lg,
   },
   innerCircle: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
+    width: 58,
+    height: 58,
+    borderRadius: 29,
     backgroundColor: colors.secondary,
     alignItems: 'center',
     justifyContent: 'center',
