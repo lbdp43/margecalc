@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, Switch, Alert } from 'react-native';
+import { View, Text, StyleSheet, Switch, Alert, KeyboardAvoidingView, Platform, Keyboard } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { ScreenWrapper } from '../../components/ui/ScreenWrapper';
 import { Input } from '../../components/ui/Input';
@@ -7,6 +7,8 @@ import { Button } from '../../components/ui/Button';
 import { useAuthStore } from '../../store/auth.store';
 import * as authService from '../../services/auth.service';
 import { colors, spacing, typography } from '../../theme';
+
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 type Props = NativeStackScreenProps<any, 'Register'>;
 
@@ -19,8 +21,17 @@ export function RegisterScreen({ navigation }: Props) {
   const setAuth = useAuthStore((s) => s.setAuth);
 
   const handleRegister = async () => {
+    Keyboard.dismiss();
     if (!email || !password) {
       Alert.alert('Erreur', 'Email et mot de passe requis');
+      return;
+    }
+    if (!EMAIL_REGEX.test(email)) {
+      Alert.alert('Erreur', 'Veuillez entrer une adresse email valide');
+      return;
+    }
+    if (password.length < 8) {
+      Alert.alert('Erreur', 'Le mot de passe doit contenir au moins 8 caractères');
       return;
     }
 
@@ -42,7 +53,10 @@ export function RegisterScreen({ navigation }: Props) {
 
   return (
     <ScreenWrapper>
-      <View style={styles.container}>
+      <KeyboardAvoidingView
+        style={styles.container}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
         <Text style={styles.title}>Créer un compte</Text>
 
         <Input
@@ -52,19 +66,22 @@ export function RegisterScreen({ navigation }: Props) {
           keyboardType="email-address"
           autoCapitalize="none"
           placeholder="votre@email.com"
+          accessibilityLabel="Adresse email"
         />
         <Input
           label="Mot de passe"
           value={password}
           onChangeText={setPassword}
           secureTextEntry
-          placeholder="6 caractères minimum"
+          placeholder="8 caractères minimum"
+          accessibilityLabel="Mot de passe"
         />
         <Input
           label="Nom de l'établissement"
           value={businessName}
           onChangeText={setBusinessName}
           placeholder="Ex: La Brasserie des Plantes"
+          accessibilityLabel="Nom de l'établissement"
         />
 
         <View style={styles.switchRow}>
@@ -74,6 +91,7 @@ export function RegisterScreen({ navigation }: Props) {
             onValueChange={setIsAutoEntrepreneur}
             trackColor={{ true: colors.accent }}
             thumbColor={colors.white}
+            accessibilityLabel="Auto-entrepreneur"
           />
         </View>
 
@@ -84,7 +102,7 @@ export function RegisterScreen({ navigation }: Props) {
           variant="outline"
           style={{ marginTop: spacing.sm }}
         />
-      </View>
+      </KeyboardAvoidingView>
     </ScreenWrapper>
   );
 }

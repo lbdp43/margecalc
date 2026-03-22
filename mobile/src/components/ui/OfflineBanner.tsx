@@ -19,7 +19,7 @@ export function OfflineBanner() {
   useEffect(() => {
     if (refreshTimer.current) clearTimeout(refreshTimer.current);
     refreshTimer.current = setTimeout(() => {
-      getPendingCount().then(setPending);
+      getPendingCount().then(setPending).catch(() => {});
     }, 500);
     return () => {
       if (refreshTimer.current) clearTimeout(refreshTimer.current);

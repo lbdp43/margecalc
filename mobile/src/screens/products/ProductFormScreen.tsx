@@ -71,13 +71,15 @@ export function ProductFormScreen({ route, navigation }: Props) {
     AsyncStorage.getItem('margebar_alcohol_tax').then((val) => {
       if (!mounted) return;
       if (val) {
-        const parsed = JSON.parse(val);
-        setAlcoholTaxRates({
-          droitAccise: parsed.droitAccise || 0,
-          cotisationSecu: parsed.cotisationSecu || 0,
-        });
+        try {
+          const parsed = JSON.parse(val);
+          setAlcoholTaxRates({
+            droitAccise: parsed.droitAccise || 0,
+            cotisationSecu: parsed.cotisationSecu || 0,
+          });
+        } catch { /* ignore corrupted data */ }
       }
-    });
+    }).catch(() => {});
     return () => { mounted = false; };
   }, []);
 

@@ -1,13 +1,18 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { authenticate } from '../middleware/auth';
+import { userWriteLimiter } from '../middleware/userRateLimit';
 import * as productService from '../services/product.service';
 import { CreateProductInput } from '@margebar/shared';
 
 const router = Router();
 
+const querySchema = z.object({
+  categoryId: z.string().uuid().optional(),
+});
+
 const createSchema = z.object({
-  name: z.string().min(1, 'Nom requis'),
+  name: z.string().min(1, 'Nom requis').max(200, 'Nom trop long'),
   categoryId: z.string().uuid(),
   purchasePriceHT: z.number().min(0),
   containerVolumeCl: z.number().positive(),
@@ -25,7 +30,7 @@ router.use(authenticate);
 
 router.get('/', async (req: Request, res: Response) => {
   try {
-    const categoryId = req.query.categoryId as string | undefined;
+    const { categoryId } = querySchema.parse(req.query);
     const products = await productService.getProducts(req.user!.userId, categoryId);
     res.json(products);
   } catch {
@@ -53,7 +58,7 @@ router.get('/:id/price-history', async (req: Request, res: Response) => {
   }
 });
 
-router.post('/', async (req: Request, res: Response) => {
+router.post('/', userWriteLimiter, async (req: Request, res: Response) => {
   try {
     const data = createSchema.parse(req.body) as CreateProductInput;
     const product = await productService.createProduct(req.user!.userId, data);
@@ -64,7 +69,7 @@ router.post('/', async (req: Request, res: Response) => {
   }
 });
 
-router.put('/:id', async (req: Request, res: Response) => {
+router.put('/:id', userWriteLimiter, async (req: Request, res: Response) => {
   try {
     const data = createSchema.partial().parse(req.body) as Partial<CreateProductInput>;
     const product = await productService.updateProduct(req.params.id, req.user!.userId, data);
@@ -77,7 +82,7 @@ router.put('/:id', async (req: Request, res: Response) => {
   }
 });
 
-router.delete('/:id', async (req: Request, res: Response) => {
+router.delete('/:id', userWriteLimiter, async (req: Request, res: Response) => {
   try {
     await productService.deleteProduct(req.params.id, req.user!.userId);
     res.status(204).send();

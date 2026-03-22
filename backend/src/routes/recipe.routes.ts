@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { authenticate } from '../middleware/auth';
+import { userWriteLimiter } from '../middleware/userRateLimit';
 import * as recipeService from '../services/recipe.service';
 
 const router = Router();
@@ -63,7 +64,7 @@ router.get('/:id', async (req: Request, res: Response) => {
 });
 
 // Create recipe
-router.post('/', async (req: Request, res: Response) => {
+router.post('/', userWriteLimiter, async (req: Request, res: Response) => {
   try {
     const data = createSchema.parse(req.body);
     const recipe = await recipeService.createRecipe(req.user!.userId, data);
@@ -75,7 +76,7 @@ router.post('/', async (req: Request, res: Response) => {
 });
 
 // Update recipe
-router.put('/:id', async (req: Request, res: Response) => {
+router.put('/:id', userWriteLimiter, async (req: Request, res: Response) => {
   try {
     const data = createSchema.partial().parse(req.body);
     const recipe = await recipeService.updateRecipe(req.params.id, req.user!.userId, data);
@@ -87,7 +88,7 @@ router.put('/:id', async (req: Request, res: Response) => {
 });
 
 // Delete recipe
-router.delete('/:id', async (req: Request, res: Response) => {
+router.delete('/:id', userWriteLimiter, async (req: Request, res: Response) => {
   try {
     await recipeService.deleteRecipe(req.params.id, req.user!.userId);
     res.status(204).send();

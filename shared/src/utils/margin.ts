@@ -3,6 +3,7 @@ import { RecipeIngredient, RecipeConsumable, RecipeMarginResult } from '../types
 import { getMarginColor } from '../constants/colors';
 
 function round2(n: number): number {
+  if (!isFinite(n)) return 0;
   return Math.round(n * 100) / 100;
 }
 

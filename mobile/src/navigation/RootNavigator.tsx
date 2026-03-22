@@ -25,9 +25,13 @@ export function RootNavigator() {
   useEffect(() => {
     let mounted = true;
     if (isAuthenticated) {
-      AsyncStorage.getItem(PAYWALL_SEEN_KEY).then((val) => {
-        if (mounted) setPaywallSeen(val === 'true');
-      });
+      AsyncStorage.getItem(PAYWALL_SEEN_KEY)
+        .then((val) => {
+          if (mounted) setPaywallSeen(val === 'true');
+        })
+        .catch(() => {
+          if (mounted) setPaywallSeen(true);
+        });
     } else {
       setPaywallSeen(null);
     }
@@ -52,7 +56,7 @@ export function RootNavigator() {
     return (
       <SubscriptionScreen
         onDismiss={() => {
-          AsyncStorage.setItem(PAYWALL_SEEN_KEY, 'true');
+          AsyncStorage.setItem(PAYWALL_SEEN_KEY, 'true').catch(() => {});
           setPaywallSeen(true);
         }}
       />

@@ -128,7 +128,7 @@ export function ScanScreen({ navigation }: Props) {
       },
     });
     // Remove draft after use
-    draftService.deleteDraft(draft.id).then(loadDrafts);
+    draftService.deleteDraft(draft.id).then(loadDrafts).catch(() => {});
   };
 
   const handleDeleteDraft = (draft: ScanDraft) => {

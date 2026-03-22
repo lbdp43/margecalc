@@ -25,6 +25,7 @@ model User {
   servingTypes       ServingType[]
   customContainers   CustomContainer[]
   recipes            Recipe[]
+  scanUsages         ScanUsage[]
 }
 
 model CustomContainer {
@@ -148,6 +149,15 @@ model RecipeIngredient {
   createdAt   DateTime @default(now())
 
   @@index([recipeId])
+}
+
+model ScanUsage {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  scannedAt DateTime @default(now())
+
+  @@index([userId, scannedAt])
 }
 
 model RecipeConsumable {

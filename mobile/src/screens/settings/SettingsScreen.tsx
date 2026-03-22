@@ -74,16 +74,20 @@ export function SettingsScreen() {
       ]).then(([thresholdsVal, taxVal]) => {
         if (!mounted) return;
         if (thresholdsVal) {
-          const parsed = JSON.parse(thresholdsVal);
-          setGreenThreshold(String(parsed.good));
-          setOrangeThreshold(String(parsed.medium));
+          try {
+            const parsed = JSON.parse(thresholdsVal);
+            setGreenThreshold(String(parsed.good));
+            setOrangeThreshold(String(parsed.medium));
+          } catch { /* ignore corrupted data */ }
         }
         if (taxVal) {
-          const parsed = JSON.parse(taxVal);
-          setDroitAccise(String(parsed.droitAccise || ''));
-          setCotisationSecu(String(parsed.cotisationSecu || ''));
+          try {
+            const parsed = JSON.parse(taxVal);
+            setDroitAccise(String(parsed.droitAccise || ''));
+            setCotisationSecu(String(parsed.cotisationSecu || ''));
+          } catch { /* ignore corrupted data */ }
         }
-      });
+      }).catch(() => {});
       return () => { mounted = false; };
     }, [])
   );

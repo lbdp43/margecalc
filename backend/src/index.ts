@@ -4,14 +4,25 @@ import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import path from 'path';
 import { config } from './config/env';
+import { prisma } from './config/database';
 import routes from './routes';
 import { errorHandler } from './middleware/errorHandler';
 
 const app = express();
 
-// Security headers
+// Security headers with basic CSP
 app.use(helmet({
-  contentSecurityPolicy: false, // Disabled for SPA
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", 'data:', 'blob:', 'https:'],
+      connectSrc: ["'self'", 'https://margecalc-production.up.railway.app', 'https://api.stripe.com'],
+      fontSrc: ["'self'", 'data:'],
+      frameSrc: ["'self'", 'https://js.stripe.com'],
+    },
+  },
   crossOriginEmbedderPolicy: false,
 }));
 
@@ -60,8 +71,14 @@ if (config.isProd) {
   });
 }
 
-app.get('/health', (_req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+// Health check with DB verification
+app.get('/health', async (_req, res) => {
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    res.json({ status: 'ok', db: 'connected', timestamp: new Date().toISOString() });
+  } catch {
+    res.status(503).json({ status: 'error', db: 'disconnected', timestamp: new Date().toISOString() });
+  }
 });
 
 app.use('/api', routes);

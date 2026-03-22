@@ -14,6 +14,7 @@ declare global {
 export function authenticate(req: Request, res: Response, next: NextFunction): void {
   const header = req.headers.authorization;
   if (!header?.startsWith('Bearer ')) {
+    console.warn(`[AUTH] Missing token — ${req.method} ${req.path} — IP: ${req.ip}`);
     res.status(401).json({ error: 'Token manquant' });
     return;
   }
@@ -24,6 +25,7 @@ export function authenticate(req: Request, res: Response, next: NextFunction): v
     req.user = payload;
     next();
   } catch {
+    console.warn(`[AUTH] Invalid token — ${req.method} ${req.path} — IP: ${req.ip}`);
     res.status(401).json({ error: 'Token invalide' });
   }
 }

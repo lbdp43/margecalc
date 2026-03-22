@@ -4,8 +4,30 @@ dotenv.config();
 const isProd = process.env.NODE_ENV === 'production';
 const isDev = process.env.NODE_ENV === 'development' || !process.env.NODE_ENV;
 
-if (!isDev && !process.env.JWT_SECRET) {
-  throw new Error('FATAL: JWT_SECRET environment variable is required outside development');
+// Validate critical environment variables
+if (!isDev) {
+  const required: Record<string, string | undefined> = {
+    JWT_SECRET: process.env.JWT_SECRET,
+    DATABASE_URL: process.env.DATABASE_URL,
+  };
+  const missing = Object.entries(required)
+    .filter(([, v]) => !v)
+    .map(([k]) => k);
+  if (missing.length > 0) {
+    throw new Error(`FATAL: Missing required environment variables: ${missing.join(', ')}`);
+  }
+  if (process.env.JWT_SECRET && process.env.JWT_SECRET.length < 32) {
+    throw new Error('FATAL: JWT_SECRET must be at least 32 characters long');
+  }
+}
+
+if (isProd) {
+  if (!process.env.STRIPE_SECRET_KEY) {
+    console.warn('WARNING: STRIPE_SECRET_KEY is not set — payment features will be disabled');
+  }
+  if (!process.env.STRIPE_WEBHOOK_SECRET) {
+    console.warn('WARNING: STRIPE_WEBHOOK_SECRET is not set — webhooks will fail');
+  }
 }
 
 export const config = {

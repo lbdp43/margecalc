@@ -3,6 +3,7 @@ import { z } from 'zod';
 import rateLimit from 'express-rate-limit';
 import { authenticate } from '../middleware/auth';
 import { analyzeBottleImage, analyzeInvoiceImage } from '../services/scan.service';
+import { prisma } from '../config/database';
 
 const router = Router();
 
@@ -19,49 +20,44 @@ const scanLimiter = rateLimit({
   legacyHeaders: false,
 });
 
-// Daily scan limit per user (cost protection: max 20 scans/day)
+// Daily scan limit per user — persisted in DB
 const DAILY_LIMIT = 20;
-const dailyUsage = new Map<string, { count: number; resetAt: number }>();
 
-function checkDailyLimit(req: Request, res: Response): boolean {
+async function checkDailyLimit(req: Request, res: Response): Promise<boolean> {
   const userId = req.user!.userId;
-  const now = Date.now();
-  let usage = dailyUsage.get(userId);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
 
-  if (!usage || now >= usage.resetAt) {
-    // Reset at midnight or first use
-    const tomorrow = new Date();
-    tomorrow.setHours(24, 0, 0, 0);
-    usage = { count: 0, resetAt: tomorrow.getTime() };
-    dailyUsage.set(userId, usage);
-  }
+  const count = await prisma.scanUsage.count({
+    where: {
+      userId,
+      scannedAt: { gte: today },
+    },
+  });
 
-  if (usage.count >= DAILY_LIMIT) {
-    const hoursLeft = Math.ceil((usage.resetAt - now) / 3_600_000);
+  if (count >= DAILY_LIMIT) {
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const hoursLeft = Math.ceil((tomorrow.getTime() - Date.now()) / 3_600_000);
     res.status(429).json({
       error: `Limite de ${DAILY_LIMIT} scans par jour atteinte. Réessayez dans ${hoursLeft}h.`,
     });
     return false;
   }
 
-  usage.count++;
+  await prisma.scanUsage.create({
+    data: { userId },
+  });
+
   return true;
 }
-
-// Cleanup stale entries every hour
-setInterval(() => {
-  const now = Date.now();
-  for (const [key, val] of dailyUsage) {
-    if (now >= val.resetAt) dailyUsage.delete(key);
-  }
-}, 3_600_000);
 
 router.use(authenticate);
 router.use(scanLimiter);
 
 router.post('/bottle', async (req: Request, res: Response) => {
-  if (!checkDailyLimit(req, res)) return;
   try {
+    if (!(await checkDailyLimit(req, res))) return;
     const { imageBase64 } = scanSchema.parse(req.body);
     const result = await analyzeBottleImage(imageBase64);
     res.json(result);
@@ -69,14 +65,15 @@ router.post('/bottle', async (req: Request, res: Response) => {
     if (err.name === 'ZodError') {
       res.status(400).json({ error: err.message });
     } else {
+      console.error(`[SCAN] Bottle scan error: ${err.message}`);
       res.status(500).json({ error: 'Erreur lors de l\'analyse de l\'image' });
     }
   }
 });
 
 router.post('/invoice', async (req: Request, res: Response) => {
-  if (!checkDailyLimit(req, res)) return;
   try {
+    if (!(await checkDailyLimit(req, res))) return;
     const { imageBase64 } = scanSchema.parse(req.body);
     const result = await analyzeInvoiceImage(imageBase64);
     res.json(result);
@@ -84,6 +81,7 @@ router.post('/invoice', async (req: Request, res: Response) => {
     if (err.name === 'ZodError') {
       res.status(400).json({ error: err.message });
     } else {
+      console.error(`[SCAN] Invoice scan error: ${err.message}`);
       res.status(500).json({ error: 'Erreur lors de l\'analyse de la facture' });
     }
   }
