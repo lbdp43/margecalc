@@ -61,7 +61,7 @@ export function ProductFormScreen({ route, navigation }: Props) {
   const [tvaRate, setTvaRate] = useState(user?.isAutoEntrepreneur ? 0 : TVA_RATES.RATE_20);
   const [supplier, setSupplier] = useState('');
   const [alcoholDegree, setAlcoholDegree] = useState('');
-  const [priceInputMode, setPriceInputMode] = useState<PriceInputMode>('hors_droit');
+  const [priceInputMode, setPriceInputMode] = useState<PriceInputMode>('ht_direct');
 
   // Alcohol tax settings from AsyncStorage
   const [alcoholTaxRates, setAlcoholTaxRates] = useState({ droitAccise: 0, cotisationSecu: 0 });
@@ -462,19 +462,19 @@ export function ProductFormScreen({ route, navigation }: Props) {
       {/* Price input mode toggle */}
       <View style={styles.priceModeTabs}>
         <TouchableOpacity
-          style={[styles.priceModeTab, priceInputMode === 'hors_droit' && styles.priceModeTabActive]}
-          onPress={() => setPriceInputMode('hors_droit')}
-        >
-          <Text style={[styles.priceModeTabText, priceInputMode === 'hors_droit' && styles.priceModeTabTextActive]}>
-            HT hors droit + degré
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
           style={[styles.priceModeTab, priceInputMode === 'ht_direct' && styles.priceModeTabActive]}
           onPress={() => setPriceInputMode('ht_direct')}
         >
           <Text style={[styles.priceModeTabText, priceInputMode === 'ht_direct' && styles.priceModeTabTextActive]}>
             Prix HT direct
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.priceModeTab, priceInputMode === 'hors_droit' && styles.priceModeTabActive]}
+          onPress={() => setPriceInputMode('hors_droit')}
+        >
+          <Text style={[styles.priceModeTabText, priceInputMode === 'hors_droit' && styles.priceModeTabTextActive]}>
+            HT hors droit + degré
           </Text>
         </TouchableOpacity>
       </View>
@@ -906,15 +906,15 @@ const styles = StyleSheet.create({
   priceModeTabs: {
     flexDirection: 'row',
     backgroundColor: colors.inputBackground,
-    borderRadius: borderRadius.sm,
-    padding: 2,
+    borderRadius: borderRadius.md,
+    padding: 3,
     marginBottom: spacing.md,
   },
   priceModeTab: {
     flex: 1,
-    paddingVertical: spacing.sm,
+    paddingVertical: spacing.sm + 2,
     alignItems: 'center',
-    borderRadius: borderRadius.sm - 2,
+    borderRadius: borderRadius.md - 3,
   },
   priceModeTabActive: {
     backgroundColor: colors.primary,
