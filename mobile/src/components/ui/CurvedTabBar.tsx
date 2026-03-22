@@ -4,53 +4,29 @@ import Svg, { Path } from 'react-native-svg';
 import { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { colors, shadows } from '../../theme';
 
-const TAB_HEIGHT = 64;
-const NOTCH_RADIUS = 38;
-const NOTCH_MARGIN = 8;
-// Extra vertical space for the S-curve + notch
-const WAVE_AMP = 30; // amplitude of the yin-yang wave
-const CURVE_DEPTH = NOTCH_RADIUS + NOTCH_MARGIN + WAVE_AMP;
+const TAB_HEIGHT = 70;
+const WAVE_HEIGHT = 28; // how tall the S-curve wave is
 
 export function CurvedTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
   const { width } = useWindowDimensions();
-  const totalHeight = TAB_HEIGHT + CURVE_DEPTH;
-  const cx = width / 2;
-  const r = NOTCH_RADIUS + NOTCH_MARGIN;
+  const totalHeight = TAB_HEIGHT + WAVE_HEIGHT;
 
-  // Yin-yang S-curve: left side of tab bar bulges UP into the page,
-  // flows down into the center notch for the scan button,
-  // then the right side stays lower — creating an asymmetric wave.
-  const highY = WAVE_AMP * 0.15; // top of the wave (left side rises high)
-  const midY = CURVE_DEPTH; // baseline where notch sits
-  const lowY = CURVE_DEPTH - 8; // right side stays close to baseline
+  // Yin-yang S-curve: left side rises up, right side stays low
+  // Creates a visible organic wave across the full width
+  const top = 2; // highest point (left side)
+  const bottom = WAVE_HEIGHT; // lowest point (right side)
 
   const tabBarPath = `
-    M0,${midY - 6}
-    C${width * 0.05},${midY - 18}
-     ${width * 0.10},${highY + 10}
-     ${width * 0.22},${highY}
-    C${width * 0.34},${highY - 2}
-     ${width * 0.38},${highY + 16}
-     ${cx - r - 6},${midY - 4}
-    C${cx - r - 2},${midY}
-     ${cx - r},${midY}
-     ${cx - r},${midY}
-    C${cx - r + 1},${midY - 4}
-     ${cx - r + 10},${midY - r * 0.65}
-     ${cx - r * 0.45},${midY - r * 0.9}
-    A${r},${r} 0 0 1 ${cx + r * 0.45},${midY - r * 0.9}
-    C${cx + r - 10},${midY - r * 0.65}
-     ${cx + r - 1},${midY - 4}
-     ${cx + r},${midY}
-    C${cx + r},${midY}
-     ${cx + r + 2},${midY}
-     ${cx + r + 6},${midY - 2}
-    C${width * 0.64},${lowY - 6}
-     ${width * 0.72},${lowY - 12}
-     ${width * 0.82},${lowY - 8}
-    C${width * 0.92},${lowY - 4}
-     ${width * 0.97},${lowY + 2}
-     ${width},${lowY - 2}
+    M0,${bottom - 4}
+    C${width * 0.08},${top + 6}
+     ${width * 0.20},${top}
+     ${width * 0.35},${top + 4}
+    C${width * 0.50},${top + 8}
+     ${width * 0.55},${bottom - 2}
+     ${width * 0.65},${bottom}
+    C${width * 0.75},${bottom + 2}
+     ${width * 0.88},${bottom - 6}
+     ${width},${bottom - 8}
     L${width},${totalHeight}
     L0,${totalHeight}
     Z
@@ -58,7 +34,7 @@ export function CurvedTabBar({ state, descriptors, navigation }: BottomTabBarPro
 
   return (
     <View style={[styles.container, { height: totalHeight }]}>
-      {/* SVG background with notch */}
+      {/* SVG wave background */}
       <View style={styles.svgWrap}>
         <Svg width={width} height={totalHeight} style={styles.svg}>
           <Path d={tabBarPath} fill={colors.white} />
@@ -88,7 +64,6 @@ export function CurvedTabBar({ state, descriptors, navigation }: BottomTabBarPro
             }
           };
 
-          // Get icon
           const iconElement = options.tabBarIcon?.({
             focused: isFocused,
             color: isFocused ? colors.primary : colors.tabBarInactive,
@@ -122,8 +97,6 @@ export function CurvedTabBar({ state, descriptors, navigation }: BottomTabBarPro
     </View>
   );
 }
-
-export { NOTCH_RADIUS, NOTCH_MARGIN, CURVE_DEPTH };
 
 const styles = StyleSheet.create({
   container: {
