@@ -36,6 +36,7 @@ export interface Product {
 export interface ProductWithMargin extends Product {
   computed: MarginResult;
   servings?: ProductServing[];
+  category?: Category;
 }
 
 export interface MarginInput {

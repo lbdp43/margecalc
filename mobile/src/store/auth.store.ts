@@ -1,6 +1,8 @@
 import { create } from 'zustand';
+import { Platform } from 'react-native';
 import { User } from '@margebar/shared';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as SecureStore from 'expo-secure-store';
 import { clearAllOfflineData } from '../services/offline';
 
 interface AuthState {
@@ -16,6 +18,32 @@ interface AuthState {
 const TOKEN_KEY = 'margebar_token';
 const USER_KEY = 'margebar_user';
 
+// SecureStore is not available on web
+const isSecureStoreAvailable = Platform.OS !== 'web';
+
+async function saveToken(token: string): Promise<void> {
+  if (isSecureStoreAvailable) {
+    await SecureStore.setItemAsync(TOKEN_KEY, token);
+  } else {
+    await AsyncStorage.setItem(TOKEN_KEY, token);
+  }
+}
+
+async function getToken(): Promise<string | null> {
+  if (isSecureStoreAvailable) {
+    return SecureStore.getItemAsync(TOKEN_KEY);
+  }
+  return AsyncStorage.getItem(TOKEN_KEY);
+}
+
+async function deleteToken(): Promise<void> {
+  if (isSecureStoreAvailable) {
+    await SecureStore.deleteItemAsync(TOKEN_KEY);
+  } else {
+    await AsyncStorage.removeItem(TOKEN_KEY);
+  }
+}
+
 export const useAuthStore = create<AuthState>((set) => ({
   token: null,
   user: null,
@@ -23,29 +51,34 @@ export const useAuthStore = create<AuthState>((set) => ({
   isLoading: true,
 
   setAuth: (token, user) => {
-    AsyncStorage.multiSet([
-      [TOKEN_KEY, token],
-      [USER_KEY, JSON.stringify(user)],
-    ]).catch(() => {});
+    Promise.all([
+      saveToken(token),
+      AsyncStorage.setItem(USER_KEY, JSON.stringify(user)),
+    ]).catch((err) => {
+      console.warn('Failed to persist auth:', err);
+    });
     set({ token, user, isAuthenticated: true });
   },
 
   logout: async () => {
     set({ token: null, user: null, isAuthenticated: false });
-    // Clear auth + all offline data to prevent data leak to next user
     await Promise.all([
-      AsyncStorage.multiRemove([TOKEN_KEY, USER_KEY]),
+      deleteToken(),
+      AsyncStorage.removeItem(USER_KEY),
       clearAllOfflineData(),
     ]);
   },
 
   loadStoredAuth: async () => {
     try {
-      const [token, userJson] = await AsyncStorage.multiGet([TOKEN_KEY, USER_KEY]);
-      if (token[1] && userJson[1]) {
+      const [token, userJson] = await Promise.all([
+        getToken(),
+        AsyncStorage.getItem(USER_KEY),
+      ]);
+      if (token && userJson) {
         set({
-          token: token[1],
-          user: JSON.parse(userJson[1]),
+          token,
+          user: JSON.parse(userJson),
           isAuthenticated: true,
           isLoading: false,
         });

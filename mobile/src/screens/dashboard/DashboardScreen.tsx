@@ -1,55 +1,45 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert, useWindowDimensions, Modal, TextInput, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
-import Svg, { Path, Rect, Text as SvgText } from 'react-native-svg';
+import { View, Text, StyleSheet, TouchableOpacity, Alert, useWindowDimensions } from 'react-native';
+import Svg, { Path } from 'react-native-svg';
 import { useNavigation } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import {
   ProductWithMargin,
   formatPercent, formatPrice, MARGIN_COLOR_MAP,
-  calculateServingMargin, CONTAINER_PRESETS,
-  calculateAlcoholTax, parseLocaleFloat,
+  calculateServingMargin,
 } from '@margebar/shared';
 import { ScreenWrapper } from '../../components/ui/ScreenWrapper';
+import { ErrorBoundary } from '../../components/ui/ErrorBoundary';
 import { DecorativeCurve } from '../../components/ui/DecorativeCurve';
 import { useOfflineQuery } from '../../hooks/useOfflineQuery';
 import * as productService from '../../services/product.service';
 import { useAuthStore } from '../../store/auth.store';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
+import { useCalculator } from './useCalculator';
+import { CalculatorModal } from './CalculatorModal';
+import { ProductDashboardCard } from './ProductDashboardCard';
+import { CategoryChart } from './CategoryChart';
+import { TopFlopSection } from './TopFlopSection';
 
 const WELCOME_DISMISSED_KEY = 'margebar_welcome_dismissed';
-
-function getContainerLabel(volumeCl: number): string {
-  const preset = CONTAINER_PRESETS.find((p) => p.volumeCl === volumeCl);
-  if (preset) return preset.label;
-  if (volumeCl >= 100) return `${(volumeCl / 100).toFixed(volumeCl % 100 === 0 ? 0 : 1)} L`;
-  return `${volumeCl} cl`;
-}
-
 const CURVE_HEIGHT = 40;
-
-// Category colors for the bar chart
-const CATEGORY_COLORS = [
-  '#1B4332', '#2D6A4F', '#40916C', '#52B788', '#74C69D', '#95D5B2', '#B7E4C7',
-];
 
 export function DashboardScreen() {
   const user = useAuthStore((s) => s.user);
   const navigation = useNavigation<any>();
   const { width } = useWindowDimensions();
-  const chartWidth = width - spacing.md * 4;
-  const { data: products = [] } = useOfflineQuery<ProductWithMargin[]>(
+  const { data: products = [], refetch, isFetching } = useOfflineQuery<ProductWithMargin[]>(
     ['products'],
     () => productService.getProducts(),
   );
 
+  const handleRefresh = useCallback(() => { refetch(); }, [refetch]);
+
   const [welcomeVisible, setWelcomeVisible] = useState(true);
   const [loadingPref, setLoadingPref] = useState(true);
-  const [calcVisible, setCalcVisible] = useState(false);
-  const [calcPriceHD, setCalcPriceHD] = useState('');
-  const [calcContainer, setCalcContainer] = useState('70');
-  const [calcDegree, setCalcDegree] = useState('');
-  const [alcoholTaxRates, setAlcoholTaxRates] = useState({ droitAccise: 0, cotisationSecu: 0 });
+
+  const calc = useCalculator();
 
   useEffect(() => {
     let mounted = true;
@@ -57,16 +47,6 @@ export function DashboardScreen() {
       if (!mounted) return;
       if (val === 'true') setWelcomeVisible(false);
       setLoadingPref(false);
-    });
-    AsyncStorage.getItem('margebar_alcohol_tax').then((val) => {
-      if (!mounted) return;
-      if (val) {
-        const parsed = JSON.parse(val);
-        setAlcoholTaxRates({
-          droitAccise: parsed.droitAccise || 0,
-          cotisationSecu: parsed.cotisationSecu || 0,
-        });
-      }
     });
     return () => { mounted = false; };
   }, []);
@@ -93,23 +73,25 @@ export function DashboardScreen() {
     });
   }, [navigation]);
 
-  const sorted = useMemo(
-    () => [...products].sort((a, b) => b.computed.marginPercent - a.computed.marginPercent),
-    [products],
-  );
-
-  const avgMargin = useMemo(
-    () => products.length > 0
+  // Combined sorted + top5 + flop5 in a single memo
+  const { sorted, top5, flop5, avgMargin } = useMemo(() => {
+    const s = [...products].sort((a, b) => b.computed.marginPercent - a.computed.marginPercent);
+    const avg = products.length > 0
       ? products.reduce((sum, p) => sum + p.computed.marginPercent, 0) / products.length
-      : 0,
-    [products],
-  );
+      : 0;
+    return {
+      sorted: s,
+      top5: s.slice(0, 5),
+      flop5: s.length > 5 ? s.slice(-5).reverse() : [],
+      avgMargin: avg,
+    };
+  }, [products]);
 
   // Category margin data for bar chart
   const categoryData = useMemo(() => {
     const catMap = new Map<string, { name: string; margins: number[] }>();
     products.forEach((p) => {
-      const catName = (p as any).category?.name || 'Autre';
+      const catName = p.category?.name || 'Autre';
       if (!catMap.has(catName)) catMap.set(catName, { name: catName, margins: [] });
       catMap.get(catName)!.margins.push(p.computed.marginPercent);
     });
@@ -122,14 +104,7 @@ export function DashboardScreen() {
       .sort((a, b) => b.avgMargin - a.avgMargin);
   }, [products]);
 
-  // Top 5 and Bottom 5 (memoized)
-  const top5 = useMemo(() => sorted.slice(0, 5), [sorted]);
-  const flop5 = useMemo(
-    () => sorted.length > 5 ? sorted.slice(-5).reverse() : [],
-    [sorted],
-  );
-
-  // Pre-compute serving margins for all products (avoids recalc in render)
+  // Pre-compute serving margins for all products
   const productsWithServingMargins = useMemo(() => {
     return sorted.map((p) => ({
       product: p,
@@ -144,92 +119,12 @@ export function DashboardScreen() {
     }));
   }, [sorted]);
 
-  const calcTax = useMemo(() => {
-    const price = parseLocaleFloat(calcPriceHD) || 0;
-    const vol = parseLocaleFloat(calcContainer) || 0;
-    const deg = parseLocaleFloat(calcDegree) || 0;
-    const tax = calculateAlcoholTax(vol, deg, alcoholTaxRates.droitAccise, alcoholTaxRates.cotisationSecu);
-    return { price, tax, total: price + tax };
-  }, [calcPriceHD, calcContainer, calcDegree, alcoholTaxRates]);
-
-  const openCalc = useCallback(() => {
-    setCalcPriceHD('');
-    setCalcContainer('70');
-    setCalcDegree('');
-    setCalcVisible(true);
-  }, []);
-
-  const renderProductCard = useCallback((item: typeof productsWithServingMargins[number]) => {
-    const { product: p, accent, servingMargins } = item;
-
-    return (
-      <TouchableOpacity key={p.id} activeOpacity={0.7} onPress={() => navigateToProduct(p.id)}>
-        <View style={styles.productCard}>
-          <View style={styles.productHeader}>
-            <View style={[styles.productIndicator, { backgroundColor: accent }]} />
-            <View style={styles.productTitleWrap}>
-              <Text style={styles.productName} numberOfLines={1}>{p.name}</Text>
-              <Text style={styles.productSubtitle}>
-                Achat : {formatPrice(p.purchasePriceHT)} HT · {getContainerLabel(p.containerVolumeCl)}
-              </Text>
-            </View>
-            <Text style={[styles.productMargin, { color: accent }]}>
-              {formatPercent(p.computed.marginPercent)}
-            </Text>
-            <Ionicons name="chevron-forward" size={18} color={colors.tabBarInactive} />
-          </View>
-
-          {servingMargins.length > 0 && (
-            <View style={styles.servingsTable}>
-              <View style={styles.tableHeaderRow}>
-                <Text style={styles.thService}>SERVICE</Text>
-                <Text style={styles.thRight12}>PRIX TTC</Text>
-                <Text style={styles.thRight12}>MARGE</Text>
-                <Text style={styles.thRight1}>COEFF</Text>
-              </View>
-              {servingMargins.map(({ serving: s, margin }) => {
-                const rowColor = MARGIN_COLOR_MAP[margin.colorCode];
-                return (
-                  <View key={s.id} style={styles.tableRow}>
-                    <View style={styles.cellFlex2}>
-                      <Text style={styles.servingName}>{s.servingType.name}</Text>
-                      <Text style={styles.servingVolume}>{s.servingType.volumeCl} cl</Text>
-                    </View>
-                    <Text style={styles.cellRight12}>
-                      {formatPrice(s.sellingPriceTTC)}
-                    </Text>
-                    <Text style={[styles.cellRight12Bold, { color: rowColor }]}>
-                      {formatPercent(margin.marginPercent)}
-                    </Text>
-                    <Text style={styles.cellRight1}>
-                      x {margin.servingsPerContainer > 0
-                        ? (margin.sellingPriceHT / margin.costPerServingHT).toFixed(1)
-                        : '-'}
-                    </Text>
-                  </View>
-                );
-              })}
-            </View>
-          )}
-        </View>
-      </TouchableOpacity>
-    );
-  }, [navigateToProduct]);
-
-  // Bar chart rendering
-  const barChartHeight = 160;
-  const barMaxWidth = chartWidth - 80;
-  const maxMargin = useMemo(
-    () => Math.max(...categoryData.map((c) => c.avgMargin), 1),
-    [categoryData],
-  );
-
   return (
-    <ScreenWrapper>
+    <ScreenWrapper onRefresh={handleRefresh} refreshing={isFetching}>
       {/* Hero Header */}
       <View style={styles.heroCard}>
         <View style={styles.heroContent}>
-          <Text style={styles.heroGreeting}>
+          <Text style={styles.heroGreeting} accessibilityRole="header">
             {user?.businessName?.toUpperCase() || 'MON ÉTABLISSEMENT'}
           </Text>
           <Text style={styles.heroTitle}>Tableau de bord</Text>
@@ -237,7 +132,12 @@ export function DashboardScreen() {
 
         {welcomeVisible && !loadingPref && (
           <View style={styles.welcomeSection}>
-            <TouchableOpacity style={styles.closeBtn} onPress={handleDismiss}>
+            <TouchableOpacity
+              style={styles.closeBtn}
+              onPress={handleDismiss}
+              accessibilityRole="button"
+              accessibilityLabel="Fermer le message de bienvenue"
+            >
               <Ionicons name="close" size={14} color={colors.textLight} />
             </TouchableOpacity>
             <Text style={styles.welcomeTitle}>Bienvenue sur MargeBar</Text>
@@ -264,17 +164,23 @@ export function DashboardScreen() {
 
       {/* Stats Row */}
       <View style={styles.statsRow}>
-        <View style={styles.statCard}>
+        <View style={styles.statCard} accessibilityLabel={`${products.length} produits`}>
           <Ionicons name="cube-outline" size={20} color={colors.primary} />
           <Text style={styles.statValue}>{products.length}</Text>
           <Text style={styles.statLabel}>Produits</Text>
         </View>
-        <View style={styles.statCard}>
+        <View style={styles.statCard} accessibilityLabel={`Marge moyenne ${formatPercent(avgMargin)}`}>
           <Ionicons name="trending-up-outline" size={20} color={colors.primary} />
           <Text style={styles.statValue}>{formatPercent(avgMargin)}</Text>
           <Text style={styles.statLabel}>Marge moyenne</Text>
         </View>
-        <TouchableOpacity style={styles.calcButton} onPress={openCalc} activeOpacity={0.7}>
+        <TouchableOpacity
+          style={styles.calcButton}
+          onPress={calc.openCalc}
+          activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel="Ouvrir le calculateur de prix HT"
+        >
           <Ionicons name="calculator-outline" size={20} color={colors.textLight} />
           <Text style={styles.calcButtonLabel}>Calcul du prix HT</Text>
           <Text style={styles.calcButtonSub}>par le prix HT hors droit</Text>
@@ -282,240 +188,53 @@ export function DashboardScreen() {
       </View>
 
       {/* Alcohol Tax Calculator Modal */}
-      <Modal visible={calcVisible} transparent animationType="slide" onRequestClose={() => setCalcVisible(false)}>
-        <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-          <View style={styles.modalSheet}>
-            {/* Green header with decorative curves */}
-            <View style={styles.modalHeaderBg}>
-              <View style={styles.modalHeaderContent}>
-                <View>
-                  <Text style={styles.modalTitle}>Calculateur</Text>
-                  <Text style={styles.modalSubtitle}>Prix HT avec droits</Text>
-                </View>
-                <TouchableOpacity onPress={() => setCalcVisible(false)} hitSlop={styles.hitSlop} style={styles.modalCloseBtn}>
-                  <Ionicons name="close" size={18} color={colors.textLight} />
-                </TouchableOpacity>
-              </View>
-              {/* Decorative curves in header */}
-              <View style={styles.modalCurves} pointerEvents="none">
-                <Svg width={width} height={80} viewBox={`0 0 ${width} 80`}>
-                  <Path
-                    d={`M-10,50 C${width * 0.15},10 ${width * 0.35},70 ${width * 0.55},30 S${width * 0.85},60 ${width + 10},20`}
-                    fill="none"
-                    stroke={colors.textLight}
-                    strokeWidth={2}
-                    opacity={0.12}
-                  />
-                  <Path
-                    d={`M-10,62 C${width * 0.2},25 ${width * 0.4},75 ${width * 0.58},38 S${width * 0.88},65 ${width + 10},35`}
-                    fill="none"
-                    stroke={colors.textLight}
-                    strokeWidth={1.2}
-                    opacity={0.07}
-                  />
-                </Svg>
-              </View>
-            </View>
-            {/* S-curve transition */}
-            <View style={styles.modalCurveTransition}>
-              <Svg width={width} height={32}>
-                <Path
-                  d={`M0,0 L0,32 C${width * 0.35},32 ${width * 0.35},0 ${width},0 Z`}
-                  fill={colors.primary}
-                />
-              </Svg>
-            </View>
-
-            <ScrollView style={styles.modalBody} keyboardShouldPersistTaps="handled" bounces={false}>
-              <Text style={styles.calcLabel}>Prix d'achat HT hors droit</Text>
-              <TextInput
-                style={styles.calcInput}
-                value={calcPriceHD}
-                onChangeText={setCalcPriceHD}
-                placeholder="Ex : 10,50"
-                keyboardType="decimal-pad"
-                placeholderTextColor={colors.tabBarInactive}
-              />
-
-              <Text style={styles.calcLabel}>Contenant (cl)</Text>
-              <View style={styles.presetRow}>
-                {CONTAINER_PRESETS.slice(0, 4).map((p) => (
-                  <TouchableOpacity
-                    key={p.volumeCl}
-                    style={[styles.presetChip, calcContainer === String(p.volumeCl) && styles.presetChipActive]}
-                    onPress={() => setCalcContainer(String(p.volumeCl))}
-                  >
-                    <Text style={[styles.presetChipText, calcContainer === String(p.volumeCl) && styles.presetChipTextActive]}>
-                      {p.label}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-              <TextInput
-                style={styles.calcInput}
-                value={calcContainer}
-                onChangeText={setCalcContainer}
-                placeholder="Volume en cl"
-                keyboardType="decimal-pad"
-                placeholderTextColor={colors.tabBarInactive}
-              />
-
-              <Text style={styles.calcLabel}>Degré d'alcool (%)</Text>
-              <TextInput
-                style={styles.calcInput}
-                value={calcDegree}
-                onChangeText={setCalcDegree}
-                placeholder="Ex : 40"
-                keyboardType="decimal-pad"
-                placeholderTextColor={colors.tabBarInactive}
-              />
-
-              <Text style={styles.calcHint}>Applicable aux alcools de plus de 15°</Text>
-
-              {calcTax.price > 0 && (
-                <View style={styles.calcResult}>
-                  <View style={styles.calcResultRow}>
-                    <Text style={styles.calcResultLabel}>Prix HT hors droit</Text>
-                    <Text style={styles.calcResultValue}>{formatPrice(calcTax.price)}</Text>
-                  </View>
-                  {calcTax.tax > 0 && (
-                    <View style={styles.calcResultRow}>
-                      <Text style={styles.calcResultLabel}>Droits d'accise + Sécu</Text>
-                      <Text style={styles.calcResultValue}>{formatPrice(calcTax.tax)}</Text>
-                    </View>
-                  )}
-                  <View style={[styles.calcResultRow, styles.calcResultTotal]}>
-                    <Text style={styles.calcResultTotalLabel}>Prix HT (avec droits)</Text>
-                    <Text style={styles.calcResultTotalValue}>{formatPrice(calcTax.total)}</Text>
-                  </View>
-                </View>
-              )}
-            </ScrollView>
-
-            {/* Bottom decorative curves */}
-            <View style={styles.modalBottomCurves} pointerEvents="none">
-              <Svg width={width} height={100} viewBox={`0 0 ${width} 100`}>
-                <Path
-                  d={`M-10,30 C${width * 0.1},80 ${width * 0.3},5 ${width * 0.5},60 S${width * 0.75},10 ${width + 10},70`}
-                  fill="none"
-                  stroke={colors.primary}
-                  strokeWidth={2.5}
-                  opacity={0.06}
-                />
-                <Path
-                  d={`M-10,42 C${width * 0.12},88 ${width * 0.32},15 ${width * 0.52},68 S${width * 0.78},18 ${width + 10},80`}
-                  fill="none"
-                  stroke={colors.primary}
-                  strokeWidth={1.2}
-                  opacity={0.04}
-                />
-              </Svg>
-            </View>
-          </View>
-        </KeyboardAvoidingView>
-      </Modal>
+      <CalculatorModal
+        visible={calc.calcVisible}
+        onClose={calc.closeCalc}
+        calcPriceHD={calc.calcPriceHD}
+        onChangePriceHD={calc.setCalcPriceHD}
+        calcContainer={calc.calcContainer}
+        onChangeContainer={calc.setCalcContainer}
+        calcDegree={calc.calcDegree}
+        onChangeDegree={calc.setCalcDegree}
+        calcTax={calc.calcTax}
+      />
 
       {/* Margin by Category Chart */}
-      {categoryData.length > 0 && (
-        <View style={styles.chartCard}>
-          <View style={styles.sectionHeader}>
-            <View style={[styles.sectionIndicator, { backgroundColor: colors.primary }]} />
-            <Text style={styles.sectionTitle}>Marge par catégorie</Text>
-          </View>
-          <View style={{ height: categoryData.length * 40 + 8, marginTop: spacing.sm }}>
-            <Svg width={chartWidth} height={categoryData.length * 40 + 8}>
-              {categoryData.map((cat, i) => {
-                const barW = Math.max((cat.avgMargin / maxMargin) * barMaxWidth, 4);
-                const y = i * 40 + 4;
-                const colorIdx = i % CATEGORY_COLORS.length;
-                return (
-                  <React.Fragment key={cat.name}>
-                    <SvgText
-                      x={0}
-                      y={y + 16}
-                      fontSize={11}
-                      fill={colors.text}
-                      fontWeight="600"
-                    >
-                      {cat.name.length > 12 ? cat.name.slice(0, 11) + '…' : cat.name}
-                    </SvgText>
-                    <Rect
-                      x={80}
-                      y={y + 2}
-                      width={barW}
-                      height={22}
-                      rx={6}
-                      fill={CATEGORY_COLORS[colorIdx]}
-                    />
-                    <SvgText
-                      x={80 + barW + 6}
-                      y={y + 17}
-                      fontSize={12}
-                      fill={colors.text}
-                      fontWeight="700"
-                    >
-                      {cat.avgMargin.toFixed(1)} %
-                    </SvgText>
-                  </React.Fragment>
-                );
-              })}
-            </Svg>
-          </View>
-        </View>
-      )}
+      <ErrorBoundary fallbackMessage="Impossible d'afficher le graphique">
+        <CategoryChart data={categoryData} />
+      </ErrorBoundary>
 
       {/* Top 5 Rentabilité */}
-      {top5.length > 0 && (
-        <View style={styles.chartCard}>
-          <View style={styles.sectionHeader}>
-            <View style={[styles.sectionIndicator, { backgroundColor: colors.marginGreen }]} />
-            <Text style={styles.sectionTitle}>Top rentabilité</Text>
-          </View>
-          {top5.map((p, i) => {
-            const accent = MARGIN_COLOR_MAP[p.computed.colorCode];
-            return (
-              <TouchableOpacity key={p.id} onPress={() => navigateToProduct(p.id)} activeOpacity={0.7}>
-                <View style={styles.rankRow}>
-                  <Text style={styles.rankNumber}>{i + 1}</Text>
-                  <Text style={styles.rankName} numberOfLines={1}>{p.name}</Text>
-                  <Text style={[styles.rankMargin, { color: accent }]}>
-                    {formatPercent(p.computed.marginPercent)}
-                  </Text>
-                </View>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-      )}
+      <TopFlopSection
+        title="Top rentabilité"
+        indicatorColor={colors.marginGreen}
+        products={top5}
+        onPress={navigateToProduct}
+      />
 
       {/* Flop 5 Rentabilité */}
-      {flop5.length > 0 && (
-        <View style={styles.chartCard}>
-          <View style={styles.sectionHeader}>
-            <View style={[styles.sectionIndicator, { backgroundColor: colors.marginRed }]} />
-            <Text style={styles.sectionTitle}>Flop rentabilité</Text>
-          </View>
-          {flop5.map((p, i) => {
-            const accent = MARGIN_COLOR_MAP[p.computed.colorCode];
-            return (
-              <TouchableOpacity key={p.id} onPress={() => navigateToProduct(p.id)} activeOpacity={0.7}>
-                <View style={styles.rankRow}>
-                  <Text style={styles.rankNumber}>{i + 1}</Text>
-                  <Text style={styles.rankName} numberOfLines={1}>{p.name}</Text>
-                  <Text style={[styles.rankMargin, { color: accent }]}>
-                    {formatPercent(p.computed.marginPercent)}
-                  </Text>
-                </View>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-      )}
+      <TopFlopSection
+        title="Flop rentabilité"
+        indicatorColor={colors.marginRed}
+        products={flop5}
+        onPress={navigateToProduct}
+      />
 
       <DecorativeCurve variant="middle" />
 
       {/* All products with serving tables */}
-      {productsWithServingMargins.map((item) => renderProductCard(item))}
+      <ErrorBoundary fallbackMessage="Impossible d'afficher les produits">
+        {productsWithServingMargins.map((item) => (
+          <ProductDashboardCard
+            key={item.product.id}
+            product={item.product}
+            accent={item.accent}
+            servingMargins={item.servingMargins}
+            onPress={navigateToProduct}
+          />
+        ))}
+      </ErrorBoundary>
 
       {products.length === 0 && !loadingPref && (
         <View style={styles.emptyState}>
@@ -641,144 +360,6 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginTop: 2,
   },
-
-  /* Chart card */
-  chartCard: {
-    backgroundColor: colors.cardBackground,
-    borderRadius: borderRadius.lg,
-    padding: spacing.md,
-    marginBottom: spacing.md,
-    ...shadows.sm,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  sectionIndicator: {
-    width: 4,
-    height: 20,
-    borderRadius: 2,
-    marginRight: spacing.sm,
-  },
-  sectionTitle: {
-    ...typography.h3,
-    color: colors.text,
-  },
-
-  /* Rank rows (top/flop) */
-  rankRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: spacing.sm + 2,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.border,
-  },
-  rankNumber: {
-    width: 24,
-    ...typography.bodySmall,
-    fontWeight: '700',
-    color: colors.textSecondary,
-    textAlign: 'center',
-  },
-  rankName: {
-    flex: 1,
-    ...typography.bodySmall,
-    fontWeight: '600',
-    color: colors.text,
-    marginLeft: spacing.sm,
-  },
-  rankMargin: {
-    ...typography.bodySmall,
-    fontWeight: '800',
-    marginLeft: spacing.sm,
-  },
-
-  /* Product cards with serving table */
-  productCard: {
-    backgroundColor: colors.cardBackground,
-    borderRadius: borderRadius.lg,
-    marginBottom: spacing.md,
-    overflow: 'hidden',
-    ...shadows.sm,
-  },
-  productHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.md,
-  },
-  productIndicator: {
-    width: 4,
-    height: 32,
-    borderRadius: 2,
-    marginRight: spacing.sm + 2,
-  },
-  productTitleWrap: {
-    flex: 1,
-    marginRight: spacing.sm,
-  },
-  productName: {
-    ...typography.body,
-    fontWeight: '700',
-    color: colors.text,
-  },
-  productSubtitle: {
-    ...typography.caption,
-    color: colors.textSecondary,
-    marginTop: 2,
-  },
-  productMargin: {
-    ...typography.h3,
-    fontWeight: '800',
-    marginRight: spacing.xs,
-  },
-
-  /* Servings table */
-  servingsTable: {
-    paddingHorizontal: spacing.md,
-    paddingBottom: spacing.md,
-  },
-  tableHeaderRow: {
-    flexDirection: 'row',
-    paddingVertical: spacing.xs + 2,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-    marginBottom: spacing.xs,
-  },
-  tableHeader: {
-    ...typography.caption,
-    color: colors.tabBarInactive,
-    fontWeight: '600',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    fontSize: 10,
-  },
-  tableRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: spacing.sm,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.border,
-  },
-  servingName: {
-    ...typography.bodySmall,
-    fontWeight: '600',
-    color: colors.text,
-  },
-  servingVolume: {
-    ...typography.caption,
-    color: colors.textSecondary,
-    fontSize: 11,
-  },
-  tableCell: {
-    ...typography.bodySmall,
-    color: colors.text,
-  },
-  tableCellBold: {
-    ...typography.bodySmall,
-    fontWeight: '700',
-  },
-
   emptyState: {
     alignItems: 'center',
     paddingTop: spacing.xxl,
@@ -788,210 +369,5 @@ const styles = StyleSheet.create({
     ...typography.body,
     color: colors.tabBarInactive,
     textAlign: 'center',
-  },
-
-  /* Calculator Modal */
-  hitSlop: {
-    top: 12,
-    bottom: 12,
-    left: 12,
-    right: 12,
-  } as any,
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.45)',
-    justifyContent: 'flex-end',
-  },
-  modalSheet: {
-    backgroundColor: colors.cardBackground,
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    overflow: 'hidden',
-    ...shadows.lg,
-  },
-  modalHeaderBg: {
-    backgroundColor: colors.primary,
-    paddingTop: spacing.lg,
-    paddingHorizontal: spacing.lg,
-    paddingBottom: 0,
-    overflow: 'hidden',
-  },
-  modalHeaderContent: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    zIndex: 1,
-  },
-  modalCurves: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: 80,
-  },
-  modalCurveTransition: {
-    marginTop: -1,
-  },
-  modalCloseBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: 'rgba(255,255,255,0.15)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  modalTitle: {
-    ...typography.h2,
-    color: colors.textLight,
-  },
-  modalSubtitle: {
-    ...typography.bodySmall,
-    color: 'rgba(255,255,255,0.7)',
-    marginTop: 2,
-    marginBottom: spacing.md,
-  },
-  modalBody: {
-    paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.xxl,
-  },
-  modalBottomCurves: {
-    height: 100,
-    overflow: 'hidden',
-  },
-  calcLabel: {
-    ...typography.bodySmall,
-    color: colors.textSecondary,
-    fontWeight: '600',
-    marginBottom: spacing.xs,
-    marginTop: spacing.sm,
-  },
-  calcInput: {
-    backgroundColor: colors.inputBackground,
-    borderRadius: borderRadius.md,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm + 4,
-    ...typography.body,
-    color: colors.text,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  presetRow: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-    marginBottom: spacing.sm,
-  },
-  presetChip: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs + 2,
-    borderRadius: borderRadius.full,
-    backgroundColor: colors.inputBackground,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  presetChipActive: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
-  },
-  presetChipText: {
-    ...typography.caption,
-    color: colors.textSecondary,
-    fontWeight: '600',
-  },
-  presetChipTextActive: {
-    color: colors.textLight,
-  },
-  calcHint: {
-    ...typography.caption,
-    color: colors.tabBarInactive,
-    fontStyle: 'italic',
-    marginTop: spacing.sm,
-  },
-  calcResult: {
-    marginTop: spacing.lg,
-    backgroundColor: colors.surface,
-    borderRadius: borderRadius.lg,
-    padding: spacing.md,
-  },
-  calcResultRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: spacing.xs + 2,
-  },
-  calcResultLabel: {
-    ...typography.bodySmall,
-    color: colors.textSecondary,
-  },
-  calcResultValue: {
-    ...typography.bodySmall,
-    color: colors.text,
-    fontWeight: '600',
-  },
-  calcResultTotal: {
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-    marginTop: spacing.xs,
-    paddingTop: spacing.sm,
-  },
-  calcResultTotalLabel: {
-    ...typography.body,
-    color: colors.text,
-    fontWeight: '700',
-  },
-  calcResultTotalValue: {
-    ...typography.h3,
-    color: colors.primary,
-    fontWeight: '800',
-  },
-  // Extracted inline styles for table header / cells
-  thService: {
-    ...typography.caption,
-    color: colors.tabBarInactive,
-    fontWeight: '600',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    fontSize: 10,
-    flex: 2,
-  },
-  thRight12: {
-    ...typography.caption,
-    color: colors.tabBarInactive,
-    fontWeight: '600',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    fontSize: 10,
-    flex: 1.2,
-    textAlign: 'right',
-  },
-  thRight1: {
-    ...typography.caption,
-    color: colors.tabBarInactive,
-    fontWeight: '600',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    fontSize: 10,
-    flex: 1,
-    textAlign: 'right',
-  },
-  cellFlex2: {
-    flex: 2,
-  },
-  cellRight12: {
-    ...typography.bodySmall,
-    color: colors.text,
-    flex: 1.2,
-    textAlign: 'right',
-  },
-  cellRight12Bold: {
-    ...typography.bodySmall,
-    fontWeight: '700',
-    flex: 1.2,
-    textAlign: 'right',
-  },
-  cellRight1: {
-    ...typography.bodySmall,
-    color: colors.text,
-    flex: 1,
-    textAlign: 'right',
   },
 });
