@@ -26,7 +26,6 @@ function getContainerLabel(volumeCl: number): string {
 }
 
 const CURVE_HEIGHT = 40;
-const CURVE_RADIUS = 20; // radius for each 90° turn
 
 export function DashboardScreen() {
   const user = useAuthStore((s) => s.user);
@@ -171,20 +170,12 @@ export function DashboardScreen() {
         )}
       </View>
 
-      {/* S-curve (yin-yang) bottom edge of hero: bottom-left to top-right with purple stroke */}
+      {/* S-curve bottom edge of hero: full width, left-to-right */}
       <View style={styles.heroCurve}>
         <Svg width={width} height={CURVE_HEIGHT}>
-          {/* Primary fill above the S-curve */}
           <Path
-            d={`M0,0 L0,${CURVE_HEIGHT} L${width * 0.35 - CURVE_RADIUS},${CURVE_HEIGHT} C${width * 0.35},${CURVE_HEIGHT} ${width * 0.35},${CURVE_HEIGHT / 2} ${width * 0.35 + CURVE_RADIUS},${CURVE_HEIGHT / 2} L${width * 0.65 - CURVE_RADIUS},${CURVE_HEIGHT / 2} C${width * 0.65},${CURVE_HEIGHT / 2} ${width * 0.65},0 ${width * 0.65 + CURVE_RADIUS},0 L${width},0 Z`}
+            d={`M0,0 L0,${CURVE_HEIGHT} C${width * 0.35},${CURVE_HEIGHT} ${width * 0.35},0 ${width},0 Z`}
             fill={colors.primary}
-          />
-          {/* Purple stroke along the S-curve */}
-          <Path
-            d={`M0,${CURVE_HEIGHT} L${width * 0.35 - CURVE_RADIUS},${CURVE_HEIGHT} C${width * 0.35},${CURVE_HEIGHT} ${width * 0.35},${CURVE_HEIGHT / 2} ${width * 0.35 + CURVE_RADIUS},${CURVE_HEIGHT / 2} L${width * 0.65 - CURVE_RADIUS},${CURVE_HEIGHT / 2} C${width * 0.65},${CURVE_HEIGHT / 2} ${width * 0.65},0 ${width * 0.65 + CURVE_RADIUS},0 L${width},0`}
-            fill="none"
-            stroke="#8B5CF6"
-            strokeWidth={2.5}
           />
         </Svg>
       </View>
