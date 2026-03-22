@@ -2,9 +2,10 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 const isProd = process.env.NODE_ENV === 'production';
+const isDev = process.env.NODE_ENV === 'development' || !process.env.NODE_ENV;
 
-if (isProd && !process.env.JWT_SECRET) {
-  throw new Error('FATAL: JWT_SECRET environment variable is required in production');
+if (!isDev && !process.env.JWT_SECRET) {
+  throw new Error('FATAL: JWT_SECRET environment variable is required outside development');
 }
 
 export const config = {

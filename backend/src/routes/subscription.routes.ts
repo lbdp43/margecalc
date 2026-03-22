@@ -108,7 +108,7 @@ router.post('/webhook', async (req: Request, res: Response) => {
   let event: Stripe.Event;
   try {
     event = stripe.webhooks.constructEvent(
-      (req as any).rawBody || req.body,
+      req.body, // Buffer from express.raw() middleware
       sig,
       config.stripeWebhookSecret,
     );

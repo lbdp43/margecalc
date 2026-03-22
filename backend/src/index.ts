@@ -43,10 +43,7 @@ app.use('/api/auth', authLimiter);
 // Smaller JSON limit for general requests; scan endpoints get 10mb below
 app.use('/api/subscription/webhook', express.raw({ type: 'application/json' }));
 app.use('/api/scan', express.json({ limit: '10mb' }));
-app.use(express.json({
-  limit: '1mb',
-  verify: (req: any, _res, buf) => { req.rawBody = buf; },
-}));
+app.use(express.json({ limit: '1mb' }));
 
 // HTTPS enforcement in production — validate Host header to prevent injection
 if (config.isProd) {

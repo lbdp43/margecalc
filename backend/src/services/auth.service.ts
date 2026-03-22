@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import { prisma } from '../config/database';
 import { config } from '../config/env';
 import { AuthPayload } from '@margebar/shared';
+import { formatUser } from './user.service';
 
 const SALT_ROUNDS = 12;
 const TOKEN_EXPIRY = '24h';
@@ -25,22 +26,7 @@ export async function register(email: string, password: string, businessName?: s
   });
 
   const token = signToken({ userId: user.id, email: user.email });
-  return {
-    token,
-    user: {
-      id: user.id,
-      email: user.email,
-      businessName: user.businessName,
-      isAutoEntrepreneur: user.isAutoEntrepreneur,
-      defaultTvaRate: user.defaultTvaRate,
-      defaultContainerVolumeCl: user.defaultContainerVolumeCl,
-      subscriptionStatus: user.subscriptionStatus as any,
-      subscriptionPlan: user.subscriptionPlan,
-      subscriptionEndDate: user.subscriptionEndDate?.toISOString() ?? null,
-      createdAt: user.createdAt.toISOString(),
-      updatedAt: user.updatedAt.toISOString(),
-    },
-  };
+  return { token, user: formatUser(user) };
 }
 
 export async function login(email: string, password: string) {
@@ -55,22 +41,7 @@ export async function login(email: string, password: string) {
   }
 
   const token = signToken({ userId: user.id, email: user.email });
-  return {
-    token,
-    user: {
-      id: user.id,
-      email: user.email,
-      businessName: user.businessName,
-      isAutoEntrepreneur: user.isAutoEntrepreneur,
-      defaultTvaRate: user.defaultTvaRate,
-      defaultContainerVolumeCl: user.defaultContainerVolumeCl,
-      subscriptionStatus: user.subscriptionStatus as any,
-      subscriptionPlan: user.subscriptionPlan,
-      subscriptionEndDate: user.subscriptionEndDate?.toISOString() ?? null,
-      createdAt: user.createdAt.toISOString(),
-      updatedAt: user.updatedAt.toISOString(),
-    },
-  };
+  return { token, user: formatUser(user) };
 }
 
 function signToken(payload: AuthPayload): string {

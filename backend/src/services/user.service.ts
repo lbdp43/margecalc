@@ -1,6 +1,11 @@
 import { prisma } from '../config/database';
 
-function formatUser(user: any) {
+export function formatUser(user: {
+  id: string; email: string; businessName: string | null;
+  isAutoEntrepreneur: boolean; defaultTvaRate: number; defaultContainerVolumeCl: number;
+  subscriptionStatus: string; subscriptionPlan: string | null;
+  subscriptionEndDate: Date | null; createdAt: Date; updatedAt: Date;
+}) {
   return {
     id: user.id,
     email: user.email,
