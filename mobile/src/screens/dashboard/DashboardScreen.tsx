@@ -274,10 +274,10 @@ export function DashboardScreen() {
           <Text style={styles.statValue}>{formatPercent(avgMargin)}</Text>
           <Text style={styles.statLabel}>Marge moyenne</Text>
         </View>
-        <TouchableOpacity style={styles.statCard} onPress={openCalc} activeOpacity={0.7}>
-          <Ionicons name="calculator-outline" size={20} color={colors.primary} />
-          <Text style={styles.statCalcLabel}>Calcul du prix HT</Text>
-          <Text style={styles.statCalcSub}>par le prix HT hors droit</Text>
+        <TouchableOpacity style={styles.calcButton} onPress={openCalc} activeOpacity={0.7}>
+          <Ionicons name="calculator-outline" size={20} color={colors.textLight} />
+          <Text style={styles.calcButtonLabel}>Calcul du prix HT</Text>
+          <Text style={styles.calcButtonSub}>par le prix HT hors droit</Text>
         </TouchableOpacity>
       </View>
 
@@ -556,16 +556,24 @@ const styles = StyleSheet.create({
     color: colors.primary,
     marginTop: spacing.xs,
   },
-  statCalcLabel: {
+  calcButton: {
+    flex: 1,
+    alignItems: 'center',
+    backgroundColor: colors.primary,
+    borderRadius: borderRadius.lg,
+    paddingVertical: spacing.md,
+    ...shadows.sm,
+  },
+  calcButtonLabel: {
     ...typography.bodySmall,
     fontWeight: '700',
-    color: colors.primary,
+    color: colors.textLight,
     marginTop: spacing.xs,
     textAlign: 'center',
   },
-  statCalcSub: {
+  calcButtonSub: {
     ...typography.caption,
-    color: colors.textSecondary,
+    color: 'rgba(255,255,255,0.7)',
     marginTop: 2,
     textAlign: 'center',
     fontSize: 10,
