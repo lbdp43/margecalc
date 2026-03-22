@@ -4,7 +4,7 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
-import { Product, ServingType, ServingMarginResult, calculateServingMargin, MARGIN_COLOR_MAP } from '@margebar/shared';
+import { Product, ProductWithMargin, ServingType, ServingMarginResult, calculateServingMargin, MARGIN_COLOR_MAP } from '@margebar/shared';
 import { ScreenWrapper } from '../../components/ui/ScreenWrapper';
 import { YinYangSpinner } from '../../components/ui/YinYangSpinner';
 import { ServingTypeIcon } from '../../components/ui/ServingTypeIcon';
@@ -19,7 +19,7 @@ type Props = NativeStackScreenProps<any, 'ProductDetail'>;
 
 export function ProductDetailScreen({ route, navigation }: Props) {
   const { productId } = route.params as { productId: string };
-  const [product, setProduct] = useState<Product | null>(null);
+  const [product, setProduct] = useState<ProductWithMargin | null>(null);
   const [servingTypes, setServingTypes] = useState<ServingType[]>([]);
   const [savedServings, setSavedServings] = useState<ServingMarginResult[]>([]);
   const [prices, setPrices] = useState<Record<string, string>>({});
@@ -49,7 +49,7 @@ export function ProductDetailScreen({ route, navigation }: Props) {
             servingService.getProductServings(productId),
           ]);
           if (!mounted) return;
-          setProduct(productRes as any);
+          setProduct(productRes);
           setServingTypes(typesRes);
           setSavedServings(servingsRes);
 

@@ -135,6 +135,8 @@ export function calculateServingMargin(
   servingType: ServingType,
   sellingPriceTTC: number,
 ): ServingMarginResult {
+  if (servingType.volumeCl <= 0) throw new Error('Serving volume must be > 0');
+  if (containerVolumeCl <= 0) throw new Error('Container volume must be > 0');
   const servingsPerContainer = containerVolumeCl / servingType.volumeCl;
   const costPerServingHT = purchasePriceHT / servingsPerContainer;
   const sellingPriceHT = sellingPriceTTC / (1 + tvaRate);

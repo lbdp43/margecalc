@@ -287,13 +287,17 @@ export function ProductFormScreen({ route, navigation }: Props) {
       if (servings.length === 0) throw new Error('Sélectionnez au moins un type de service');
 
       const firstST = servingTypes.find((st) => st.id === servings[0].servingTypeId);
+      const parsedContainerVol = parseLocaleFloat(containerVolume);
+      if (isNaN(parsedContainerVol) || parsedContainerVol <= 0) {
+        throw new Error('Volume du contenant invalide');
+      }
 
       const productData = {
         name,
         categoryId,
         purchasePriceHT: currentPurchasePrice,
-        containerVolumeCl: parseLocaleFloat(containerVolume),
-        doseVolumeCl: firstST?.volumeCl || 5,
+        containerVolumeCl: parsedContainerVol,
+        doseVolumeCl: firstST?.volumeCl ?? 5,
         marginMode: MarginMode.FIX_SELLING_PRICE,
         sellingPriceTTC: servings[0].sellingPriceTTC,
         tvaRate,

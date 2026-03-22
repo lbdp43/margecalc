@@ -109,7 +109,7 @@ export function DashboardScreen() {
   const top5 = sorted.slice(0, 5);
   const flop5 = sorted.length > 5 ? sorted.slice(-5).reverse() : [];
 
-  const renderProductCard = (p: ProductWithMargin) => {
+  const renderProductCard = useCallback((p: ProductWithMargin) => {
     const servings = p.servings || [];
     const accent = MARGIN_COLOR_MAP[p.computed.colorCode];
 
@@ -172,12 +172,15 @@ export function DashboardScreen() {
         </View>
       </TouchableOpacity>
     );
-  };
+  }, []);
 
   // Bar chart rendering
   const barChartHeight = 160;
   const barMaxWidth = chartWidth - 80;
-  const maxMargin = Math.max(...categoryData.map((c) => c.avgMargin), 1);
+  const maxMargin = useMemo(
+    () => Math.max(...categoryData.map((c) => c.avgMargin), 1),
+    [categoryData],
+  );
 
   return (
     <ScreenWrapper>

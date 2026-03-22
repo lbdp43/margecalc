@@ -20,11 +20,18 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+let _loggingOut = false;
+
 api.interceptors.response.use(
   (response) => response,
-  (error) => {
-    if (error.response?.status === 401) {
-      useAuthStore.getState().logout();
+  async (error) => {
+    if (error.response?.status === 401 && !_loggingOut) {
+      _loggingOut = true;
+      try {
+        await useAuthStore.getState().logout();
+      } finally {
+        _loggingOut = false;
+      }
     }
     return Promise.reject(error);
   }

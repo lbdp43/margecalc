@@ -4,11 +4,11 @@ import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
-import { useQuery } from '@tanstack/react-query';
 import { Category, CONTAINER_PRESETS } from '@margebar/shared';
 import { ScreenWrapper } from '../../components/ui/ScreenWrapper';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
+import { useOfflineQuery } from '../../hooks/useOfflineQuery';
 import * as scanService from '../../services/scan.service';
 import * as categoryService from '../../services/category.service';
 import { YinYangSpinner } from '../../components/ui/YinYangSpinner';
@@ -21,10 +21,10 @@ export function ScanScreen({ navigation }: Props) {
   const [scanning, setScanning] = useState(false);
   const [result, setResult] = useState<scanService.ScanResult | null>(null);
 
-  const { data: categories = [] } = useQuery<Category[]>({
-    queryKey: ['categories'],
-    queryFn: categoryService.getCategories,
-  });
+  const { data: categories = [] } = useOfflineQuery<Category[]>(
+    ['categories'],
+    categoryService.getCategories,
+  );
 
   const pickImage = async (useCamera: boolean) => {
     const permission = useCamera

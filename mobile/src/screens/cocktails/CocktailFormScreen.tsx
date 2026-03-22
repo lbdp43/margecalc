@@ -87,7 +87,7 @@ export function CocktailFormScreen() {
       })));
       setInitialized(true);
     }
-  }, [existingRecipe?.id]);
+  }, [existingRecipe, initialized]);
 
   const [ingredients, setIngredients] = useState<IngredientRow[]>([
     { key: 'ing-0', name: '', quantityCl: '', costPerUnit: '' },
