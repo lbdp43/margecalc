@@ -111,7 +111,7 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    paddingBottom: Platform.OS === 'ios' ? 6 : 6,
+    paddingBottom: Platform.OS === 'ios' ? 8 : 8,
   },
   tabItem: {
     flex: 1,
