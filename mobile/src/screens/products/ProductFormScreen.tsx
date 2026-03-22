@@ -33,6 +33,7 @@ import { colors, spacing, borderRadius, typography } from '../../theme';
 type Props = NativeStackScreenProps<any, 'ProductForm'>;
 type ServingMode = 'price' | 'margin' | 'coefficient';
 type FormStep = 'scan' | 'form';
+type PriceInputMode = 'hors_droit' | 'ht_direct';
 
 export function ProductFormScreen({ route, navigation }: Props) {
   const productId = route.params?.productId;
@@ -60,6 +61,7 @@ export function ProductFormScreen({ route, navigation }: Props) {
   const [tvaRate, setTvaRate] = useState(user?.isAutoEntrepreneur ? 0 : TVA_RATES.RATE_20);
   const [supplier, setSupplier] = useState('');
   const [alcoholDegree, setAlcoholDegree] = useState('');
+  const [priceInputMode, setPriceInputMode] = useState<PriceInputMode>('hors_droit');
 
   // Alcohol tax settings from AsyncStorage
   const [alcoholTaxRates, setAlcoholTaxRates] = useState({ droitAccise: 0, cotisationSecu: 0 });
@@ -205,13 +207,15 @@ export function ProductFormScreen({ route, navigation }: Props) {
 
   // === FORM LOGIC ===
   const currentContainerVol = parseLocaleFloat(containerVolume) || 0;
-  const currentPurchasePriceHorsDroit = parseLocaleFloat(purchasePrice) || 0;
+  const currentPurchasePriceRaw = parseLocaleFloat(purchasePrice) || 0;
   const currentAlcoholDegree = parseLocaleFloat(alcoholDegree) || 0;
-  const alcoholTax = calculateAlcoholTax(
-    currentContainerVol, currentAlcoholDegree,
-    alcoholTaxRates.droitAccise, alcoholTaxRates.cotisationSecu,
-  );
-  const currentPurchasePrice = currentPurchasePriceHorsDroit + alcoholTax;
+  const alcoholTax = priceInputMode === 'hors_droit'
+    ? calculateAlcoholTax(
+        currentContainerVol, currentAlcoholDegree,
+        alcoholTaxRates.droitAccise, alcoholTaxRates.cotisationSecu,
+      )
+    : 0;
+  const currentPurchasePrice = currentPurchasePriceRaw + alcoholTax;
 
   const toggleServing = (id: string) => {
     setEnabledServings((prev) => {
@@ -353,7 +357,7 @@ export function ProductFormScreen({ route, navigation }: Props) {
     saveMutation.mutate();
   };
 
-  const hasValidProduct = name && currentPurchasePriceHorsDroit > 0 && currentContainerVol > 0;
+  const hasValidProduct = name && currentPurchasePriceRaw > 0 && currentContainerVol > 0;
   const tvaOptions = [
     { label: '20%', value: TVA_RATES.RATE_20 },
     { label: '10%', value: TVA_RATES.RATE_10 },
@@ -455,35 +459,68 @@ export function ProductFormScreen({ route, navigation }: Props) {
         </ScrollView>
       </View>
 
-      <Input
-        label="Prix d'achat HT hors droit *"
-        value={purchasePrice}
-        onChangeText={setPurchasePrice}
-        keyboardType="decimal-pad"
-        placeholder="0,00"
-        suffix="€"
-      />
+      {/* Price input mode toggle */}
+      <View style={styles.priceModeTabs}>
+        <TouchableOpacity
+          style={[styles.priceModeTab, priceInputMode === 'hors_droit' && styles.priceModeTabActive]}
+          onPress={() => setPriceInputMode('hors_droit')}
+        >
+          <Text style={[styles.priceModeTabText, priceInputMode === 'hors_droit' && styles.priceModeTabTextActive]}>
+            HT hors droit + degré
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.priceModeTab, priceInputMode === 'ht_direct' && styles.priceModeTabActive]}
+          onPress={() => setPriceInputMode('ht_direct')}
+        >
+          <Text style={[styles.priceModeTabText, priceInputMode === 'ht_direct' && styles.priceModeTabTextActive]}>
+            Prix HT direct
+          </Text>
+        </TouchableOpacity>
+      </View>
 
-      <Input
-        label="Degré d'alcool"
-        value={alcoholDegree}
-        onChangeText={setAlcoholDegree}
-        keyboardType="decimal-pad"
-        placeholder="0"
-        suffix="%"
-      />
+      {priceInputMode === 'hors_droit' ? (
+        <>
+          <Input
+            label="Prix d'achat HT hors droit *"
+            value={purchasePrice}
+            onChangeText={setPurchasePrice}
+            keyboardType="decimal-pad"
+            placeholder="0,00"
+            suffix="€"
+          />
 
-      {alcoholTax > 0 && (
-        <View style={styles.taxInfoCard}>
-          <View style={styles.taxInfoRow}>
-            <Text style={styles.taxInfoLabel}>Droit d'accise + Sécu. sociale</Text>
-            <Text style={styles.taxInfoValue}>{formatPrice(alcoholTax)}</Text>
-          </View>
-          <View style={[styles.taxInfoRow, styles.taxInfoTotal]}>
-            <Text style={styles.taxInfoTotalLabel}>Prix d'achat HT (avec droits)</Text>
-            <Text style={styles.taxInfoTotalValue}>{formatPrice(currentPurchasePrice)}</Text>
-          </View>
-        </View>
+          <Input
+            label="Degré d'alcool"
+            value={alcoholDegree}
+            onChangeText={setAlcoholDegree}
+            keyboardType="decimal-pad"
+            placeholder="0"
+            suffix="%"
+          />
+
+          {alcoholTax > 0 && (
+            <View style={styles.taxInfoCard}>
+              <View style={styles.taxInfoRow}>
+                <Text style={styles.taxInfoLabel}>Droit d'accise + Sécu. sociale</Text>
+                <Text style={styles.taxInfoValue}>{formatPrice(alcoholTax)}</Text>
+              </View>
+              <View style={[styles.taxInfoRow, styles.taxInfoTotal]}>
+                <Text style={styles.taxInfoTotalLabel}>Prix d'achat HT (avec droits)</Text>
+                <Text style={styles.taxInfoTotalValue}>{formatPrice(currentPurchasePrice)}</Text>
+              </View>
+            </View>
+          )}
+        </>
+      ) : (
+        <Input
+          label="Prix d'achat HT (droits inclus) *"
+          value={purchasePrice}
+          onChangeText={setPurchasePrice}
+          keyboardType="decimal-pad"
+          placeholder="0,00"
+          suffix="€"
+        />
       )}
 
       {/* === Contenant === */}
@@ -866,6 +903,30 @@ const styles = StyleSheet.create({
   saveBtn: { marginTop: spacing.md },
   deleteBtn: { marginTop: spacing.sm, borderColor: colors.marginRed },
   bottomSpacer: { height: spacing.xl },
+  priceModeTabs: {
+    flexDirection: 'row',
+    backgroundColor: colors.inputBackground,
+    borderRadius: borderRadius.sm,
+    padding: 2,
+    marginBottom: spacing.md,
+  },
+  priceModeTab: {
+    flex: 1,
+    paddingVertical: spacing.sm,
+    alignItems: 'center',
+    borderRadius: borderRadius.sm - 2,
+  },
+  priceModeTabActive: {
+    backgroundColor: colors.primary,
+  },
+  priceModeTabText: {
+    ...typography.caption,
+    fontWeight: '600',
+    color: colors.textSecondary,
+  },
+  priceModeTabTextActive: {
+    color: colors.textLight,
+  },
   taxInfoCard: {
     backgroundColor: colors.inputBackground,
     borderRadius: borderRadius.md,
