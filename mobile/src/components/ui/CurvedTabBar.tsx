@@ -7,40 +7,50 @@ import { colors, shadows } from '../../theme';
 const TAB_HEIGHT = 64;
 const NOTCH_RADIUS = 38;
 const NOTCH_MARGIN = 8;
-const CURVE_DEPTH = NOTCH_RADIUS + NOTCH_MARGIN;
+// Extra vertical space for the S-curve + notch
+const WAVE_AMP = 30; // amplitude of the yin-yang wave
+const CURVE_DEPTH = NOTCH_RADIUS + NOTCH_MARGIN + WAVE_AMP;
 
 export function CurvedTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
   const { width } = useWindowDimensions();
   const totalHeight = TAB_HEIGHT + CURVE_DEPTH;
-  const cx = width / 2; // center x of notch
-  const r = NOTCH_RADIUS + NOTCH_MARGIN; // radius of the semicircular cutout
+  const cx = width / 2;
+  const r = NOTCH_RADIUS + NOTCH_MARGIN;
 
-  // Organic curve: starts high on left, sweeps down into a deep
-  // semicircular notch around the scan button, then rises back up on the right.
-  // The edges curve upward like a yin-yang wave flowing into the notch.
-  const edgeRise = 18; // how much the left/right edges rise above CURVE_DEPTH
-  const baseY = CURVE_DEPTH; // baseline of the tab bar
-  const topY = baseY - edgeRise; // raised edge height
+  // Yin-yang S-curve: left side of tab bar bulges UP into the page,
+  // flows down into the center notch for the scan button,
+  // then the right side stays lower — creating an asymmetric wave.
+  const highY = WAVE_AMP * 0.15; // top of the wave (left side rises high)
+  const midY = CURVE_DEPTH; // baseline where notch sits
+  const lowY = CURVE_DEPTH - 8; // right side stays close to baseline
 
   const tabBarPath = `
-    M0,${baseY}
-    Q${width * 0.12},${topY}
-     ${width * 0.25},${topY + 2}
-    C${width * 0.35},${topY + 4}
-     ${cx - r - 10},${baseY + 2}
-     ${cx - r},${baseY}
-    C${cx - r + 2},${baseY - 6}
-     ${cx - r + 12},${baseY - r * 0.7}
-     ${cx - r * 0.5},${baseY - r * 0.92}
-    A${r},${r} 0 0 1 ${cx + r * 0.5},${baseY - r * 0.92}
-    C${cx + r - 12},${baseY - r * 0.7}
-     ${cx + r - 2},${baseY - 6}
-     ${cx + r},${baseY}
-    C${cx + r + 10},${baseY + 2}
-     ${width * 0.65},${topY + 4}
-     ${width * 0.75},${topY + 2}
-    Q${width * 0.88},${topY}
-     ${width},${baseY}
+    M0,${midY - 6}
+    C${width * 0.05},${midY - 18}
+     ${width * 0.10},${highY + 10}
+     ${width * 0.22},${highY}
+    C${width * 0.34},${highY - 2}
+     ${width * 0.38},${highY + 16}
+     ${cx - r - 6},${midY - 4}
+    C${cx - r - 2},${midY}
+     ${cx - r},${midY}
+     ${cx - r},${midY}
+    C${cx - r + 1},${midY - 4}
+     ${cx - r + 10},${midY - r * 0.65}
+     ${cx - r * 0.45},${midY - r * 0.9}
+    A${r},${r} 0 0 1 ${cx + r * 0.45},${midY - r * 0.9}
+    C${cx + r - 10},${midY - r * 0.65}
+     ${cx + r - 1},${midY - 4}
+     ${cx + r},${midY}
+    C${cx + r},${midY}
+     ${cx + r + 2},${midY}
+     ${cx + r + 6},${midY - 2}
+    C${width * 0.64},${lowY - 6}
+     ${width * 0.72},${lowY - 12}
+     ${width * 0.82},${lowY - 8}
+    C${width * 0.92},${lowY - 4}
+     ${width * 0.97},${lowY + 2}
+     ${width},${lowY - 2}
     L${width},${totalHeight}
     L0,${totalHeight}
     Z
