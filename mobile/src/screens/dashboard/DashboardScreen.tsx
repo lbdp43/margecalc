@@ -276,8 +276,8 @@ export function DashboardScreen() {
         </View>
         <TouchableOpacity style={styles.statCard} onPress={openCalc} activeOpacity={0.7}>
           <Ionicons name="calculator-outline" size={20} color={colors.primary} />
-          <Text style={styles.statValue}>HT</Text>
-          <Text style={styles.statLabel}>Calculateur</Text>
+          <Text style={styles.statCalcLabel}>Calcul du prix HT</Text>
+          <Text style={styles.statCalcSub}>par le prix HT hors droit</Text>
         </TouchableOpacity>
       </View>
 
@@ -555,6 +555,20 @@ const styles = StyleSheet.create({
     ...typography.h2,
     color: colors.primary,
     marginTop: spacing.xs,
+  },
+  statCalcLabel: {
+    ...typography.bodySmall,
+    fontWeight: '700',
+    color: colors.primary,
+    marginTop: spacing.xs,
+    textAlign: 'center',
+  },
+  statCalcSub: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    marginTop: 2,
+    textAlign: 'center',
+    fontSize: 10,
   },
   statLabel: {
     ...typography.caption,
