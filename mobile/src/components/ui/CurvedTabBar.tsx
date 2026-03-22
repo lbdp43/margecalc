@@ -68,7 +68,7 @@ export function CurvedTabBar({ state, descriptors, navigation }: BottomTabBarPro
               {options.tabBarIcon?.({
                 focused: isFocused,
                 color: isFocused ? colors.white : 'rgba(255,255,255,0.5)',
-                size: isDashboard ? 30 : 22,
+                size: isDashboard ? 34 : 22,
               })}
               <Text
                 style={[
