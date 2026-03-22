@@ -9,12 +9,16 @@ import { ProductListScreen } from '../screens/products/ProductListScreen';
 import { ProductDetailScreen } from '../screens/products/ProductDetailScreen';
 import { ProductFormScreen } from '../screens/products/ProductFormScreen';
 import { InvoiceScanScreen } from '../screens/products/InvoiceScanScreen';
+import { CocktailListScreen } from '../screens/cocktails/CocktailListScreen';
+import { CocktailFormScreen } from '../screens/cocktails/CocktailFormScreen';
+import { CocktailDetailScreen } from '../screens/cocktails/CocktailDetailScreen';
 import { SettingsScreen } from '../screens/settings/SettingsScreen';
 import { colors, shadows } from '../theme';
 import { CurvedTabBar } from '../components/ui/CurvedTabBar';
 
 const Tab = createBottomTabNavigator();
 const ProductStack = createAppStackNavigator();
+const CocktailStack = createAppStackNavigator();
 
 function ProductsNavigator() {
   return (
@@ -24,6 +28,16 @@ function ProductsNavigator() {
       <ProductStack.Screen name="ProductForm" component={ProductFormScreen} />
       <ProductStack.Screen name="InvoiceScan" component={InvoiceScanScreen} />
     </ProductStack.Navigator>
+  );
+}
+
+function CocktailsNavigator() {
+  return (
+    <CocktailStack.Navigator screenOptions={{ headerShown: false }}>
+      <CocktailStack.Screen name="CocktailList" component={CocktailListScreen} />
+      <CocktailStack.Screen name="CocktailDetail" component={CocktailDetailScreen} />
+      <CocktailStack.Screen name="CocktailForm" component={CocktailFormScreen} />
+    </CocktailStack.Navigator>
   );
 }
 
@@ -91,6 +105,7 @@ function EmptyScreen() {
 const TAB_ICONS: Record<string, { focused: string; default: string }> = {
   'Réglages': { focused: 'settings', default: 'settings-outline' },
   'Produits': { focused: 'grid', default: 'grid-outline' },
+  'Cocktails': { focused: 'wine', default: 'wine-outline' },
   'Tableau de bord': { focused: 'stats-chart', default: 'stats-chart-outline' },
 };
 
@@ -128,6 +143,16 @@ export function AppNavigator() {
           tabBarLabel: () => null,
           tabBarButton: () => <ScanTabButton />,
         }}
+      />
+      <Tab.Screen
+        name="Cocktails"
+        component={CocktailsNavigator}
+        listeners={({ navigation }) => ({
+          tabPress: (e) => {
+            e.preventDefault();
+            navigation.navigate('Cocktails', { screen: 'CocktailList' });
+          },
+        })}
       />
       <Tab.Screen name="Tableau de bord" component={DashboardScreen} />
     </Tab.Navigator>

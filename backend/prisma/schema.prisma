@@ -24,6 +24,7 @@ model User {
   products           Product[]
   servingTypes       ServingType[]
   customContainers   CustomContainer[]
+  recipes            Recipe[]
 }
 
 model CustomContainer {
@@ -69,6 +70,7 @@ model Product {
   updatedAt           DateTime         @updatedAt
   priceHistory        PriceHistory[]
   servings            ProductServing[]
+  recipeIngredients   RecipeIngredient[]
 
   @@index([userId])
   @@index([categoryId])
@@ -113,4 +115,49 @@ model PriceHistory {
   source     String   @default("manual")
 
   @@index([productId])
+}
+
+model Recipe {
+  id              String              @id @default(uuid())
+  userId          String
+  user            User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name            String
+  description     String?
+  sellingPriceTTC Float?
+  tvaRate         Float               @default(0.20)
+  imageUrl        String?
+  isPublic        Boolean             @default(false)
+  authorName      String?
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  ingredients     RecipeIngredient[]
+  consumables     RecipeConsumable[]
+
+  @@index([userId])
+}
+
+model RecipeIngredient {
+  id          String   @id @default(uuid())
+  recipeId    String
+  recipe      Recipe   @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  productId   String?
+  product     Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+  name        String
+  quantityCl  Float
+  costPerUnit Float
+  createdAt   DateTime @default(now())
+
+  @@index([recipeId])
+}
+
+model RecipeConsumable {
+  id        String   @id @default(uuid())
+  recipeId  String
+  recipe    Recipe   @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  name      String
+  unitCost  Float
+  quantity  Float    @default(1)
+  createdAt DateTime @default(now())
+
+  @@index([recipeId])
 }

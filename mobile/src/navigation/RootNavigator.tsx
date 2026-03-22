@@ -6,6 +6,8 @@ import { AuthNavigator } from './AuthNavigator';
 import { AppNavigator } from './AppNavigator';
 import { SubscriptionScreen } from '../screens/subscription/SubscriptionScreen';
 import { YinYangSpinner } from '../components/ui/YinYangSpinner';
+import { OfflineBanner } from '../components/ui/OfflineBanner';
+import { initOfflineMode } from '../services/offline';
 import { colors } from '../theme';
 
 const PAYWALL_SEEN_KEY = 'margebar_paywall_seen';
@@ -16,6 +18,7 @@ export function RootNavigator() {
 
   useEffect(() => {
     loadStoredAuth();
+    initOfflineMode();
   }, []);
 
   useEffect(() => {
@@ -62,5 +65,10 @@ export function RootNavigator() {
     );
   }
 
-  return <AppNavigator />;
+  return (
+    <View style={{ flex: 1 }}>
+      <OfflineBanner />
+      <AppNavigator />
+    </View>
+  );
 }

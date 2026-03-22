@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert, ScrollView, useWindowDimensions } from 'react-native';
-import Svg, { Path } from 'react-native-svg';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Alert, useWindowDimensions } from 'react-native';
+import Svg, { Path, Rect, Text as SvgText } from 'react-native-svg';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigation } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -27,10 +27,16 @@ function getContainerLabel(volumeCl: number): string {
 
 const CURVE_HEIGHT = 40;
 
+// Category colors for the bar chart
+const CATEGORY_COLORS = [
+  '#1B4332', '#2D6A4F', '#40916C', '#52B788', '#74C69D', '#95D5B2', '#B7E4C7',
+];
+
 export function DashboardScreen() {
   const user = useAuthStore((s) => s.user);
   const navigation = useNavigation<any>();
   const { width } = useWindowDimensions();
+  const chartWidth = width - spacing.md * 4;
   const { data: products = [] } = useQuery<ProductWithMargin[]>({
     queryKey: ['products'],
     queryFn: () => productService.getProducts(),
@@ -67,11 +73,35 @@ export function DashboardScreen() {
     });
   };
 
-  const sorted = [...products].sort((a, b) => b.computed.marginPercent - a.computed.marginPercent);
+  const sorted = useMemo(
+    () => [...products].sort((a, b) => b.computed.marginPercent - a.computed.marginPercent),
+    [products],
+  );
 
   const avgMargin = products.length > 0
     ? products.reduce((sum, p) => sum + p.computed.marginPercent, 0) / products.length
     : 0;
+
+  // Category margin data for bar chart
+  const categoryData = useMemo(() => {
+    const catMap = new Map<string, { name: string; margins: number[] }>();
+    products.forEach((p) => {
+      const catName = (p as any).category?.name || 'Autre';
+      if (!catMap.has(catName)) catMap.set(catName, { name: catName, margins: [] });
+      catMap.get(catName)!.margins.push(p.computed.marginPercent);
+    });
+    return Array.from(catMap.values())
+      .map((c) => ({
+        name: c.name,
+        avgMargin: c.margins.reduce((s, m) => s + m, 0) / c.margins.length,
+        count: c.margins.length,
+      }))
+      .sort((a, b) => b.avgMargin - a.avgMargin);
+  }, [products]);
+
+  // Top 5 and Bottom 5
+  const top5 = sorted.slice(0, 5);
+  const flop5 = sorted.length > 5 ? [...sorted].reverse().slice(0, 5) : [];
 
   const renderProductCard = (p: ProductWithMargin) => {
     const servings = p.servings || [];
@@ -80,7 +110,6 @@ export function DashboardScreen() {
     return (
       <TouchableOpacity key={p.id} activeOpacity={0.7} onPress={() => navigateToProduct(p.id)}>
         <View style={styles.productCard}>
-          {/* Header: name + indicator bar + margin + chevron */}
           <View style={styles.productHeader}>
             <View style={[styles.productIndicator, { backgroundColor: accent }]} />
             <View style={styles.productTitleWrap}>
@@ -95,17 +124,14 @@ export function DashboardScreen() {
             <Ionicons name="chevron-forward" size={18} color={colors.tabBarInactive} />
           </View>
 
-          {/* Servings table */}
           {servings.length > 0 && (
             <View style={styles.servingsTable}>
-              {/* Table header */}
               <View style={styles.tableHeaderRow}>
                 <Text style={[styles.tableHeader, { flex: 2 }]}>SERVICE</Text>
                 <Text style={[styles.tableHeader, { flex: 1.2, textAlign: 'right' }]}>PRIX TTC</Text>
                 <Text style={[styles.tableHeader, { flex: 1.2, textAlign: 'right' }]}>MARGE</Text>
                 <Text style={[styles.tableHeader, { flex: 1, textAlign: 'right' }]}>COEFF</Text>
               </View>
-              {/* Table rows */}
               {servings.map((s) => {
                 const margin = calculateServingMargin(
                   p.purchasePriceHT,
@@ -142,6 +168,11 @@ export function DashboardScreen() {
     );
   };
 
+  // Bar chart rendering
+  const barChartHeight = 160;
+  const barMaxWidth = chartWidth - 80;
+  const maxMargin = Math.max(...categoryData.map((c) => c.avgMargin), 1);
+
   return (
     <ScreenWrapper>
       {/* Hero Header */}
@@ -170,7 +201,7 @@ export function DashboardScreen() {
         )}
       </View>
 
-      {/* S-curve bottom edge of hero: full width, left-to-right */}
+      {/* S-curve bottom edge of hero */}
       <View style={styles.heroCurve}>
         <Svg width={width} height={CURVE_HEIGHT}>
           <Path
@@ -194,7 +225,103 @@ export function DashboardScreen() {
         </View>
       </View>
 
-      {/* Decorative curve between stats and products */}
+      {/* Margin by Category Chart */}
+      {categoryData.length > 0 && (
+        <View style={styles.chartCard}>
+          <View style={styles.sectionHeader}>
+            <View style={[styles.sectionIndicator, { backgroundColor: colors.primary }]} />
+            <Text style={styles.sectionTitle}>Marge par catégorie</Text>
+          </View>
+          <View style={{ height: categoryData.length * 40 + 8, marginTop: spacing.sm }}>
+            <Svg width={chartWidth} height={categoryData.length * 40 + 8}>
+              {categoryData.map((cat, i) => {
+                const barW = Math.max((cat.avgMargin / maxMargin) * barMaxWidth, 4);
+                const y = i * 40 + 4;
+                const colorIdx = i % CATEGORY_COLORS.length;
+                return (
+                  <React.Fragment key={cat.name}>
+                    <SvgText
+                      x={0}
+                      y={y + 16}
+                      fontSize={11}
+                      fill={colors.text}
+                      fontWeight="600"
+                    >
+                      {cat.name.length > 12 ? cat.name.slice(0, 11) + '…' : cat.name}
+                    </SvgText>
+                    <Rect
+                      x={80}
+                      y={y + 2}
+                      width={barW}
+                      height={22}
+                      rx={6}
+                      fill={CATEGORY_COLORS[colorIdx]}
+                    />
+                    <SvgText
+                      x={80 + barW + 6}
+                      y={y + 17}
+                      fontSize={12}
+                      fill={colors.text}
+                      fontWeight="700"
+                    >
+                      {cat.avgMargin.toFixed(1)} %
+                    </SvgText>
+                  </React.Fragment>
+                );
+              })}
+            </Svg>
+          </View>
+        </View>
+      )}
+
+      {/* Top 5 Rentabilité */}
+      {top5.length > 0 && (
+        <View style={styles.chartCard}>
+          <View style={styles.sectionHeader}>
+            <View style={[styles.sectionIndicator, { backgroundColor: colors.marginGreen }]} />
+            <Text style={styles.sectionTitle}>Top rentabilité</Text>
+          </View>
+          {top5.map((p, i) => {
+            const accent = MARGIN_COLOR_MAP[p.computed.colorCode];
+            return (
+              <TouchableOpacity key={p.id} onPress={() => navigateToProduct(p.id)} activeOpacity={0.7}>
+                <View style={styles.rankRow}>
+                  <Text style={styles.rankNumber}>{i + 1}</Text>
+                  <Text style={styles.rankName} numberOfLines={1}>{p.name}</Text>
+                  <Text style={[styles.rankMargin, { color: accent }]}>
+                    {formatPercent(p.computed.marginPercent)}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      )}
+
+      {/* Flop 5 Rentabilité */}
+      {flop5.length > 0 && (
+        <View style={styles.chartCard}>
+          <View style={styles.sectionHeader}>
+            <View style={[styles.sectionIndicator, { backgroundColor: colors.marginRed }]} />
+            <Text style={styles.sectionTitle}>Flop rentabilité</Text>
+          </View>
+          {flop5.map((p, i) => {
+            const accent = MARGIN_COLOR_MAP[p.computed.colorCode];
+            return (
+              <TouchableOpacity key={p.id} onPress={() => navigateToProduct(p.id)} activeOpacity={0.7}>
+                <View style={styles.rankRow}>
+                  <Text style={styles.rankNumber}>{i + 1}</Text>
+                  <Text style={styles.rankName} numberOfLines={1}>{p.name}</Text>
+                  <Text style={[styles.rankMargin, { color: accent }]}>
+                    {formatPercent(p.computed.marginPercent)}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      )}
+
       <DecorativeCurve variant="middle" />
 
       {/* All products with serving tables */}
@@ -301,6 +428,57 @@ const styles = StyleSheet.create({
     ...typography.caption,
     color: colors.textSecondary,
     marginTop: 2,
+  },
+
+  /* Chart card */
+  chartCard: {
+    backgroundColor: colors.cardBackground,
+    borderRadius: borderRadius.lg,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+    ...shadows.sm,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  sectionIndicator: {
+    width: 4,
+    height: 20,
+    borderRadius: 2,
+    marginRight: spacing.sm,
+  },
+  sectionTitle: {
+    ...typography.h3,
+    color: colors.text,
+  },
+
+  /* Rank rows (top/flop) */
+  rankRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: spacing.sm + 2,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
+  },
+  rankNumber: {
+    width: 24,
+    ...typography.bodySmall,
+    fontWeight: '700',
+    color: colors.textSecondary,
+    textAlign: 'center',
+  },
+  rankName: {
+    flex: 1,
+    ...typography.bodySmall,
+    fontWeight: '600',
+    color: colors.text,
+    marginLeft: spacing.sm,
+  },
+  rankMargin: {
+    ...typography.bodySmall,
+    fontWeight: '800',
+    marginLeft: spacing.sm,
   },
 
   /* Product cards with serving table */

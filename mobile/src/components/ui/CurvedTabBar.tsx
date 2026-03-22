@@ -120,15 +120,15 @@ const styles = StyleSheet.create({
     paddingTop: 6,
   },
   tabLabel: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '600',
     marginTop: 2,
   },
   dashboardTabItem: {
-    flex: 1.4,
+    flex: 1.2,
   },
   dashboardTabLabel: {
-    fontSize: 13,
+    fontSize: 10,
     fontWeight: '700',
     marginTop: 3,
   },

@@ -1,4 +1,5 @@
 import { MarginInput, MarginMode, MarginResult, ServingType, ServingMarginResult } from '../types/product';
+import { RecipeIngredient, RecipeConsumable, RecipeMarginResult } from '../types/recipe';
 import { getMarginColor } from '../constants/colors';
 
 function round2(n: number): number {
@@ -154,6 +155,39 @@ export function calculateServingMargin(
     marginPercent: round2(marginPercent),
     revenuePerContainer: round2(revenuePerContainer),
     marginPerContainer: round2(marginPerContainer),
+    colorCode: getMarginColor(marginPercent),
+  };
+}
+
+/**
+ * Calculate margin for a cocktail/recipe.
+ */
+export function calculateRecipeMargin(
+  ingredients: RecipeIngredient[],
+  consumables: RecipeConsumable[],
+  sellingPriceTTC: number,
+  tvaRate: number,
+): RecipeMarginResult {
+  const totalIngredientCost = ingredients.reduce((sum, ing) => sum + ing.costPerUnit, 0);
+  const totalConsumableCost = consumables.reduce((sum, c) => sum + c.unitCost * c.quantity, 0);
+  const totalCostHT = totalIngredientCost + totalConsumableCost;
+
+  const sellingPriceHT = sellingPriceTTC / (1 + tvaRate);
+  const marginHT = sellingPriceHT - totalCostHT;
+  const marginPercent = sellingPriceHT > 0
+    ? ((sellingPriceHT - totalCostHT) / sellingPriceHT) * 100
+    : 0;
+  const coefficient = totalCostHT > 0 ? sellingPriceHT / totalCostHT : 0;
+
+  return {
+    totalIngredientCost: round2(totalIngredientCost),
+    totalConsumableCost: round2(totalConsumableCost),
+    totalCostHT: round2(totalCostHT),
+    sellingPriceTTC: round2(sellingPriceTTC),
+    sellingPriceHT: round2(sellingPriceHT),
+    marginHT: round2(marginHT),
+    marginPercent: round2(marginPercent),
+    coefficient: round2(coefficient),
     colorCode: getMarginColor(marginPercent),
   };
 }

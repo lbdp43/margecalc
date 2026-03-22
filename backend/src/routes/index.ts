@@ -8,6 +8,7 @@ import servingRoutes from './serving.routes';
 import containerRoutes from './container.routes';
 import productServingRoutes from './productServing.routes';
 import subscriptionRoutes from './subscription.routes';
+import recipeRoutes from './recipe.routes';
 
 const router = Router();
 
@@ -20,5 +21,6 @@ router.use('/scan', scanRoutes);
 router.use('/servings', servingRoutes);
 router.use('/containers', containerRoutes);
 router.use('/subscription', subscriptionRoutes);
+router.use('/recipes', recipeRoutes);
 
 export default router;
