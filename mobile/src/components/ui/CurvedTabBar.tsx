@@ -15,18 +15,32 @@ export function CurvedTabBar({ state, descriptors, navigation }: BottomTabBarPro
   const cx = width / 2; // center x of notch
   const r = NOTCH_RADIUS + NOTCH_MARGIN; // radius of the semicircular cutout
 
-  // Path: flat left → semicircular notch in center → flat right → fill down
+  // Organic curve: starts high on left, sweeps down into a deep
+  // semicircular notch around the scan button, then rises back up on the right.
+  // The edges curve upward like a yin-yang wave flowing into the notch.
+  const edgeRise = 18; // how much the left/right edges rise above CURVE_DEPTH
+  const baseY = CURVE_DEPTH; // baseline of the tab bar
+  const topY = baseY - edgeRise; // raised edge height
+
   const tabBarPath = `
-    M0,${CURVE_DEPTH}
-    L${cx - r},${CURVE_DEPTH}
-    C${cx - r},${CURVE_DEPTH}
-     ${cx - r + 4},${CURVE_DEPTH - r * 0.15}
-     ${cx - r + r * 0.4},${CURVE_DEPTH - r * 0.75}
-    A${r},${r} 0 0 1 ${cx + r - r * 0.4},${CURVE_DEPTH - r * 0.75}
-    C${cx + r - 4},${CURVE_DEPTH - r * 0.15}
-     ${cx + r},${CURVE_DEPTH}
-     ${cx + r},${CURVE_DEPTH}
-    L${width},${CURVE_DEPTH}
+    M0,${baseY}
+    Q${width * 0.12},${topY}
+     ${width * 0.25},${topY + 2}
+    C${width * 0.35},${topY + 4}
+     ${cx - r - 10},${baseY + 2}
+     ${cx - r},${baseY}
+    C${cx - r + 2},${baseY - 6}
+     ${cx - r + 12},${baseY - r * 0.7}
+     ${cx - r * 0.5},${baseY - r * 0.92}
+    A${r},${r} 0 0 1 ${cx + r * 0.5},${baseY - r * 0.92}
+    C${cx + r - 12},${baseY - r * 0.7}
+     ${cx + r - 2},${baseY - 6}
+     ${cx + r},${baseY}
+    C${cx + r + 10},${baseY + 2}
+     ${width * 0.65},${topY + 4}
+     ${width * 0.75},${topY + 2}
+    Q${width * 0.88},${topY}
+     ${width},${baseY}
     L${width},${totalHeight}
     L0,${totalHeight}
     Z
