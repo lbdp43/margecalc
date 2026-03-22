@@ -23,6 +23,7 @@ import * as productService from '../../services/product.service';
 import * as categoryService from '../../services/category.service';
 import * as servingService from '../../services/serving.service';
 import * as scanService from '../../services/scan.service';
+import { YinYangSpinner } from '../../components/ui/YinYangSpinner';
 import { colors, spacing, borderRadius, typography } from '../../theme';
 
 type Props = NativeStackScreenProps<any, 'ProductForm'>;
@@ -332,8 +333,11 @@ export function ProductFormScreen({ route, navigation }: Props) {
 
         {scanning ? (
           <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color={colors.primary} />
-            <Text style={styles.loadingText}>Analyse en cours...</Text>
+            <YinYangSpinner
+              size={100}
+              message="Analyse en cours..."
+              submessage="Reconnaissance du produit..."
+            />
           </View>
         ) : (
           <>
