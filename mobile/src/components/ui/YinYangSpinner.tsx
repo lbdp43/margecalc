@@ -209,13 +209,13 @@ export function YinYangSpinner({
   const b5 = makeBubbleProps(bubble5, cx - glassW * 0.2, 2.0);
   const b6 = makeBubbleProps(bubble6, cx + glassW * 0.02, 2.5);
 
-  // Colors
-  const beerGold = '#F0A61E';
-  const beerAmber = '#D4881E';
-  const foamWhite = '#FFF9EE';
-  const foamCream = '#F5E6C8';
-  const glassEdge = colors.primary;
-  const glassInner = `${colors.primary}18`; // very transparent for glass fill
+  // Colors — aligned with the app's green palette
+  const beerBody = colors.accent;        // #40916C — main liquid
+  const beerDark = colors.primary;       // #1B4332 — darker depth at bottom
+  const beerLight = colors.light;        // #D8F3DC — lighter highlight
+  const foamWhite = '#E8F0ED';           // matches colors.surface tint
+  const foamCream = colors.light;        // #D8F3DC
+  const glassEdge = colors.primary;      // #1B4332
   const glossHighlight = '#FFFFFF';
 
   // Outer glass path (thick walls with taper)
@@ -252,10 +252,10 @@ export function YinYangSpinner({
 
           {/* Beer gradient */}
           <LinearGradient id="beerGrad" x1="0" y1="0" x2="1" y2="0">
-            <Stop offset="0" stopColor={beerAmber} stopOpacity="0.9" />
-            <Stop offset="0.4" stopColor={beerGold} stopOpacity="1" />
-            <Stop offset="0.7" stopColor={beerGold} stopOpacity="1" />
-            <Stop offset="1" stopColor={beerAmber} stopOpacity="0.85" />
+            <Stop offset="0" stopColor={beerDark} stopOpacity="0.7" />
+            <Stop offset="0.3" stopColor={beerBody} stopOpacity="0.85" />
+            <Stop offset="0.7" stopColor={beerBody} stopOpacity="0.85" />
+            <Stop offset="1" stopColor={beerDark} stopOpacity="0.65" />
           </LinearGradient>
 
           {/* Glass body gradient for thickness effect */}
@@ -268,8 +268,9 @@ export function YinYangSpinner({
 
           {/* Foam gradient */}
           <LinearGradient id="foamGrad" x1="0" y1="0" x2="0" y2="1">
-            <Stop offset="0" stopColor={foamWhite} stopOpacity="1" />
-            <Stop offset="1" stopColor={foamCream} stopOpacity="0.95" />
+            <Stop offset="0" stopColor={foamWhite} stopOpacity="0.95" />
+            <Stop offset="0.5" stopColor={foamCream} stopOpacity="0.85" />
+            <Stop offset="1" stopColor={beerBody} stopOpacity="0.3" />
           </LinearGradient>
         </Defs>
 
@@ -320,8 +321,8 @@ export function YinYangSpinner({
           })}
           width={innerBR - innerBL}
           height={glassH * 0.08}
-          fill={beerAmber}
-          opacity={0.35}
+          fill={beerDark}
+          opacity={0.3}
           clipPath="url(#innerClip)"
         />
 
