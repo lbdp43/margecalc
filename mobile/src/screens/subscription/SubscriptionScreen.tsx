@@ -104,9 +104,9 @@ export function SubscriptionScreen({ onDismiss }: Props) {
             placeholderTextColor={colors.tabBarInactive}
           />
 
-          <Text style={styles.calcLabel}>Contenant (cl)</Text>
+          <Text style={styles.calcLabel}>Contenant</Text>
           <View style={styles.presetRow}>
-            {CONTAINER_PRESETS.slice(0, 4).map((p) => (
+            {CONTAINER_PRESETS.map((p) => (
               <TouchableOpacity
                 key={p.volumeCl}
                 style={[styles.presetChip, calcContainer === String(p.volumeCl) && styles.presetChipActive]}
@@ -309,6 +309,7 @@ const styles = StyleSheet.create({
   },
   presetRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: spacing.sm,
     marginBottom: spacing.xs,
   },
