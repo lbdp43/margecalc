@@ -806,7 +806,7 @@ export function SettingsScreen() {
         <Text style={styles.logoutBtnText}>Se déconnecter</Text>
       </TouchableOpacity>
 
-      <Text style={styles.version}>MargeBar v1.0.0</Text>
+      <Text style={styles.version}>MargeBar Pro v1.0.0</Text>
     </ScreenWrapper>
   );
 }

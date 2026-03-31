@@ -136,7 +136,7 @@ export function DashboardScreen() {
             >
               <Ionicons name="close" size={14} color={colors.textLight} />
             </TouchableOpacity>
-            <Text style={styles.welcomeTitle}>Bienvenue sur MargeBar</Text>
+            <Text style={styles.welcomeTitle}>Bienvenue sur MargeBar Pro</Text>
             <Text style={styles.welcomeText}>
               Calculez vos marges sur chaque produit : spiritueux, vins, bières, softs...
               Ajoutez vos produits, choisissez votre méthode de calcul et visualisez votre rentabilité.

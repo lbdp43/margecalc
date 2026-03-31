@@ -48,7 +48,7 @@ export function LoginScreen({ navigation }: Props) {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <View style={styles.header}>
-          <Text style={styles.title}>MargeBar</Text>
+          <Text style={styles.title}>MargeBar Pro</Text>
           <Text style={styles.subtitle}>Calculez vos marges.{'\n'}Maîtrisez votre rentabilité.</Text>
         </View>
 
