@@ -61,6 +61,21 @@ async function main() {
     });
   }
   console.log('Seeded system params');
+
+  // Promote admin user
+  const adminEmail = 'guillaumelbdp@gmail.com';
+  const adminUser = await prisma.user.findUnique({ where: { email: adminEmail } });
+  if (adminUser && adminUser.role !== 'admin') {
+    await prisma.user.update({
+      where: { email: adminEmail },
+      data: { role: 'admin' },
+    });
+    console.log(`Promoted ${adminEmail} to admin`);
+  } else if (adminUser) {
+    console.log(`${adminEmail} is already admin`);
+  } else {
+    console.log(`${adminEmail} not found yet — will be promoted on next seed after registration`);
+  }
 }
 
 main()
