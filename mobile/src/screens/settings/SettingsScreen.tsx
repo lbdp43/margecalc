@@ -48,6 +48,9 @@ export function SettingsScreen() {
   // Local state for admin editing
   const [editDroitAccise, setEditDroitAccise] = useState('');
   const [editCotisationSecu, setEditCotisationSecu] = useState('');
+  const [editTvaAlcool, setEditTvaAlcool] = useState('');
+  const [editTvaSoft, setEditTvaSoft] = useState('');
+  const [editTvaFood, setEditTvaFood] = useState('');
   const [savingSystemParams, setSavingSystemParams] = useState(false);
 
   // Categories
@@ -81,6 +84,9 @@ export function SettingsScreen() {
         const state = useSystemParamsStore.getState();
         setEditDroitAccise(state.getParam('droit_accise') || '');
         setEditCotisationSecu(state.getParam('cotisation_secu') || '');
+        setEditTvaAlcool(state.getParam('tva_alcool') || '');
+        setEditTvaSoft(state.getParam('tva_soft') || '');
+        setEditTvaFood(state.getParam('tva_food') || '');
       });
       AsyncStorage.getItem('margebar_margin_thresholds').then((thresholdsVal) => {
         if (!mounted) return;
@@ -299,6 +305,9 @@ export function SettingsScreen() {
     try {
       await updateParam('droit_accise', editDroitAccise.replace(',', '.'));
       await updateParam('cotisation_secu', editCotisationSecu.replace(',', '.'));
+      await updateParam('tva_alcool', editTvaAlcool.replace(',', '.'));
+      await updateParam('tva_soft', editTvaSoft.replace(',', '.'));
+      await updateParam('tva_food', editTvaFood.replace(',', '.'));
       alert('Succès', 'Paramètres système mis à jour');
     } catch {
       alert('Erreur', 'Impossible de sauvegarder les paramètres système');
@@ -765,22 +774,61 @@ export function SettingsScreen() {
           </View>
           <View style={styles.sectionBody}>
             <Text style={styles.sectionDesc}>
-              Paramètres système appliqués à tous les utilisateurs. Seuls les administrateurs peuvent modifier ces valeurs.
+              Taux de TVA appliqués à tous les utilisateurs. Seuls les administrateurs peuvent modifier ces valeurs.
             </Text>
-            {systemParams.filter(p => !['droit_accise', 'cotisation_secu'].includes(p.key)).map((param) => (
-              <View key={param.key} style={styles.systemParamRow}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.systemParamLabel}>{param.label}</Text>
-                  {param.description && (
-                    <Text style={styles.systemParamDesc}>{param.description}</Text>
-                  )}
-                </View>
-                <View style={styles.thresholdInputWrap}>
-                  <Text style={styles.readOnlyValue}>{param.value}</Text>
-                  {param.unit && <Text style={styles.thresholdUnit}>{param.unit}</Text>}
-                </View>
+            <View style={styles.thresholdCard}>
+              <Text style={[styles.thresholdLabel, { flex: 1 }]}>TVA alcool</Text>
+              <View style={styles.thresholdInputWrap}>
+                <TextInput
+                  style={[styles.thresholdInput, { width: 70 }]}
+                  value={editTvaAlcool}
+                  onChangeText={setEditTvaAlcool}
+                  keyboardType="decimal-pad"
+                  placeholder="0.20"
+                  placeholderTextColor={colors.textSecondary}
+                />
+                <Text style={styles.thresholdUnit}>%</Text>
               </View>
-            ))}
+            </View>
+            <View style={styles.thresholdCard}>
+              <Text style={[styles.thresholdLabel, { flex: 1 }]}>TVA boissons non-alcoolisées</Text>
+              <View style={styles.thresholdInputWrap}>
+                <TextInput
+                  style={[styles.thresholdInput, { width: 70 }]}
+                  value={editTvaSoft}
+                  onChangeText={setEditTvaSoft}
+                  keyboardType="decimal-pad"
+                  placeholder="0.10"
+                  placeholderTextColor={colors.textSecondary}
+                />
+                <Text style={styles.thresholdUnit}>%</Text>
+              </View>
+            </View>
+            <View style={styles.thresholdCard}>
+              <Text style={[styles.thresholdLabel, { flex: 1 }]}>TVA alimentation</Text>
+              <View style={styles.thresholdInputWrap}>
+                <TextInput
+                  style={[styles.thresholdInput, { width: 70 }]}
+                  value={editTvaFood}
+                  onChangeText={setEditTvaFood}
+                  keyboardType="decimal-pad"
+                  placeholder="0.10"
+                  placeholderTextColor={colors.textSecondary}
+                />
+                <Text style={styles.thresholdUnit}>%</Text>
+              </View>
+            </View>
+            <TouchableOpacity
+              style={[styles.adminSaveBtn, savingSystemParams && styles.saveBtnDisabled]}
+              onPress={handleSaveSystemParams}
+              disabled={savingSystemParams}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="cloud-upload-outline" size={18} color={colors.textLight} style={{ marginRight: spacing.xs }} />
+              <Text style={styles.adminSaveBtnText}>
+                {savingSystemParams ? 'Enregistrement...' : 'Mettre à jour pour tous les utilisateurs'}
+              </Text>
+            </TouchableOpacity>
           </View>
         </View>
       )}

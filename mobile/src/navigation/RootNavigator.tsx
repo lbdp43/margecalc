@@ -30,11 +30,9 @@ export function RootNavigator() {
   // between sessions for non-subscribers.
   useEffect(() => {
     if (!isLoading && isAuthenticated && user) {
+      const isAdmin = user.role === 'admin';
       const hasSubscription = user.subscriptionStatus === 'active' || user.subscriptionStatus === 'trialing';
-      if (!hasSubscription) {
-        // Clear persisted token/user but keep in-memory auth alive
-        // so the paywall can still show. The user stays "authenticated"
-        // for this session only.
+      if (!isAdmin && !hasSubscription) {
         AsyncStorage.multiRemove(['margebar_token', 'margebar_user', PAYWALL_SEEN_KEY]).catch(() => {});
       }
     }
@@ -50,9 +48,10 @@ export function RootNavigator() {
   useEffect(() => {
     let mounted = true;
     if (isAuthenticated) {
+      const isAdmin = user?.role === 'admin';
       const hasSubscription = user?.subscriptionStatus === 'active' || user?.subscriptionStatus === 'trialing';
-      if (hasSubscription) {
-        // Subscribers always get through
+      if (isAdmin || hasSubscription) {
+        // Admins and subscribers always get through
         setPaywallSeen(true);
       } else {
         // Non-subscribers always see the paywall on load
@@ -78,8 +77,9 @@ export function RootNavigator() {
   }
 
   // Show paywall if user has no active subscription and hasn't skipped it this session
+  const isAdmin = user?.role === 'admin';
   const hasActiveSubscription = user?.subscriptionStatus === 'active' || user?.subscriptionStatus === 'trialing';
-  if (!hasActiveSubscription && !skippedPaywall) {
+  if (!isAdmin && !hasActiveSubscription && !skippedPaywall) {
     return (
       <SubscriptionScreen
         onDismiss={() => {
