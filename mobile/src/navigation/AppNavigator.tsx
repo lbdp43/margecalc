@@ -112,6 +112,7 @@ const TAB_ICONS: Record<string, { focused: string; default: string }> = {
 export function AppNavigator() {
   return (
     <Tab.Navigator
+      initialRouteName="Tableau de bord"
       tabBar={(props) => <CurvedTabBar {...props} />}
       screenOptions={({ route }) => ({
         headerShown: false,
