@@ -4,8 +4,10 @@ export interface ContainerPreset {
 }
 
 export const CONTAINER_PRESETS: ContainerPreset[] = [
+  { label: '33 cl', volumeCl: 33 },
   { label: '50 cl', volumeCl: 50 },
   { label: '70 cl', volumeCl: 70 },
+  { label: '75 cl', volumeCl: 75 },
   { label: '1 L', volumeCl: 100 },
   { label: 'Magnum', volumeCl: 150 },
   { label: 'Jéroboam', volumeCl: 300 },
