@@ -43,7 +43,9 @@ export function calculateAlcoholTax(
   if (alcoholDegree <= 0 || containerVolumeCl <= 0) return 0;
   const volumeHl = containerVolumeCl / 10000; // cl to hectoliters
   const pureAlcoholHl = volumeHl * (alcoholDegree / 100);
-  return round2(pureAlcoholHl * (droitAccise + cotisationSecu));
+  // Cotisation sécurité sociale only applies to alcohol >= 18°
+  const secu = alcoholDegree >= 18 ? cotisationSecu : 0;
+  return round2(pureAlcoholHl * (droitAccise + secu));
 }
 
 export function calculateMargin(input: MarginInput): MarginResult {
