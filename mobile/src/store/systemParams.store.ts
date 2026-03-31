@@ -15,7 +15,7 @@ interface SystemParamsState {
   params: SystemParam[];
   isLoading: boolean;
   lastFetched: number | null;
-  loadParams: () => Promise<void>;
+  loadParams: (force?: boolean) => Promise<void>;
   getParam: (key: string) => string | null;
   getParamNum: (key: string) => number;
   updateParam: (key: string, value: string) => Promise<void>;
@@ -26,20 +26,22 @@ export const useSystemParamsStore = create<SystemParamsState>((set, get) => ({
   isLoading: false,
   lastFetched: null,
 
-  loadParams: async () => {
-    // Try cache first
-    try {
-      const cached = await AsyncStorage.getItem(CACHE_KEY);
-      if (cached) {
-        const data: CachedData = JSON.parse(cached);
-        set({ params: data.params, lastFetched: data.fetchedAt });
-        // If cache is still fresh, don't refetch
-        if (Date.now() - data.fetchedAt < CACHE_TTL) {
-          return;
+  loadParams: async (force = false) => {
+    // Try cache first (skip if forced)
+    if (!force) {
+      try {
+        const cached = await AsyncStorage.getItem(CACHE_KEY);
+        if (cached) {
+          const data: CachedData = JSON.parse(cached);
+          set({ params: data.params, lastFetched: data.fetchedAt });
+          // If cache is still fresh, don't refetch
+          if (Date.now() - data.fetchedAt < CACHE_TTL) {
+            return;
+          }
         }
+      } catch {
+        // ignore cache read errors
       }
-    } catch {
-      // ignore cache read errors
     }
 
     // Fetch from API
@@ -50,7 +52,8 @@ export const useSystemParamsStore = create<SystemParamsState>((set, get) => ({
       const now = Date.now();
       set({ params, isLoading: false, lastFetched: now });
       await AsyncStorage.setItem(CACHE_KEY, JSON.stringify({ params, fetchedAt: now }));
-    } catch {
+    } catch (err) {
+      console.warn('[SystemParams] Failed to fetch:', err);
       set({ isLoading: false });
     }
   },

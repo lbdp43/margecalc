@@ -76,7 +76,7 @@ export function SettingsScreen() {
       loadContainers();
       loadSubscription();
       // Load system params and init admin edit fields
-      useSystemParamsStore.getState().loadParams().then(() => {
+      useSystemParamsStore.getState().loadParams(true).then(() => {
         if (!mounted) return;
         const state = useSystemParamsStore.getState();
         setEditDroitAccise(state.getParam('droit_accise') || '');
@@ -387,7 +387,7 @@ export function SettingsScreen() {
                   placeholderTextColor={colors.textSecondary}
                 />
               ) : (
-                <Text style={styles.readOnlyValue}>{getParam('droit_accise') || '—'}</Text>
+                <Text style={styles.readOnlyValue}>{systemParams.find(p => p.key === 'droit_accise')?.value || '—'}</Text>
               )}
               <Text style={styles.thresholdUnit}>€/hlAP</Text>
             </View>
@@ -405,7 +405,7 @@ export function SettingsScreen() {
                   placeholderTextColor={colors.textSecondary}
                 />
               ) : (
-                <Text style={styles.readOnlyValue}>{getParam('cotisation_secu') || '—'}</Text>
+                <Text style={styles.readOnlyValue}>{systemParams.find(p => p.key === 'cotisation_secu')?.value || '—'}</Text>
               )}
               <Text style={styles.thresholdUnit}>€/hlAP</Text>
             </View>
