@@ -315,10 +315,16 @@ export function SettingsScreen() {
   };
 
   const handleLogout = () => {
-    Alert.alert('Déconnexion', 'Voulez-vous vous déconnecter ?', [
-      { text: 'Annuler', style: 'cancel' },
-      { text: 'Déconnexion', style: 'destructive', onPress: logout },
-    ]);
+    if (Platform.OS === 'web') {
+      if (window.confirm('Voulez-vous vous déconnecter ?')) {
+        logout();
+      }
+    } else {
+      Alert.alert('Déconnexion', 'Voulez-vous vous déconnecter ?', [
+        { text: 'Annuler', style: 'cancel' },
+        { text: 'Déconnexion', style: 'destructive', onPress: logout },
+      ]);
+    }
   };
 
   return (
