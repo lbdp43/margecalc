@@ -64,7 +64,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     flexGrow: 1,
-    paddingBottom: 110, // space for absolute-positioned curved tab bar (70 + 28 + margin)
+    paddingBottom: spacing.xl,
   },
   content: {
     flex: 1,
