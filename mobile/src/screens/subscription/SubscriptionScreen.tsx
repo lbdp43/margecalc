@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert, Linking, Platform } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Linking, Platform } from 'react-native';
+import { alert } from '../../utils/alert';
 import { Ionicons } from '@expo/vector-icons';
 import { ScreenWrapper } from '../../components/ui/ScreenWrapper';
 import { useAuthStore } from '../../store/auth.store';
@@ -27,7 +28,7 @@ export function SubscriptionScreen({ onDismiss }: Props) {
         await Linking.openURL(url);
       }
     } catch {
-      Alert.alert('Erreur', 'Impossible de lancer le paiement. Réessayez.');
+      alert('Erreur', 'Impossible de lancer le paiement. Réessayez.');
     } finally {
       setLoading(false);
     }

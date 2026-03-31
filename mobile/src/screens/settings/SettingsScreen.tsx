@@ -1,5 +1,6 @@
 import React, { useState, useCallback } from 'react';
-import { View, Text, StyleSheet, Switch, Alert, TouchableOpacity, ScrollView, TextInput, Linking, Platform } from 'react-native';
+import { View, Text, StyleSheet, Switch, TouchableOpacity, ScrollView, TextInput, Linking, Platform } from 'react-native';
+import { alert, confirm } from '../../utils/alert';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -123,7 +124,7 @@ export function SettingsScreen() {
         await Linking.openURL(url);
       }
     } catch {
-      Alert.alert('Erreur', 'Impossible d\'ouvrir le portail d\'abonnement');
+      alert('Erreur', 'Impossible d\'ouvrir le portail d\'abonnement');
     } finally {
       setSubLoading(false);
     }
@@ -132,7 +133,7 @@ export function SettingsScreen() {
   const handleAddServing = async () => {
     const vol = parseFloat(newVolume.replace(',', '.'));
     if (!newName.trim() || isNaN(vol) || vol <= 0) {
-      Alert.alert('Erreur', 'Entrez un nom et un volume valide');
+      alert('Erreur', 'Entrez un nom et un volume valide');
       return;
     }
     try {
@@ -145,14 +146,14 @@ export function SettingsScreen() {
       setNewVolume('');
       loadServingTypes();
     } catch {
-      Alert.alert('Erreur', 'Impossible de créer le type de service');
+      alert('Erreur', 'Impossible de créer le type de service');
     }
   };
 
   const handleEditServing = async (id: string) => {
     const vol = parseFloat(editVolume.replace(',', '.'));
     if (!editName.trim() || isNaN(vol) || vol <= 0) {
-      Alert.alert('Erreur', 'Entrez un nom et un volume valide');
+      alert('Erreur', 'Entrez un nom et un volume valide');
       return;
     }
     try {
@@ -163,26 +164,25 @@ export function SettingsScreen() {
       setEditingId(null);
       loadServingTypes();
     } catch {
-      Alert.alert('Erreur', 'Impossible de modifier');
+      alert('Erreur', 'Impossible de modifier');
     }
   };
 
   const handleDeleteServing = (id: string, name: string) => {
-    Alert.alert('Supprimer', `Supprimer "${name}" ?`, [
-      { text: 'Annuler', style: 'cancel' },
-      {
-        text: 'Supprimer',
-        style: 'destructive',
-        onPress: async () => {
-          try {
-            await servingService.deleteServingType(id);
-            loadServingTypes();
-          } catch {
-            Alert.alert('Erreur', 'Impossible de supprimer');
-          }
-        },
+    confirm(
+      'Supprimer',
+      `Supprimer "${name}" ?`,
+      async () => {
+        try {
+          await servingService.deleteServingType(id);
+          loadServingTypes();
+        } catch {
+          alert('Erreur', 'Impossible de supprimer');
+        }
       },
-    ]);
+      'Supprimer',
+      true,
+    );
   };
 
   const startEdit = (st: ServingType) => {
@@ -200,7 +200,7 @@ export function SettingsScreen() {
 
   const handleAddCategory = async () => {
     if (!newCategoryName.trim()) {
-      Alert.alert('Erreur', 'Entrez un nom de catégorie');
+      alert('Erreur', 'Entrez un nom de catégorie');
       return;
     }
     try {
@@ -208,7 +208,7 @@ export function SettingsScreen() {
       setNewCategoryName('');
       loadCategories();
     } catch {
-      Alert.alert('Erreur', 'Impossible de créer la catégorie');
+      alert('Erreur', 'Impossible de créer la catégorie');
     }
   };
 
@@ -223,7 +223,7 @@ export function SettingsScreen() {
   const handleAddContainer = async () => {
     const vol = parseFloat(newContainerVolume.replace(',', '.'));
     if (!newContainerName.trim() || isNaN(vol) || vol <= 0) {
-      Alert.alert('Erreur', 'Entrez un nom et un volume valide');
+      alert('Erreur', 'Entrez un nom et un volume valide');
       return;
     }
     try {
@@ -232,14 +232,14 @@ export function SettingsScreen() {
       setNewContainerVolume('');
       loadContainers();
     } catch {
-      Alert.alert('Erreur', 'Impossible de créer le contenant');
+      alert('Erreur', 'Impossible de créer le contenant');
     }
   };
 
   const handleEditContainer = async (id: string) => {
     const vol = parseFloat(editContainerVolume.replace(',', '.'));
     if (!editContainerName.trim() || isNaN(vol) || vol <= 0) {
-      Alert.alert('Erreur', 'Entrez un nom et un volume valide');
+      alert('Erreur', 'Entrez un nom et un volume valide');
       return;
     }
     try {
@@ -250,26 +250,19 @@ export function SettingsScreen() {
       setEditingContainerId(null);
       loadContainers();
     } catch {
-      Alert.alert('Erreur', 'Impossible de modifier');
+      alert('Erreur', 'Impossible de modifier');
     }
   };
 
   const handleDeleteContainer = (id: string, name: string) => {
-    Alert.alert('Supprimer', `Supprimer "${name}" ?`, [
-      { text: 'Annuler', style: 'cancel' },
-      {
-        text: 'Supprimer',
-        style: 'destructive',
-        onPress: async () => {
-          try {
-            await containerService.deleteContainer(id);
-            loadContainers();
-          } catch {
-            Alert.alert('Erreur', 'Impossible de supprimer');
-          }
-        },
-      },
-    ]);
+    confirm('Supprimer', `Supprimer "${name}" ?`, async () => {
+      try {
+        await containerService.deleteContainer(id);
+        loadContainers();
+      } catch {
+        alert('Erreur', 'Impossible de supprimer');
+      }
+    }, 'Supprimer', true);
   };
 
   const startEditContainer = (c: CustomContainer) => {
@@ -293,9 +286,9 @@ export function SettingsScreen() {
       });
       const token = useAuthStore.getState().token!;
       setAuth(token, res.data);
-      Alert.alert('Succès', 'Paramètres mis à jour');
+      alert('Succès', 'Paramètres mis à jour');
     } catch {
-      Alert.alert('Erreur', 'Impossible de sauvegarder');
+      alert('Erreur', 'Impossible de sauvegarder');
     } finally {
       setSaving(false);
     }
@@ -306,25 +299,16 @@ export function SettingsScreen() {
     try {
       await updateParam('droit_accise', editDroitAccise.replace(',', '.'));
       await updateParam('cotisation_secu', editCotisationSecu.replace(',', '.'));
-      Alert.alert('Succès', 'Paramètres système mis à jour');
+      alert('Succès', 'Paramètres système mis à jour');
     } catch {
-      Alert.alert('Erreur', 'Impossible de sauvegarder les paramètres système');
+      alert('Erreur', 'Impossible de sauvegarder les paramètres système');
     } finally {
       setSavingSystemParams(false);
     }
   };
 
   const handleLogout = () => {
-    if (Platform.OS === 'web') {
-      if (window.confirm('Voulez-vous vous déconnecter ?')) {
-        logout();
-      }
-    } else {
-      Alert.alert('Déconnexion', 'Voulez-vous vous déconnecter ?', [
-        { text: 'Annuler', style: 'cancel' },
-        { text: 'Déconnexion', style: 'destructive', onPress: logout },
-      ]);
-    }
+    confirm('Déconnexion', 'Voulez-vous vous déconnecter ?', logout, 'Déconnexion', true);
   };
 
   return (

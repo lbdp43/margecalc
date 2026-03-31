@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert, useWindowDimensions } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, useWindowDimensions } from 'react-native';
+import { confirm } from '../../utils/alert';
 import Svg, { Path } from 'react-native-svg';
 import { useNavigation } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -53,16 +54,11 @@ export function DashboardScreen() {
 
   const handleDismiss = useCallback(() => {
     setWelcomeVisible(false);
-    Alert.alert(
+    confirm(
       'Masquer le message de bienvenue',
       'Voulez-vous le masquer définitivement ?',
-      [
-        { text: 'Revoir plus tard', style: 'cancel' },
-        {
-          text: 'Masquer',
-          onPress: () => AsyncStorage.setItem(WELCOME_DISMISSED_KEY, 'true'),
-        },
-      ],
+      () => AsyncStorage.setItem(WELCOME_DISMISSED_KEY, 'true'),
+      'Masquer',
     );
   }, []);
 

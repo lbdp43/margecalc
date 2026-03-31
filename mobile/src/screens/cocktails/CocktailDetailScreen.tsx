@@ -1,5 +1,6 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { alert, confirm } from '../../utils/alert';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { useQueryClient } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
@@ -40,25 +41,20 @@ export function CocktailDetailScreen() {
   const accent = MARGIN_COLOR_MAP[recipe.computed.colorCode];
 
   const handleDelete = () => {
-    Alert.alert(
+    confirm(
       'Supprimer la recette',
       `Voulez-vous supprimer "${recipe.name}" ?`,
-      [
-        { text: 'Annuler', style: 'cancel' },
-        {
-          text: 'Supprimer',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await recipeService.deleteRecipe(recipeId);
-              queryClient.invalidateQueries({ queryKey: ['recipes'] });
-              navigation.goBack();
-            } catch {
-              Alert.alert('Erreur', 'Impossible de supprimer la recette');
-            }
-          },
-        },
-      ],
+      async () => {
+        try {
+          await recipeService.deleteRecipe(recipeId);
+          queryClient.invalidateQueries({ queryKey: ['recipes'] });
+          navigation.goBack();
+        } catch {
+          alert('Erreur', 'Impossible de supprimer la recette');
+        }
+      },
+      'Supprimer',
+      true,
     );
   };
 

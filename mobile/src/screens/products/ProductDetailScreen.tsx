@@ -1,5 +1,6 @@
 import React, { useState, useCallback } from 'react';
-import { View, Text, StyleSheet, TextInput, Alert, Image, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, TextInput, Image, TouchableOpacity } from 'react-native';
+import { alert, confirm } from '../../utils/alert';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -34,7 +35,7 @@ export function ProductDetailScreen({ route, navigation }: Props) {
       queryClient.invalidateQueries({ queryKey: ['products'] });
       navigation.navigate('ProductList');
     },
-    onError: () => Alert.alert('Erreur', 'Impossible de supprimer le produit'),
+    onError: () => alert('Erreur', 'Impossible de supprimer le produit'),
   });
 
   useFocusEffect(
@@ -61,7 +62,7 @@ export function ProductDetailScreen({ route, navigation }: Props) {
           }
           setPrices(priceMap);
         } catch {
-          if (mounted) Alert.alert('Erreur', 'Impossible de charger le produit');
+          if (mounted) alert('Erreur', 'Impossible de charger le produit');
         } finally {
           if (mounted) setLoading(false);
         }
@@ -98,16 +99,16 @@ export function ProductDetailScreen({ route, navigation }: Props) {
         .filter((s) => !isNaN(s.sellingPriceTTC) && s.sellingPriceTTC > 0);
 
       if (servings.length === 0) {
-        Alert.alert('Info', 'Entrez au moins un prix de vente');
+        alert('Info', 'Entrez au moins un prix de vente');
         setSaving(false);
         return;
       }
 
       const results = await servingService.upsertProductServings(productId, servings);
       setSavedServings(results);
-      Alert.alert('Succès', 'Prix de vente enregistrés');
+      alert('Succès', 'Prix de vente enregistrés');
     } catch {
-      Alert.alert('Erreur', 'Impossible de sauvegarder');
+      alert('Erreur', 'Impossible de sauvegarder');
     } finally {
       setSaving(false);
     }
@@ -272,10 +273,13 @@ export function ProductDetailScreen({ route, navigation }: Props) {
       <Button
         title="Supprimer le produit"
         onPress={() => {
-          Alert.alert('Supprimer', `Supprimer "${product.name}" ?`, [
-            { text: 'Annuler', style: 'cancel' },
-            { text: 'Supprimer', style: 'destructive', onPress: () => deleteMutation.mutate() },
-          ]);
+          confirm(
+            'Supprimer',
+            `Supprimer "${product.name}" ?`,
+            () => deleteMutation.mutate(),
+            'Supprimer',
+            true,
+          );
         }}
         variant="danger"
         style={styles.deleteBtn}

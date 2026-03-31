@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import {
-  View, Text, StyleSheet, Alert, ScrollView,
+  View, Text, StyleSheet, ScrollView,
   TouchableOpacity, Image, ActivityIndicator,
 } from 'react-native';
+import { alert, confirm } from '../../utils/alert';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useOfflineQuery } from '../../hooks/useOfflineQuery';
@@ -146,7 +147,7 @@ export function ProductFormScreen({ route, navigation }: Props) {
       : await ImagePicker.requestMediaLibraryPermissionsAsync();
 
     if (!permission.granted) {
-      Alert.alert('Permission requise', 'Autorisez l\'accès à la caméra/galerie');
+      alert('Permission requise', 'Autorisez l\'accès à la caméra/galerie');
       return;
     }
 
@@ -170,7 +171,7 @@ export function ProductFormScreen({ route, navigation }: Props) {
       );
 
       if (!compressed.base64) {
-        Alert.alert('Erreur', 'Impossible de lire l\'image');
+        alert('Erreur', 'Impossible de lire l\'image');
         setScanning(false);
         return;
       }
@@ -189,7 +190,7 @@ export function ProductFormScreen({ route, navigation }: Props) {
       // Go to form
       setStep('form');
     } catch (err: any) {
-      Alert.alert('Erreur de scan', err.response?.data?.error || err.message || 'Impossible d\'analyser');
+      alert('Erreur de scan', err.response?.data?.error || err.message || 'Impossible d\'analyser');
     } finally {
       setScanning(false);
     }
@@ -327,7 +328,7 @@ export function ProductFormScreen({ route, navigation }: Props) {
       navigation.goBack();
     },
     onError: (err: any) => {
-      Alert.alert('Erreur', err.response?.data?.error || err.message || 'Impossible de sauvegarder');
+      alert('Erreur', err.response?.data?.error || err.message || 'Impossible de sauvegarder');
     },
   });
 
@@ -341,7 +342,7 @@ export function ProductFormScreen({ route, navigation }: Props) {
 
   const handleSave = () => {
     if (!name || !purchasePrice || !containerVolume) {
-      Alert.alert('Erreur', 'Remplissez le nom, le prix et le volume');
+      alert('Erreur', 'Remplissez le nom, le prix et le volume');
       return;
     }
     saveMutation.mutate();
@@ -696,10 +697,7 @@ export function ProductFormScreen({ route, navigation }: Props) {
         <Button
           title="Supprimer"
           onPress={() => {
-            Alert.alert('Supprimer', `Supprimer "${name}" ?`, [
-              { text: 'Annuler', style: 'cancel' },
-              { text: 'Supprimer', style: 'destructive', onPress: () => deleteMutation.mutate() },
-            ]);
+            confirm('Supprimer', `Supprimer "${name}" ?`, () => deleteMutation.mutate(), 'Supprimer', true);
           }}
           variant="danger"
           style={styles.deleteBtn}
