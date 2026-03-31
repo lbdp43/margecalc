@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { View } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuthStore } from '../store/auth.store';
+import { useSystemParamsStore } from '../store/systemParams.store';
 import { AuthNavigator } from './AuthNavigator';
 import { AppNavigator } from './AppNavigator';
 import { SubscriptionScreen } from '../screens/subscription/SubscriptionScreen';
@@ -21,6 +22,13 @@ export function RootNavigator() {
     initOfflineMode();
     return () => { cleanupOfflineMode(); };
   }, []);
+
+  // Load system params when authenticated
+  useEffect(() => {
+    if (isAuthenticated) {
+      useSystemParamsStore.getState().loadParams();
+    }
+  }, [isAuthenticated]);
 
   useEffect(() => {
     let mounted = true;

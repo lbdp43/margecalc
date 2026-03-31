@@ -1,7 +1,7 @@
 import { prisma } from '../config/database';
 
 export function formatUser(user: {
-  id: string; email: string; businessName: string | null;
+  id: string; email: string; role: string; businessName: string | null;
   isAutoEntrepreneur: boolean; defaultTvaRate: number; defaultContainerVolumeCl: number;
   subscriptionStatus: string; subscriptionPlan: string | null;
   subscriptionEndDate: Date | null; createdAt: Date; updatedAt: Date;
@@ -9,6 +9,7 @@ export function formatUser(user: {
   return {
     id: user.id,
     email: user.email,
+    role: user.role as 'user' | 'admin',
     businessName: user.businessName,
     isAutoEntrepreneur: user.isAutoEntrepreneur,
     defaultTvaRate: user.defaultTvaRate,

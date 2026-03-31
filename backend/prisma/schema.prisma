@@ -11,6 +11,7 @@ model User {
   id                 String    @id @default(uuid())
   email              String    @unique
   passwordHash       String
+  role               String    @default("user") // user | admin
   businessName       String?
   isAutoEntrepreneur Boolean   @default(false)
   defaultTvaRate              Float     @default(0.20)
@@ -26,6 +27,16 @@ model User {
   customContainers   CustomContainer[]
   recipes            Recipe[]
   scanUsages         ScanUsage[]
+}
+
+model SystemParam {
+  id          String   @id @default(uuid())
+  key         String   @unique
+  value       String
+  label       String   // Human-readable label (e.g. "Droit d'accise")
+  unit        String?  // e.g. "€/hlAP", "%"
+  description String?
+  updatedAt   DateTime @updatedAt
 }
 
 model CustomContainer {

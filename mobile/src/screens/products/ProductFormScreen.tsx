@@ -10,7 +10,6 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
 import { ServingTypeIcon } from '../../components/ui/ServingTypeIcon';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   MarginMode, TVA_RATES, Category, CONTAINER_PRESETS,
   parseLocaleFloat, ServingType, calculateServingMargin,
@@ -23,6 +22,7 @@ import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
 import { PriceSlider } from '../../components/ui/PriceSlider';
 import { useAuthStore } from '../../store/auth.store';
+import { useSystemParamsStore } from '../../store/systemParams.store';
 import * as productService from '../../services/product.service';
 import * as categoryService from '../../services/category.service';
 import * as servingService from '../../services/serving.service';
@@ -63,25 +63,13 @@ export function ProductFormScreen({ route, navigation }: Props) {
   const [alcoholDegree, setAlcoholDegree] = useState('');
   const [priceInputMode, setPriceInputMode] = useState<PriceInputMode>('ht_direct');
 
-  // Alcohol tax settings from AsyncStorage
-  const [alcoholTaxRates, setAlcoholTaxRates] = useState({ droitAccise: 0, cotisationSecu: 0 });
-
-  useEffect(() => {
-    let mounted = true;
-    AsyncStorage.getItem('margebar_alcohol_tax').then((val) => {
-      if (!mounted) return;
-      if (val) {
-        try {
-          const parsed = JSON.parse(val);
-          setAlcoholTaxRates({
-            droitAccise: parsed.droitAccise || 0,
-            cotisationSecu: parsed.cotisationSecu || 0,
-          });
-        } catch { /* ignore corrupted data */ }
-      }
-    }).catch(() => {});
-    return () => { mounted = false; };
-  }, []);
+  // Alcohol tax rates from system params (admin-managed)
+  const droitAcciseParam = useSystemParamsStore((s) => s.params.find((x) => x.key === 'droit_accise'));
+  const cotisationSecuParam = useSystemParamsStore((s) => s.params.find((x) => x.key === 'cotisation_secu'));
+  const alcoholTaxRates = {
+    droitAccise: droitAcciseParam ? parseFloat(droitAcciseParam.value) || 0 : 0,
+    cotisationSecu: cotisationSecuParam ? parseFloat(cotisationSecuParam.value) || 0 : 0,
+  };
 
   // Serving state
   const [enabledServings, setEnabledServings] = useState<Set<string>>(new Set());

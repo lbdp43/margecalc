@@ -11,6 +11,7 @@ import { Input } from '../../components/ui/Input';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
 import { useAuthStore } from '../../store/auth.store';
+import { useSystemParamsStore } from '../../store/systemParams.store';
 import { api } from '../../services/api';
 import * as servingService from '../../services/serving.service';
 import * as categoryService from '../../services/category.service';
@@ -39,9 +40,14 @@ export function SettingsScreen() {
   const [greenThreshold, setGreenThreshold] = useState(String(DEFAULT_MARGIN_THRESHOLDS.good));
   const [orangeThreshold, setOrangeThreshold] = useState(String(DEFAULT_MARGIN_THRESHOLDS.medium));
 
-  // Alcohol tax (droits d'alcool)
-  const [droitAccise, setDroitAccise] = useState('');
-  const [cotisationSecu, setCotisationSecu] = useState('');
+  // System params (admin-managed alcohol taxes)
+  const { params: systemParams, getParam, getParamNum, updateParam } = useSystemParamsStore();
+  const isAdmin = user?.role === 'admin';
+
+  // Local state for admin editing
+  const [editDroitAccise, setEditDroitAccise] = useState('');
+  const [editCotisationSecu, setEditCotisationSecu] = useState('');
+  const [savingSystemParams, setSavingSystemParams] = useState(false);
 
   // Categories
   const [categories, setCategories] = useState<Category[]>([]);
@@ -68,23 +74,20 @@ export function SettingsScreen() {
       loadCategories();
       loadContainers();
       loadSubscription();
-      Promise.all([
-        AsyncStorage.getItem('margebar_margin_thresholds'),
-        AsyncStorage.getItem('margebar_alcohol_tax'),
-      ]).then(([thresholdsVal, taxVal]) => {
+      // Load system params and init admin edit fields
+      useSystemParamsStore.getState().loadParams().then(() => {
+        if (!mounted) return;
+        const state = useSystemParamsStore.getState();
+        setEditDroitAccise(state.getParam('droit_accise') || '');
+        setEditCotisationSecu(state.getParam('cotisation_secu') || '');
+      });
+      AsyncStorage.getItem('margebar_margin_thresholds').then((thresholdsVal) => {
         if (!mounted) return;
         if (thresholdsVal) {
           try {
             const parsed = JSON.parse(thresholdsVal);
             setGreenThreshold(String(parsed.good));
             setOrangeThreshold(String(parsed.medium));
-          } catch { /* ignore corrupted data */ }
-        }
-        if (taxVal) {
-          try {
-            const parsed = JSON.parse(taxVal);
-            setDroitAccise(String(parsed.droitAccise || ''));
-            setCotisationSecu(String(parsed.cotisationSecu || ''));
           } catch { /* ignore corrupted data */ }
         }
       }).catch(() => {});
@@ -282,10 +285,6 @@ export function SettingsScreen() {
         good: parseFloat(greenThreshold.replace(',', '.')) || DEFAULT_MARGIN_THRESHOLDS.good,
         medium: parseFloat(orangeThreshold.replace(',', '.')) || DEFAULT_MARGIN_THRESHOLDS.medium,
       }));
-      await AsyncStorage.setItem('margebar_alcohol_tax', JSON.stringify({
-        droitAccise: parseFloat(droitAccise.replace(',', '.')) || 0,
-        cotisationSecu: parseFloat(cotisationSecu.replace(',', '.')) || 0,
-      }));
       const res = await api.patch('/users/me', {
         businessName: businessName || null,
         isAutoEntrepreneur,
@@ -299,6 +298,19 @@ export function SettingsScreen() {
       Alert.alert('Erreur', 'Impossible de sauvegarder');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleSaveSystemParams = async () => {
+    setSavingSystemParams(true);
+    try {
+      await updateParam('droit_accise', editDroitAccise.replace(',', '.'));
+      await updateParam('cotisation_secu', editCotisationSecu.replace(',', '.'));
+      Alert.alert('Succès', 'Paramètres système mis à jour');
+    } catch {
+      Alert.alert('Erreur', 'Impossible de sauvegarder les paramètres système');
+    } finally {
+      setSavingSystemParams(false);
     }
   };
 
@@ -356,44 +368,71 @@ export function SettingsScreen() {
         </View>
       </View>
 
-      {/* Droits d'alcool */}
+      {/* Droits d'alcool — read-only for users, editable for admin */}
       <View style={styles.sectionCard}>
         <View style={styles.sectionHeader}>
           <View style={styles.sectionAccent} />
           <Text style={styles.sectionTitle}>Droits d'alcool</Text>
+          {!isAdmin && (
+            <View style={styles.lockBadge}>
+              <Ionicons name="lock-closed" size={12} color={colors.textSecondary} />
+            </View>
+          )}
         </View>
         <View style={styles.sectionBody}>
           <Text style={styles.sectionDesc}>
             Prix par hectolitre d'alcool pur (hlAP). Utilisé pour calculer la taxe sur les produits alcoolisés.
+            {!isAdmin ? '\nCes valeurs sont gérées par l\'administrateur.' : ''}
           </Text>
           <View style={styles.thresholdCard}>
             <Text style={[styles.thresholdLabel, { flex: 1 }]}>Droit d'accise</Text>
             <View style={styles.thresholdInputWrap}>
-              <TextInput
-                style={[styles.thresholdInput, { width: 80 }]}
-                value={droitAccise}
-                onChangeText={setDroitAccise}
-                keyboardType="decimal-pad"
-                placeholder="0"
-                placeholderTextColor={colors.textSecondary}
-              />
+              {isAdmin ? (
+                <TextInput
+                  style={[styles.thresholdInput, { width: 80 }]}
+                  value={editDroitAccise}
+                  onChangeText={setEditDroitAccise}
+                  keyboardType="decimal-pad"
+                  placeholder="0"
+                  placeholderTextColor={colors.textSecondary}
+                />
+              ) : (
+                <Text style={styles.readOnlyValue}>{getParam('droit_accise') || '—'}</Text>
+              )}
               <Text style={styles.thresholdUnit}>€/hlAP</Text>
             </View>
           </View>
           <View style={styles.thresholdCard}>
             <Text style={[styles.thresholdLabel, { flex: 1 }]}>Cotisation sécu. sociale</Text>
             <View style={styles.thresholdInputWrap}>
-              <TextInput
-                style={[styles.thresholdInput, { width: 80 }]}
-                value={cotisationSecu}
-                onChangeText={setCotisationSecu}
-                keyboardType="decimal-pad"
-                placeholder="0"
-                placeholderTextColor={colors.textSecondary}
-              />
+              {isAdmin ? (
+                <TextInput
+                  style={[styles.thresholdInput, { width: 80 }]}
+                  value={editCotisationSecu}
+                  onChangeText={setEditCotisationSecu}
+                  keyboardType="decimal-pad"
+                  placeholder="0"
+                  placeholderTextColor={colors.textSecondary}
+                />
+              ) : (
+                <Text style={styles.readOnlyValue}>{getParam('cotisation_secu') || '—'}</Text>
+              )}
               <Text style={styles.thresholdUnit}>€/hlAP</Text>
             </View>
           </View>
+          {isAdmin && (
+            <TouchableOpacity
+              style={[styles.adminSaveBtn, savingSystemParams && styles.saveBtnDisabled]}
+              onPress={handleSaveSystemParams}
+              disabled={savingSystemParams}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="cloud-upload-outline" size={18} color={colors.textLight} style={{ marginRight: spacing.xs }} />
+              <Text style={styles.adminSaveBtnText}>
+                {savingSystemParams ? 'Enregistrement...' : 'Mettre à jour pour tous les utilisateurs'}
+              </Text>
+            </TouchableOpacity>
+          )}
         </View>
       </View>
 
@@ -722,6 +761,39 @@ export function SettingsScreen() {
           </View>
         </View>
       </View>
+
+      {/* Admin panel — visible only to admins */}
+      {isAdmin && (
+        <View style={styles.sectionCard}>
+          <View style={styles.sectionHeader}>
+            <View style={[styles.sectionAccent, { backgroundColor: colors.marginOrange }]} />
+            <Text style={styles.sectionTitle}>Administration</Text>
+            <View style={styles.adminBadge}>
+              <Ionicons name="shield-checkmark" size={14} color={colors.textLight} />
+              <Text style={styles.adminBadgeText}>Admin</Text>
+            </View>
+          </View>
+          <View style={styles.sectionBody}>
+            <Text style={styles.sectionDesc}>
+              Paramètres système appliqués à tous les utilisateurs. Seuls les administrateurs peuvent modifier ces valeurs.
+            </Text>
+            {systemParams.filter(p => !['droit_accise', 'cotisation_secu'].includes(p.key)).map((param) => (
+              <View key={param.key} style={styles.systemParamRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.systemParamLabel}>{param.label}</Text>
+                  {param.description && (
+                    <Text style={styles.systemParamDesc}>{param.description}</Text>
+                  )}
+                </View>
+                <View style={styles.thresholdInputWrap}>
+                  <Text style={styles.readOnlyValue}>{param.value}</Text>
+                  {param.unit && <Text style={styles.thresholdUnit}>{param.unit}</Text>}
+                </View>
+              </View>
+            ))}
+          </View>
+        </View>
+      )}
 
       {/* Save button */}
       <TouchableOpacity
@@ -1127,6 +1199,87 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: colors.primary,
     flex: 1,
+  },
+
+  // Read-only value display
+  readOnlyValue: {
+    ...typography.bodySmall,
+    fontWeight: '700',
+    color: colors.text,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs + 2,
+    minWidth: 56,
+    textAlign: 'center',
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.sm,
+    overflow: 'hidden',
+  },
+
+  // Lock badge (for read-only sections)
+  lockBadge: {
+    marginLeft: spacing.xs,
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.full,
+    width: 22,
+    height: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  // Admin badge
+  adminBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.marginOrange,
+    borderRadius: borderRadius.full,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 3,
+    marginLeft: 'auto',
+  },
+  adminBadgeText: {
+    ...typography.caption,
+    fontWeight: '700',
+    color: colors.textLight,
+    marginLeft: 4,
+    fontSize: 11,
+  },
+
+  // Admin save button
+  adminSaveBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.accent,
+    borderRadius: borderRadius.md,
+    paddingVertical: spacing.sm,
+    marginTop: spacing.md,
+  },
+  adminSaveBtnText: {
+    ...typography.caption,
+    fontWeight: '700',
+    color: colors.textLight,
+  },
+
+  // System param rows
+  systemParamRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm + 2,
+    marginBottom: spacing.sm,
+  },
+  systemParamLabel: {
+    ...typography.bodySmall,
+    fontWeight: '600',
+    color: colors.text,
+  },
+  systemParamDesc: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    marginTop: 2,
+    lineHeight: 15,
   },
 
   // Version

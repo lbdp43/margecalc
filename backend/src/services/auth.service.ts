@@ -25,7 +25,7 @@ export async function register(email: string, password: string, businessName?: s
     },
   });
 
-  const token = signToken({ userId: user.id, email: user.email });
+  const token = signToken({ userId: user.id, email: user.email, role: user.role as 'user' | 'admin' });
   return { token, user: formatUser(user) };
 }
 
@@ -40,7 +40,7 @@ export async function login(email: string, password: string) {
     throw new Error('Email ou mot de passe incorrect');
   }
 
-  const token = signToken({ userId: user.id, email: user.email });
+  const token = signToken({ userId: user.id, email: user.email, role: user.role as 'user' | 'admin' });
   return { token, user: formatUser(user) };
 }
 
