@@ -56,7 +56,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
-    overflow: 'hidden',
     ...(Platform.OS === 'web' ? { paddingTop: 'env(safe-area-inset-top, 12px)' as any } : {}),
   },
   scroll: {
@@ -67,7 +66,6 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.xl,
   },
   content: {
-    flex: 1,
     padding: spacing.md,
   },
 });
