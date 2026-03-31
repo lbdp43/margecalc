@@ -174,7 +174,6 @@ export function LandingScreen({ navigation }: Props) {
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
     paddingVertical: spacing.md,
   },
   header: {

@@ -235,7 +235,6 @@ export function SubscriptionScreen({ onDismiss }: Props) {
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
     paddingVertical: spacing.md,
   },
   header: {
