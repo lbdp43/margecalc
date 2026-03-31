@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Linking, Platform } from 'react-native';
-import { alert } from '../../utils/alert';
+import { alert, confirm } from '../../utils/alert';
 import { Ionicons } from '@expo/vector-icons';
 import { ScreenWrapper } from '../../components/ui/ScreenWrapper';
 import { useAuthStore } from '../../store/auth.store';
@@ -35,11 +35,18 @@ export function SubscriptionScreen({ onDismiss }: Props) {
   };
 
   const handleSkip = () => {
-    if (onDismiss) {
-      onDismiss();
-    } else if (user && token) {
-      setAuth(token, { ...user, subscriptionStatus: 'none' });
-    }
+    confirm(
+      'Mode découverte',
+      'Sans abonnement, vos données ne seront pas sauvegardées. Elles seront supprimées à la prochaine ouverture de l\'application.\n\nVous pourrez vous abonner à tout moment depuis les Réglages.',
+      () => {
+        if (onDismiss) {
+          onDismiss();
+        } else if (user && token) {
+          setAuth(token, { ...user, subscriptionStatus: 'none' });
+        }
+      },
+      'Continuer quand même',
+    );
   };
 
   const features = [
@@ -121,6 +128,12 @@ export function SubscriptionScreen({ onDismiss }: Props) {
         <TouchableOpacity style={styles.skipBtn} onPress={handleSkip} activeOpacity={0.7}>
           <Text style={styles.skipText}>Continuer sans abonnement</Text>
         </TouchableOpacity>
+        <View style={styles.skipWarning}>
+          <Ionicons name="warning-outline" size={14} color={colors.marginOrange} />
+          <Text style={styles.skipWarningText}>
+            Sans abonnement, vos données ne seront pas conservées.
+          </Text>
+        </View>
 
         <Text style={styles.legal}>
           Paiement sécurisé par Stripe. Annulable à tout moment.
@@ -286,6 +299,19 @@ const styles = StyleSheet.create({
     ...typography.bodySmall,
     color: colors.textSecondary,
     textDecorationLine: 'underline',
+  },
+  skipWarning: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: spacing.sm,
+    paddingHorizontal: spacing.lg,
+  },
+  skipWarningText: {
+    ...typography.caption,
+    color: colors.marginOrange,
+    marginLeft: spacing.xs,
+    fontWeight: '600',
   },
 
   legal: {

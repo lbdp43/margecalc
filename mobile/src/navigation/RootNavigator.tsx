@@ -14,14 +14,31 @@ import { colors } from '../theme';
 const PAYWALL_SEEN_KEY = 'margebar_paywall_seen';
 
 export function RootNavigator() {
-  const { isAuthenticated, isLoading, loadStoredAuth, user } = useAuthStore();
+  const { isAuthenticated, isLoading, loadStoredAuth, user, logout } = useAuthStore();
   const [paywallSeen, setPaywallSeen] = useState<boolean | null>(null);
+  // Track if user skipped paywall this session (in-memory only, not persisted)
+  const [skippedPaywall, setSkippedPaywall] = useState(false);
 
   useEffect(() => {
     loadStoredAuth();
     initOfflineMode();
     return () => { cleanupOfflineMode(); };
   }, []);
+
+  // On app start: if user has no active subscription, clear their persisted
+  // session so they must re-authenticate. This ensures no data lingers
+  // between sessions for non-subscribers.
+  useEffect(() => {
+    if (!isLoading && isAuthenticated && user) {
+      const hasSubscription = user.subscriptionStatus === 'active' || user.subscriptionStatus === 'trialing';
+      if (!hasSubscription) {
+        // Clear persisted token/user but keep in-memory auth alive
+        // so the paywall can still show. The user stays "authenticated"
+        // for this session only.
+        AsyncStorage.multiRemove(['margebar_token', 'margebar_user', PAYWALL_SEEN_KEY]).catch(() => {});
+      }
+    }
+  }, [isLoading, isAuthenticated, user]);
 
   // Load system params when authenticated
   useEffect(() => {
@@ -33,18 +50,20 @@ export function RootNavigator() {
   useEffect(() => {
     let mounted = true;
     if (isAuthenticated) {
-      AsyncStorage.getItem(PAYWALL_SEEN_KEY)
-        .then((val) => {
-          if (mounted) setPaywallSeen(val === 'true');
-        })
-        .catch(() => {
-          if (mounted) setPaywallSeen(true);
-        });
+      const hasSubscription = user?.subscriptionStatus === 'active' || user?.subscriptionStatus === 'trialing';
+      if (hasSubscription) {
+        // Subscribers always get through
+        setPaywallSeen(true);
+      } else {
+        // Non-subscribers always see the paywall on load
+        setPaywallSeen(false);
+      }
     } else {
       setPaywallSeen(null);
+      setSkippedPaywall(false);
     }
     return () => { mounted = false; };
-  }, [isAuthenticated]);
+  }, [isAuthenticated, user?.subscriptionStatus]);
 
   if (isLoading) {
     return (
@@ -58,13 +77,15 @@ export function RootNavigator() {
     return <AuthNavigator />;
   }
 
-  // Show paywall if user has no active subscription and hasn't dismissed it
+  // Show paywall if user has no active subscription and hasn't skipped it this session
   const hasActiveSubscription = user?.subscriptionStatus === 'active' || user?.subscriptionStatus === 'trialing';
-  if (!hasActiveSubscription && paywallSeen === false) {
+  if (!hasActiveSubscription && !skippedPaywall) {
     return (
       <SubscriptionScreen
         onDismiss={() => {
-          AsyncStorage.setItem(PAYWALL_SEEN_KEY, 'true').catch(() => {});
+          // Only set in-memory flag — NOT persisted to AsyncStorage.
+          // On next refresh/reopen, user will see paywall again.
+          setSkippedPaywall(true);
           setPaywallSeen(true);
         }}
       />
