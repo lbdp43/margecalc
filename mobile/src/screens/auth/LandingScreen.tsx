@@ -25,6 +25,32 @@ export function LandingScreen({ navigation }: Props) {
       {/* Calculator */}
       <DroitsCalculator />
 
+      {/* Features presentation */}
+      <View style={styles.featuresCard}>
+        <Text style={styles.featuresTitle}>Ce que MargeBar Pro vous permet</Text>
+        <Text style={styles.featuresIntro}>
+          L'outil de calcul de marges concu pour les professionnels CHR (bars, restaurants, hotels).
+        </Text>
+        {[
+          { icon: 'calculator-outline', title: 'Calcul des droits d\'accise', desc: 'Calculez instantanement le prix HT avec droits pour les 13 categories fiscales francaises (vins, bieres, spiritueux, cidres...)' },
+          { icon: 'receipt-outline', title: 'Prix de revient precis', desc: 'Integrez les droits d\'accise, la cotisation securite sociale et la TVA pour connaitre votre vrai cout d\'achat' },
+          { icon: 'trending-up-outline', title: 'Calcul de marges', desc: 'Definissez vos prix de vente par type de service (shot, demi, pinte, bouteille) et visualisez vos marges en temps reel' },
+          { icon: 'scan-outline', title: 'Scan de produits', desc: 'Photographiez une bouteille ou une facture fournisseur — l\'app reconnait le produit et pre-remplit les informations' },
+          { icon: 'bar-chart-outline', title: 'Tableau de bord', desc: 'Suivez la rentabilite de vos produits, identifiez les meilleurs et les moins performants, comparez par categorie' },
+          { icon: 'cloud-done-outline', title: 'Donnees sauvegardees', desc: 'Vos produits, recettes et calculs sont synchronises sur le cloud. Accessible depuis n\'importe quel appareil' },
+        ].map((f, i) => (
+          <View key={i} style={styles.featureItem}>
+            <View style={styles.featureIconBox}>
+              <Ionicons name={f.icon as any} size={22} color={colors.accent} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.featureItemTitle}>{f.title}</Text>
+              <Text style={styles.featureItemDesc}>{f.desc}</Text>
+            </View>
+          </View>
+        ))}
+      </View>
+
       {/* Support */}
       <View style={styles.supportCard}>
         <View style={styles.supportHeader}>
@@ -145,6 +171,48 @@ const styles = StyleSheet.create({
     ...typography.bodySmall,
     color: colors.textSecondary,
     textAlign: 'center',
+  },
+  featuresCard: {
+    backgroundColor: colors.cardBackground,
+    borderRadius: borderRadius.lg,
+    padding: spacing.lg,
+    marginBottom: spacing.lg,
+    ...shadows.sm,
+  },
+  featuresTitle: {
+    ...typography.h3,
+    color: colors.primary,
+    marginBottom: spacing.xs,
+  },
+  featuresIntro: {
+    ...typography.bodySmall,
+    color: colors.textSecondary,
+    lineHeight: 20,
+    marginBottom: spacing.md,
+  },
+  featureItem: {
+    flexDirection: 'row',
+    marginBottom: spacing.md,
+  },
+  featureIconBox: {
+    width: 40,
+    height: 40,
+    borderRadius: borderRadius.sm,
+    backgroundColor: colors.light,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: spacing.sm,
+  },
+  featureItemTitle: {
+    ...typography.bodySmall,
+    fontWeight: '700',
+    color: colors.text,
+    marginBottom: 2,
+  },
+  featureItemDesc: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    lineHeight: 17,
   },
   supportCard: {
     backgroundColor: colors.light,
