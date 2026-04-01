@@ -67,12 +67,14 @@ export function ScreenWrapper({
 // Native CSS styles for web — bypasses RN Web's broken ScrollView
 const webStyles: Record<string, React.CSSProperties> = {
   container: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
     display: 'flex',
     flexDirection: 'column',
-    flex: 1,
-    height: '100%',
     backgroundColor: colors.background,
-    position: 'relative',
     overflow: 'hidden',
   },
   scroll: {
@@ -80,6 +82,7 @@ const webStyles: Record<string, React.CSSProperties> = {
     overflowY: 'auto',
     overflowX: 'hidden',
     WebkitOverflowScrolling: 'touch',
+    minHeight: 0,
   },
 };
 
