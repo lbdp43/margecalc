@@ -25,33 +25,11 @@ const extraHead = `
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="theme-color" content="#1B4332" />
     <style id="layout-fix">
-      html, body {
+      html, body, #root {
         height: 100%;
         width: 100%;
         margin: 0;
         padding: 0;
-        overflow: hidden;
-      }
-      #root {
-        height: 100%;
-        width: 100%;
-        display: flex;
-        flex-direction: column;
-        overflow: hidden;
-        padding-top: env(safe-area-inset-top, 0px);
-        padding-bottom: env(safe-area-inset-bottom, 0px);
-        box-sizing: border-box;
-      }
-      /* Ensure React Navigation containers fill height */
-      #root > div,
-      #root > div > div,
-      #root > div > div > div,
-      #root > div > div > div > div,
-      #root > div > div > div > div > div {
-        display: flex;
-        flex-direction: column;
-        flex: 1;
-        min-height: 0;
       }
     </style>
 `;
