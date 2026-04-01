@@ -1,8 +1,8 @@
 import React, { useState, useMemo } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, TextInput } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, TextInput, ScrollView, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { ScreenWrapper } from '../../components/ui/ScreenWrapper';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useSystemParamsStore } from '../../store/systemParams.store';
 import { calculateAlcoholTax, formatPrice, CONTAINER_PRESETS, parseLocaleFloat } from '@margebar/shared';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
@@ -30,7 +30,13 @@ export function LandingScreen({ navigation }: Props) {
   }, [calcPriceHD, calcContainer, calcDegree, droitAccise, cotisationSecu]);
 
   return (
-    <ScreenWrapper>
+    <SafeAreaView style={styles.safeArea} edges={['top']}>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
       <View style={styles.container}>
         {/* Header */}
         <View style={styles.header}>
@@ -168,13 +174,24 @@ export function LandingScreen({ navigation }: Props) {
           Paiement sécurisé par Stripe. Annulable à tout moment.
         </Text>
       </View>
-    </ScreenWrapper>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
+  scroll: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingBottom: spacing.xxl,
+  },
   container: {
-    paddingVertical: spacing.md,
+    padding: spacing.md,
   },
   header: {
     alignItems: 'center',
