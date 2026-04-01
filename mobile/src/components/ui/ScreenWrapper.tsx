@@ -56,10 +56,15 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
-    ...(Platform.OS === 'web' ? { paddingTop: 'env(safe-area-inset-top, 12px)' as any } : {}),
+    ...(Platform.OS === 'web' ? {
+      paddingTop: 'env(safe-area-inset-top, 12px)' as any,
+      height: '100vh' as any,
+      overflow: 'hidden' as any,
+    } : {}),
   },
   scroll: {
     flex: 1,
+    ...(Platform.OS === 'web' ? { overflow: 'auto' as any } : {}),
   },
   scrollContent: {
     flexGrow: 1,
