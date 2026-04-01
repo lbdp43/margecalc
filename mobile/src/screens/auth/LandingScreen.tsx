@@ -183,9 +183,11 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: colors.background,
+    ...(Platform.OS === 'web' ? { height: '100vh' as any, overflow: 'hidden' as any } : {}),
   },
   scroll: {
     flex: 1,
+    ...(Platform.OS === 'web' ? { overflow: 'auto' as any } : {}),
   },
   scrollContent: {
     paddingBottom: spacing.xxl,
