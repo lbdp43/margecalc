@@ -3,6 +3,7 @@ import { View, Platform, StyleSheet } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuthStore } from '../store/auth.store';
 import { useSystemParamsStore } from '../store/systemParams.store';
+import { useRatesStore } from '../store/rates.store';
 import { api } from '../services/api';
 import { AuthNavigator } from './AuthNavigator';
 import { AppNavigator } from './AppNavigator';
@@ -42,12 +43,18 @@ export function RootNavigator() {
     }
   }, [isLoading, isAuthenticated, user]);
 
-  // Load system params when authenticated
+  // Load system params and rates when authenticated
   useEffect(() => {
     if (isAuthenticated) {
       useSystemParamsStore.getState().loadParams();
+      useRatesStore.getState().loadRates();
     }
   }, [isAuthenticated]);
+
+  // Also load rates for landing page (before auth)
+  useEffect(() => {
+    useRatesStore.getState().loadRates();
+  }, []);
 
   useEffect(() => {
     let mounted = true;

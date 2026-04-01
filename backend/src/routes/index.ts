@@ -10,6 +10,7 @@ import productServingRoutes from './productServing.routes';
 import subscriptionRoutes from './subscription.routes';
 import recipeRoutes from './recipe.routes';
 import systemParamRoutes from './systemParam.routes';
+import rateRoutes from './rate.routes';
 
 const router = Router();
 
@@ -24,5 +25,6 @@ router.use('/containers', containerRoutes);
 router.use('/subscription', subscriptionRoutes);
 router.use('/recipes', recipeRoutes);
 router.use('/system-params', systemParamRoutes);
+router.use('/rates', rateRoutes);
 
 export default router;

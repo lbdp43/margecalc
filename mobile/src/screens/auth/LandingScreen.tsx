@@ -1,31 +1,14 @@
-import React, { useState, useMemo } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, TextInput, Platform, ScrollView } from 'react-native';
+import React from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Platform, ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { useSystemParamsStore } from '../../store/systemParams.store';
-import { calculateAlcoholTax, formatPrice, CONTAINER_PRESETS, parseLocaleFloat } from '@margebar/shared';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { DroitsCalculator } from '../../components/ui/DroitsCalculator';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 
 type Props = NativeStackScreenProps<any, 'Landing'>;
 
 export function LandingScreen({ navigation }: Props) {
-  const [calcPriceHD, setCalcPriceHD] = useState('');
-  const [calcContainer, setCalcContainer] = useState('70');
-  const [calcDegree, setCalcDegree] = useState('');
-
-  const droitAcciseParam = useSystemParamsStore((s) => s.params.find((x) => x.key === 'droit_accise'));
-  const cotisationSecuParam = useSystemParamsStore((s) => s.params.find((x) => x.key === 'cotisation_secu'));
-  const droitAccise = droitAcciseParam ? parseFloat(droitAcciseParam.value) || 0 : 1837.44;
-  const cotisationSecu = cotisationSecuParam ? parseFloat(cotisationSecuParam.value) || 0 : 597.41;
-
-  const calcTax = useMemo(() => {
-    const price = parseLocaleFloat(calcPriceHD) || 0;
-    const vol = parseLocaleFloat(calcContainer) || 0;
-    const deg = parseLocaleFloat(calcDegree) || 0;
-    const tax = calculateAlcoholTax(vol, deg, droitAccise, cotisationSecu);
-    return { price, tax, total: price + tax };
-  }, [calcPriceHD, calcContainer, calcDegree, droitAccise, cotisationSecu]);
-
   const inner = (
     <View style={styles.inner}>
       {/* Header */}
@@ -35,74 +18,12 @@ export function LandingScreen({ navigation }: Props) {
         </View>
         <Text style={styles.title}>MargeBar Pro</Text>
         <Text style={styles.subtitle}>
-          Calculez vos marges, optimisez votre rentabilité
+          Calculez vos marges, optimisez votre rentabilite
         </Text>
       </View>
 
       {/* Calculator */}
-      <View style={styles.calcCard}>
-        <View style={styles.calcHeader}>
-          <Ionicons name="calculator-outline" size={20} color={colors.accent} />
-          <Text style={styles.calcTitle}>Calculateur gratuit</Text>
-        </View>
-        <Text style={styles.calcDesc}>
-          Calculez le prix HT avec droits d'accise et cotisation sécurité sociale
-        </Text>
-
-        <Text style={styles.calcLabel}>Prix d'achat HT hors droit</Text>
-        <TextInput
-          style={styles.calcInput}
-          value={calcPriceHD}
-          onChangeText={setCalcPriceHD}
-          placeholder="Ex : 10,50"
-          keyboardType="decimal-pad"
-          placeholderTextColor={colors.tabBarInactive}
-        />
-
-        <Text style={styles.calcLabel}>Contenant</Text>
-        <View style={styles.presetRow}>
-          {CONTAINER_PRESETS.map((p) => (
-            <TouchableOpacity
-              key={p.volumeCl}
-              style={[styles.presetChip, calcContainer === String(p.volumeCl) && styles.presetChipActive]}
-              onPress={() => setCalcContainer(String(p.volumeCl))}
-            >
-              <Text style={[styles.presetChipText, calcContainer === String(p.volumeCl) && styles.presetChipTextActive]}>
-                {p.label}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-
-        <Text style={styles.calcLabel}>Degré d'alcool (%)</Text>
-        <TextInput
-          style={styles.calcInput}
-          value={calcDegree}
-          onChangeText={setCalcDegree}
-          placeholder="Ex : 40"
-          keyboardType="decimal-pad"
-          placeholderTextColor={colors.tabBarInactive}
-        />
-
-        {calcTax.price > 0 && (
-          <View style={styles.calcResult}>
-            <View style={styles.calcResultRow}>
-              <Text style={styles.calcResultLabel}>Prix HT hors droit</Text>
-              <Text style={styles.calcResultValue}>{formatPrice(calcTax.price)}</Text>
-            </View>
-            {calcTax.tax > 0 && (
-              <View style={styles.calcResultRow}>
-                <Text style={styles.calcResultLabel}>Droits d'accise{parseLocaleFloat(calcDegree) >= 18 ? ' + Sécu' : ''}</Text>
-                <Text style={styles.calcResultValue}>{formatPrice(calcTax.tax)}</Text>
-              </View>
-            )}
-            <View style={[styles.calcResultRow, styles.calcResultTotal]}>
-              <Text style={styles.calcResultTotalLabel}>Prix HT (avec droits)</Text>
-              <Text style={styles.calcResultTotalValue}>{formatPrice(calcTax.total)}</Text>
-            </View>
-          </View>
-        )}
-      </View>
+      <DroitsCalculator />
 
       {/* Support */}
       <View style={styles.supportCard}>
@@ -111,11 +32,11 @@ export function LandingScreen({ navigation }: Props) {
           <Text style={styles.supportTitle}>Soutenez MargeBar Pro</Text>
         </View>
         <Text style={styles.supportDesc}>
-          Votre abonnement permet de maintenir l'application, financer les serveurs et développer de nouvelles fonctionnalités.
+          Votre abonnement permet de maintenir l'application, financer les serveurs et developper de nouvelles fonctionnalites.
         </Text>
         <View style={styles.featuresRow}>
           {[
-            { icon: 'save-outline', text: 'Sauvegarde de vos données' },
+            { icon: 'save-outline', text: 'Sauvegarde de vos donnees' },
             { icon: 'scan-outline', text: 'Scan produits & factures' },
             { icon: 'trending-up-outline', text: 'Tableau de bord complet' },
           ].map((f, i) => (
@@ -146,7 +67,7 @@ export function LandingScreen({ navigation }: Props) {
         activeOpacity={0.8}
       >
         <Ionicons name="heart" size={20} color={colors.white} style={{ marginRight: spacing.sm }} />
-        <Text style={styles.primaryBtnText}>Créer un compte et soutenir</Text>
+        <Text style={styles.primaryBtnText}>Creer un compte et soutenir</Text>
       </TouchableOpacity>
 
       <TouchableOpacity
@@ -155,7 +76,7 @@ export function LandingScreen({ navigation }: Props) {
         activeOpacity={0.7}
       >
         <Ionicons name="log-in-outline" size={20} color={colors.primary} style={{ marginRight: spacing.sm }} />
-        <Text style={styles.secondaryBtnText}>J'ai déjà un compte</Text>
+        <Text style={styles.secondaryBtnText}>J'ai deja un compte</Text>
       </TouchableOpacity>
 
       <TouchableOpacity
@@ -168,24 +89,20 @@ export function LandingScreen({ navigation }: Props) {
       </TouchableOpacity>
 
       <Text style={styles.skipWarningText}>
-        Le calculateur ci-dessus reste gratuit. Sans abonnement, vos données ne seront pas conservées.
+        Le calculateur ci-dessus reste gratuit. Sans abonnement, vos donnees ne seront pas conservees.
       </Text>
 
       <Text style={styles.legal}>
-        Paiement sécurisé par Stripe. Annulable à tout moment.
+        Paiement securise par Stripe. Annulable a tout moment.
       </Text>
     </View>
   );
 
-  // On web: use a native HTML div with guaranteed scrolling
   if (Platform.OS === 'web') {
     return (
       <div style={{
         position: 'fixed',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
+        top: 0, left: 0, right: 0, bottom: 0,
         overflowY: 'auto',
         overflowX: 'hidden',
         backgroundColor: colors.background,
@@ -196,7 +113,6 @@ export function LandingScreen({ navigation }: Props) {
     );
   }
 
-  // On native: use ScrollView
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: colors.background }}
@@ -239,113 +155,6 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     textAlign: 'center',
   },
-
-  calcCard: {
-    backgroundColor: colors.cardBackground,
-    borderRadius: borderRadius.lg,
-    padding: spacing.lg,
-    marginBottom: spacing.lg,
-    borderWidth: 1.5,
-    borderColor: colors.accent,
-    ...shadows.sm,
-  },
-  calcHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: spacing.xs,
-  },
-  calcTitle: {
-    ...typography.h3,
-    color: colors.text,
-    marginLeft: spacing.sm,
-  },
-  calcDesc: {
-    ...typography.caption,
-    color: colors.textSecondary,
-    marginBottom: spacing.md,
-    lineHeight: 18,
-  },
-  calcLabel: {
-    ...typography.caption,
-    color: colors.textSecondary,
-    fontWeight: '600',
-    marginBottom: spacing.xs,
-    marginTop: spacing.sm,
-  },
-  calcInput: {
-    backgroundColor: colors.surface,
-    borderRadius: borderRadius.md,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    ...typography.body,
-    color: colors.text,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  presetRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.sm,
-    marginBottom: spacing.xs,
-  },
-  presetChip: {
-    paddingHorizontal: spacing.sm + 2,
-    paddingVertical: spacing.xs,
-    borderRadius: borderRadius.full,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  presetChipActive: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
-  },
-  presetChipText: {
-    ...typography.caption,
-    color: colors.textSecondary,
-    fontWeight: '600',
-  },
-  presetChipTextActive: {
-    color: colors.textLight,
-  },
-  calcResult: {
-    marginTop: spacing.md,
-    backgroundColor: colors.surface,
-    borderRadius: borderRadius.md,
-    padding: spacing.md,
-  },
-  calcResultRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: spacing.xs,
-  },
-  calcResultLabel: {
-    ...typography.caption,
-    color: colors.textSecondary,
-  },
-  calcResultValue: {
-    ...typography.bodySmall,
-    color: colors.text,
-    fontWeight: '600',
-  },
-  calcResultTotal: {
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-    marginTop: spacing.xs,
-    paddingTop: spacing.sm,
-  },
-  calcResultTotalLabel: {
-    ...typography.body,
-    color: colors.text,
-    fontWeight: '700',
-  },
-  calcResultTotalValue: {
-    ...typography.h3,
-    color: colors.primary,
-    fontWeight: '800',
-  },
-
   supportCard: {
     backgroundColor: colors.light,
     borderRadius: borderRadius.lg,
@@ -423,7 +232,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: colors.white,
   },
-
   primaryBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -452,13 +260,6 @@ const styles = StyleSheet.create({
     ...typography.button,
     color: colors.primary,
   },
-
-  legal: {
-    ...typography.caption,
-    color: colors.tabBarInactive,
-    textAlign: 'center',
-    marginTop: spacing.md,
-  },
   skipBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -482,5 +283,11 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
     lineHeight: 17,
     paddingHorizontal: spacing.md,
+  },
+  legal: {
+    ...typography.caption,
+    color: colors.tabBarInactive,
+    textAlign: 'center',
+    marginTop: spacing.md,
   },
 });

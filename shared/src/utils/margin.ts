@@ -1,5 +1,6 @@
 import { MarginInput, MarginMode, MarginResult, ServingType, ServingMarginResult } from '../types/product';
 import { RecipeIngredient, RecipeConsumable, RecipeMarginResult } from '../types/recipe';
+import { Rate, DroitsResult } from '../types/rate';
 import { getMarginColor } from '../constants/colors';
 
 function round2(n: number): number {
@@ -27,12 +28,8 @@ export function lToCl(l: number): number {
 }
 
 /**
- * Calculate alcohol tax for a container.
- * @param containerVolumeCl - Volume of the container in centiliters
- * @param alcoholDegree - Alcohol percentage (e.g. 40 for 40%)
- * @param droitAccise - Excise duty rate in €/hlAP (hectoliter of pure alcohol)
- * @param cotisationSecu - Social security rate in €/hlAP
- * @returns Tax amount in euros for the container
+ * Legacy function kept for backward compatibility.
+ * Prefer calculateDroits() for new code.
  */
 export function calculateAlcoholTax(
   containerVolumeCl: number,
@@ -41,11 +38,76 @@ export function calculateAlcoholTax(
   cotisationSecu: number,
 ): number {
   if (alcoholDegree <= 0 || containerVolumeCl <= 0) return 0;
-  const volumeHl = containerVolumeCl / 10000; // cl to hectoliters
+  const volumeHl = containerVolumeCl / 10000;
   const pureAlcoholHl = volumeHl * (alcoholDegree / 100);
-  // Cotisation sécurité sociale only applies to alcohol >= 18°
   const secu = alcoholDegree >= 18 ? cotisationSecu : 0;
   return round2(pureAlcoholHl * (droitAccise + secu));
+}
+
+/**
+ * Full calculation of excise duties and social security contribution.
+ *
+ * Supports 3 calculation types:
+ *   A = tariff per hl of product (wines, ciders, intermediary products)
+ *   B = tariff per hl per degree (beers)
+ *   C = tariff per hl of pure alcohol (spirits, rum, liqueurs)
+ *
+ * @param rate - The fiscal category rate from the database
+ * @param volumeCl - Container volume in centiliters
+ * @param degree - Alcohol degree (% vol.)
+ * @param prixHTHorsDroit - Purchase price excl. tax, excl. duties
+ * @param tvaRate - TVA rate (default 0.20)
+ * @param seuilSS - Social security threshold in degrees (default 18)
+ */
+export function calculateDroits(
+  rate: Rate,
+  volumeCl: number,
+  degree: number,
+  prixHTHorsDroit: number,
+  tvaRate = 0.20,
+  seuilSS = 18,
+): DroitsResult {
+  if (volumeCl <= 0 || prixHTHorsDroit < 0) {
+    return { accise: 0, cotisationSS: 0, totalDroits: 0, prixHTAvecDroits: prixHTHorsDroit, prixTTC: round2(prixHTHorsDroit * (1 + tvaRate)), prixAuLitreHT: 0 };
+  }
+
+  const volumeL = volumeCl / 100;
+  const volumeHl = volumeCl / 10000; // cl -> hl
+  const hlap = volumeHl * (degree / 100); // hl of pure alcohol
+
+  // Step 1: Calculate accise based on calc type
+  let accise = 0;
+  switch (rate.calcType) {
+    case 'A': // per hl of product
+      accise = volumeHl * rate.acciseRate;
+      break;
+    case 'B': // per hl per degree (beers)
+      accise = volumeHl * degree * rate.acciseRate;
+      break;
+    case 'C': // per hlap (spirits)
+      accise = hlap * rate.acciseRate;
+      break;
+  }
+  accise = round2(accise);
+
+  // Step 2: Calculate cotisation SS (only if degree > threshold AND rate has cotisation)
+  let cotisationSS = 0;
+  if (degree > seuilSS && rate.cotisationRate > 0 && rate.cotisationCond) {
+    if (rate.cotisationUnit === 'euro/hlap') {
+      cotisationSS = hlap * rate.cotisationRate;
+    } else if (rate.cotisationUnit === 'euro/hl') {
+      cotisationSS = volumeHl * rate.cotisationRate;
+    }
+    cotisationSS = round2(cotisationSS);
+  }
+
+  // Step 3: Totals
+  const totalDroits = round2(accise + cotisationSS);
+  const prixHTAvecDroits = round2(prixHTHorsDroit + totalDroits);
+  const prixTTC = round2(prixHTAvecDroits * (1 + tvaRate));
+  const prixAuLitreHT = volumeL > 0 ? round2(prixHTAvecDroits / volumeL) : 0;
+
+  return { accise, cotisationSS, totalDroits, prixHTAvecDroits, prixTTC, prixAuLitreHT };
 }
 
 export function calculateMargin(input: MarginInput): MarginResult {

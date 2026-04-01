@@ -1,0 +1,18 @@
+import { Rate } from '../types/rate';
+
+/** Default 2026 rates — used as fallback when API is unavailable */
+export const DEFAULT_RATES: Rate[] = [
+  { id: '', slug: 'vin_tranquille', label: 'Vin tranquille', examples: 'Bordeaux, Cotes-du-Rhone, rose, blanc sec', calcType: 'A', acciseRate: 4.19, acciseUnit: 'euro/hl', cotisationRate: 0, cotisationUnit: null, cotisationCond: null, sortOrder: 1, updatedAt: '' },
+  { id: '', slug: 'vin_mousseux', label: 'Vin mousseux', examples: 'Champagne, Cremant, Prosecco, Cava', calcType: 'A', acciseRate: 10.38, acciseUnit: 'euro/hl', cotisationRate: 0, cotisationUnit: null, cotisationCond: null, sortOrder: 2, updatedAt: '' },
+  { id: '', slug: 'cidre_poire', label: 'Cidre / Poire', examples: 'Cidre brut, doux, poire, hydromel', calcType: 'A', acciseRate: 1.46, acciseUnit: 'euro/hl', cotisationRate: 0, cotisationUnit: null, cotisationCond: null, sortOrder: 3, updatedAt: '' },
+  { id: '', slug: 'boisson_fermentee', label: 'Autre boisson fermentee', examples: 'Kombucha alcoolise, sake, kefir', calcType: 'A', acciseRate: 4.19, acciseUnit: 'euro/hl', cotisationRate: 0, cotisationUnit: null, cotisationCond: null, sortOrder: 4, updatedAt: '' },
+  { id: '', slug: 'prod_interm_vdl_vdn', label: 'Porto / VDN / VDL', examples: 'Porto, Banyuls, Muscat, Rivesaltes', calcType: 'A', acciseRate: 52.39, acciseUnit: 'euro/hl', cotisationRate: 20.97, cotisationUnit: 'euro/hl', cotisationCond: '>18', sortOrder: 5, updatedAt: '' },
+  { id: '', slug: 'prod_interm_autre', label: 'Vermouth / Aperitif vine', examples: 'Vermouth, Lillet, Byrrh, Pineau', calcType: 'A', acciseRate: 209.53, acciseUnit: 'euro/hl', cotisationRate: 52.39, cotisationUnit: 'euro/hl', cotisationCond: '>18', sortOrder: 6, updatedAt: '' },
+  { id: '', slug: 'biere_legere', label: 'Biere legere', examples: 'Bieres sans alcool, panaches', calcType: 'B', acciseRate: 4.12, acciseUnit: 'euro/hl_degree', cotisationRate: 52.39, cotisationUnit: 'euro/hl', cotisationCond: '>18', sortOrder: 7, updatedAt: '' },
+  { id: '', slug: 'biere', label: 'Biere', examples: 'IPA, lagers, stouts, blondes', calcType: 'B', acciseRate: 8.24, acciseUnit: 'euro/hl_degree', cotisationRate: 52.39, cotisationUnit: 'euro/hl', cotisationCond: '>18', sortOrder: 8, updatedAt: '' },
+  { id: '', slug: 'petite_brasserie', label: 'Biere artisanale', examples: 'Micro-brasseries, brasseries craft', calcType: 'B', acciseRate: 4.12, acciseUnit: 'euro/hl_degree', cotisationRate: 52.39, cotisationUnit: 'euro/hl', cotisationCond: '>18', sortOrder: 9, updatedAt: '' },
+  { id: '', slug: 'rhum_dom', label: 'Rhum des DOM', examples: 'Rhum agricole Martinique, Guadeloupe', calcType: 'C', acciseRate: 966.75, acciseUnit: 'euro/hlap', cotisationRate: 620.47, cotisationUnit: 'euro/hlap', cotisationCond: '>18', sortOrder: 10, updatedAt: '' },
+  { id: '', slug: 'liqueur', label: 'Liqueur', examples: 'Liqueurs artisanales, cremes, elixirs', calcType: 'C', acciseRate: 1932.42, acciseUnit: 'euro/hlap', cotisationRate: 620.47, cotisationUnit: 'euro/hlap', cotisationCond: '>18', sortOrder: 11, updatedAt: '' },
+  { id: '', slug: 'spiritueux', label: 'Spiritueux', examples: 'Whisky, vodka, gin, cognac, armagnac', calcType: 'C', acciseRate: 1932.42, acciseUnit: 'euro/hlap', cotisationRate: 620.47, cotisationUnit: 'euro/hlap', cotisationCond: '>18', sortOrder: 12, updatedAt: '' },
+  { id: '', slug: 'rhum_hors_dom', label: 'Rhum (hors DOM)', examples: 'Rhum cubain, jamaicain, venezuelien', calcType: 'C', acciseRate: 1932.42, acciseUnit: 'euro/hlap', cotisationRate: 620.47, cotisationUnit: 'euro/hlap', cotisationCond: '>18', sortOrder: 13, updatedAt: '' },
+];

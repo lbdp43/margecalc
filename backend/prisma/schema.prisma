@@ -39,6 +39,21 @@ model SystemParam {
   updatedAt   DateTime @updatedAt
 }
 
+model Rate {
+  id              String   @id @default(uuid())
+  slug            String   @unique
+  label           String
+  examples        String?
+  calcType        String   // A = per hl, B = per hl/degree, C = per hlap
+  acciseRate      Float
+  acciseUnit      String   // euro/hl, euro/hl_degree, euro/hlap
+  cotisationRate  Float    @default(0)
+  cotisationUnit  String?  // euro/hlap, euro/hl, or null
+  cotisationCond  String?  // ">18" or null
+  sortOrder       Int      @default(0)
+  updatedAt       DateTime @updatedAt
+}
+
 model CustomContainer {
   id        String   @id @default(uuid())
   userId    String
