@@ -1,8 +1,7 @@
 import React, { useState, useMemo } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, TextInput } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, TextInput, Platform, ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { ScreenWrapper } from '../../components/ui/ScreenWrapper';
 import { useSystemParamsStore } from '../../store/systemParams.store';
 import { calculateAlcoholTax, formatPrice, CONTAINER_PRESETS, parseLocaleFloat } from '@margebar/shared';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
@@ -27,8 +26,8 @@ export function LandingScreen({ navigation }: Props) {
     return { price, tax, total: price + tax };
   }, [calcPriceHD, calcContainer, calcDegree, droitAccise, cotisationSecu]);
 
-  return (
-    <ScreenWrapper decorations={false}>
+  const inner = (
+    <View style={styles.inner}>
       {/* Header */}
       <View style={styles.header}>
         <View style={styles.logoBadge}>
@@ -162,11 +161,47 @@ export function LandingScreen({ navigation }: Props) {
       <Text style={styles.legal}>
         Paiement sécurisé par Stripe. Annulable à tout moment.
       </Text>
-    </ScreenWrapper>
+    </View>
+  );
+
+  // On web: use a native HTML div with guaranteed scrolling
+  if (Platform.OS === 'web') {
+    return (
+      <div style={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        overflowY: 'auto',
+        overflowX: 'hidden',
+        backgroundColor: colors.background,
+        WebkitOverflowScrolling: 'touch',
+      }}>
+        {inner}
+      </div>
+    );
+  }
+
+  // On native: use ScrollView
+  return (
+    <ScrollView
+      style={{ flex: 1, backgroundColor: colors.background }}
+      contentContainerStyle={{ flexGrow: 1 }}
+      showsVerticalScrollIndicator={false}
+      keyboardShouldPersistTaps="handled"
+    >
+      {inner}
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
+  inner: {
+    padding: spacing.md,
+    paddingTop: spacing.xl,
+    paddingBottom: spacing.xxl,
+  },
   header: {
     alignItems: 'center',
     marginBottom: spacing.lg,
