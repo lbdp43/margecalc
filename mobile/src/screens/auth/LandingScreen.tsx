@@ -158,6 +158,16 @@ export function LandingScreen({ navigation }: Props) {
         <Text style={styles.secondaryBtnText}>J'ai déjà un compte</Text>
       </TouchableOpacity>
 
+      <TouchableOpacity style={styles.skipBtn} onPress={() => navigation.navigate('Register')} activeOpacity={0.7}>
+        <Text style={styles.skipText}>Continuer sans abonnement</Text>
+      </TouchableOpacity>
+      <View style={styles.skipWarning}>
+        <Ionicons name="information-circle-outline" size={14} color={colors.textSecondary} />
+        <Text style={styles.skipWarningText}>
+          Le calculateur ci-dessus reste gratuit. Sans abonnement, vos données ne seront pas conservées.
+        </Text>
+      </View>
+
       <Text style={styles.legal}>
         Paiement sécurisé par Stripe. Annulable à tout moment.
       </Text>
@@ -444,6 +454,31 @@ const styles = StyleSheet.create({
     ...typography.caption,
     color: colors.tabBarInactive,
     textAlign: 'center',
-    marginTop: spacing.lg,
+    marginTop: spacing.md,
+  },
+  skipBtn: {
+    alignItems: 'center',
+    marginTop: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  skipText: {
+    ...typography.bodySmall,
+    color: colors.textSecondary,
+    textDecorationLine: 'underline',
+  },
+  skipWarning: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'center',
+    marginTop: spacing.sm,
+    paddingHorizontal: spacing.md,
+  },
+  skipWarningText: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    marginLeft: spacing.xs,
+    flex: 1,
+    lineHeight: 17,
+  },
   },
 });
