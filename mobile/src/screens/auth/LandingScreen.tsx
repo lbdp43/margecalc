@@ -161,6 +161,7 @@ export function LandingScreen({ navigation }: Props) {
       <TouchableOpacity style={styles.skipBtn} onPress={() => navigation.navigate('Register')} activeOpacity={0.7}>
         <Text style={styles.skipText}>Continuer sans abonnement</Text>
       </TouchableOpacity>
+
       <View style={styles.skipWarning}>
         <Ionicons name="information-circle-outline" size={14} color={colors.textSecondary} />
         <Text style={styles.skipWarningText}>
