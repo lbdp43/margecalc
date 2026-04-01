@@ -158,16 +158,18 @@ export function LandingScreen({ navigation }: Props) {
         <Text style={styles.secondaryBtnText}>J'ai déjà un compte</Text>
       </TouchableOpacity>
 
-      <TouchableOpacity style={styles.skipBtn} onPress={() => navigation.navigate('Register')} activeOpacity={0.7}>
-        <Text style={styles.skipText}>Continuer sans abonnement</Text>
+      <TouchableOpacity
+        style={styles.skipBtn}
+        onPress={() => navigation.navigate('Register')}
+        activeOpacity={0.7}
+      >
+        <Ionicons name="eye-outline" size={18} color={colors.textSecondary} style={{ marginRight: spacing.sm }} />
+        <Text style={styles.skipBtnText}>Continuer sans abonnement</Text>
       </TouchableOpacity>
 
-      <View style={styles.skipWarning}>
-        <Ionicons name="information-circle-outline" size={14} color={colors.textSecondary} />
-        <Text style={styles.skipWarningText}>
-          Le calculateur ci-dessus reste gratuit. Sans abonnement, vos données ne seront pas conservées.
-        </Text>
-      </View>
+      <Text style={styles.skipWarningText}>
+        Le calculateur ci-dessus reste gratuit. Sans abonnement, vos données ne seront pas conservées.
+      </Text>
 
       <Text style={styles.legal}>
         Paiement sécurisé par Stripe. Annulable à tout moment.
@@ -458,28 +460,28 @@ const styles = StyleSheet.create({
     marginTop: spacing.md,
   },
   skipBtn: {
-    alignItems: 'center',
-    marginTop: spacing.md,
-    paddingVertical: spacing.sm,
-  },
-  skipText: {
-    ...typography.bodySmall,
-    color: colors.textSecondary,
-    textDecorationLine: 'underline',
-  },
-  skipWarning: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: borderRadius.md,
+    paddingVertical: spacing.md - 4,
     marginTop: spacing.sm,
-    paddingHorizontal: spacing.md,
+    backgroundColor: colors.cardBackground,
+  },
+  skipBtnText: {
+    ...typography.bodySmall,
+    fontWeight: '600',
+    color: colors.textSecondary,
   },
   skipWarningText: {
     ...typography.caption,
     color: colors.textSecondary,
-    marginLeft: spacing.xs,
-    flex: 1,
+    textAlign: 'center',
+    marginTop: spacing.sm,
     lineHeight: 17,
+    paddingHorizontal: spacing.md,
   },
   },
 });
