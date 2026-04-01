@@ -15,6 +15,7 @@ import { CocktailDetailScreen } from '../screens/cocktails/CocktailDetailScreen'
 import { SettingsScreen } from '../screens/settings/SettingsScreen';
 import { colors, shadows } from '../theme';
 import { CurvedTabBar } from '../components/ui/CurvedTabBar';
+import { useAuthStore } from '../store/auth.store';
 
 const Tab = createBottomTabNavigator();
 const ProductStack = createAppStackNavigator();
@@ -110,6 +111,8 @@ const TAB_ICONS: Record<string, { focused: string; default: string }> = {
 };
 
 export function AppNavigator() {
+  const isAdmin = useAuthStore((s) => s.user?.role === 'admin');
+
   return (
     <Tab.Navigator
       initialRouteName="Tableau de bord"
@@ -145,16 +148,18 @@ export function AppNavigator() {
           tabBarButton: () => <ScanTabButton />,
         }}
       />
-      <Tab.Screen
-        name="Cocktails"
-        component={CocktailsNavigator}
-        listeners={({ navigation }) => ({
-          tabPress: (e) => {
-            e.preventDefault();
-            navigation.navigate('Cocktails', { screen: 'CocktailList' });
-          },
-        })}
-      />
+      {isAdmin && (
+        <Tab.Screen
+          name="Cocktails"
+          component={CocktailsNavigator}
+          listeners={({ navigation }) => ({
+            tabPress: (e) => {
+              e.preventDefault();
+              navigation.navigate('Cocktails', { screen: 'CocktailList' });
+            },
+          })}
+        />
+      )}
       <Tab.Screen name="Tableau de bord" component={DashboardScreen} />
     </Tab.Navigator>
   );
