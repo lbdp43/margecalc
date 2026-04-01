@@ -52,7 +52,6 @@ const extraHead = `
         flex-direction: column;
         flex: 1;
         min-height: 0;
-        overflow: hidden;
       }
     </style>
 `;
