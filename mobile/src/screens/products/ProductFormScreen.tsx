@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView,
+  View, Text, StyleSheet, ScrollView, TextInput,
   TouchableOpacity, Image, ActivityIndicator,
 } from 'react-native';
 import { alert, confirm } from '../../utils/alert';
@@ -651,15 +651,30 @@ export function ProductFormScreen({ route, navigation }: Props) {
                     ))}
                   </View>
 
-                  <PriceSlider
-                    min={config.min}
-                    max={config.max}
-                    step={config.step}
-                    value={isNaN(sliderVal) ? config.min : Math.max(config.min, Math.min(config.max, sliderVal))}
-                    onValueChange={(v) => handleSliderChange(st, v, mode)}
-                    formatLabel={config.formatLabel}
-                    accentColor={accent}
-                  />
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+                    <View style={{ flex: 1 }}>
+                      <PriceSlider
+                        min={config.min}
+                        max={config.max}
+                        step={config.step}
+                        value={isNaN(sliderVal) ? config.min : Math.max(config.min, Math.min(config.max, sliderVal))}
+                        onValueChange={(v) => handleSliderChange(st, v, mode)}
+                        formatLabel={config.formatLabel}
+                        accentColor={accent}
+                      />
+                    </View>
+                    <TextInput
+                      style={{ borderWidth: 1, borderColor: colors.border, borderRadius: borderRadius.sm, paddingHorizontal: spacing.sm, paddingVertical: spacing.xs + 2, width: 75, textAlign: 'center', fontSize: 14, fontWeight: '700', color: colors.primary, backgroundColor: colors.cardBackground }}
+                      value={mode === 'price' ? String(Math.round(sliderVal * 100) / 100) : mode === 'margin' ? String(Math.round(sliderVal * 10) / 10) : String(Math.round(sliderVal * 100) / 100)}
+                      onChangeText={(v) => {
+                        const parsed = parseFloat(v.replace(',', '.'));
+                        if (!isNaN(parsed)) handleSliderChange(st, parsed, mode);
+                      }}
+                      keyboardType="decimal-pad"
+                      placeholder={mode === 'price' ? '€' : mode === 'margin' ? '%' : 'x'}
+                      placeholderTextColor={colors.textSecondary}
+                    />
+                  </View>
 
                   {margin && (
                     <View style={styles.resultRow}>
@@ -668,13 +683,21 @@ export function ProductFormScreen({ route, navigation }: Props) {
                         <Text style={styles.resultValue}>{formatPrice(margin.sellingPriceTTC)}</Text>
                       </View>
                       <View style={styles.resultItem}>
+                        <Text style={styles.resultLabel}>Prix HT</Text>
+                        <Text style={styles.resultValue}>{formatPrice(margin.sellingPriceHT)}</Text>
+                      </View>
+                      <View style={styles.resultItem}>
                         <Text style={styles.resultLabel}>Marge</Text>
                         <Text style={[styles.resultValueBig, { color: accent }]}>
                           {formatPercent(margin.marginPercent)}
                         </Text>
                       </View>
                       <View style={styles.resultItem}>
-                        <Text style={styles.resultLabel}>Gain/dose</Text>
+                        <Text style={styles.resultLabel}>Cout/dose</Text>
+                        <Text style={styles.resultValue}>{formatPrice(margin.costPerServingHT)}</Text>
+                      </View>
+                      <View style={styles.resultItem}>
+                        <Text style={[styles.resultLabel, { color: accent }]}>Gain/dose</Text>
                         <Text style={[styles.resultValue, { color: accent }]}>
                           {formatPrice(margin.marginPerServingHT)}
                         </Text>
