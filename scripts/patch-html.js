@@ -4,6 +4,7 @@
  * - Adds viewport-fit=cover for iOS safe areas
  * - Adds safe-area CSS padding
  * - Adds PWA meta tags
+ * - Fixes layout for proper scrolling
  */
 const fs = require('fs');
 const path = require('path');
@@ -23,7 +24,7 @@ const extraHead = `
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="theme-color" content="#1B4332" />
-    <style id="safe-area-fix">
+    <style id="layout-fix">
       html, body {
         height: 100%;
         width: 100%;
@@ -41,25 +42,17 @@ const extraHead = `
         padding-bottom: env(safe-area-inset-bottom, 0px);
         box-sizing: border-box;
       }
-      /* Force all RN Web divs in the tree to take full height */
-      #root > div {
+      /* Ensure React Navigation containers fill height */
+      #root > div,
+      #root > div > div,
+      #root > div > div > div,
+      #root > div > div > div > div,
+      #root > div > div > div > div > div {
         display: flex;
         flex-direction: column;
         flex: 1;
         min-height: 0;
-      }
-      #root > div > div {
-        display: flex;
-        flex-direction: column;
-        flex: 1;
-        min-height: 0;
-      }
-      /* Make RN Web ScrollView actually scroll */
-      [data-testid="screen-scroll"] {
-        overflow-y: auto !important;
-        -webkit-overflow-scrolling: touch;
-        flex: 1;
-        min-height: 0;
+        overflow: hidden;
       }
     </style>
 `;
@@ -67,4 +60,4 @@ const extraHead = `
 html = html.replace('</head>', extraHead + '  </head>');
 
 fs.writeFileSync(htmlPath, html, 'utf-8');
-console.log('✓ Patched index.html with safe-area support');
+console.log('✓ Patched index.html with layout and safe-area support');

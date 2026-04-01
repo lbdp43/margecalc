@@ -21,6 +21,22 @@ export function ScreenWrapper({
   onRefresh,
   refreshing = false,
 }: ScreenWrapperProps) {
+  // On web, use native browser scrolling instead of RN ScrollView
+  if (Platform.OS === 'web') {
+    return (
+      <div style={webStyles.container}>
+        {decorations && <DecorativeCurve variant="bottom" />}
+        {scrollable ? (
+          <div style={webStyles.scroll}>
+            <View style={[styles.scrollInner, style]}>{children}</View>
+          </div>
+        ) : (
+          <View style={[styles.staticContent, style]}>{children}</View>
+        )}
+      </div>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       {decorations && <DecorativeCurve variant="bottom" />}
@@ -48,12 +64,30 @@ export function ScreenWrapper({
   );
 }
 
+// Native CSS styles for web — bypasses RN Web's broken ScrollView
+const webStyles: Record<string, React.CSSProperties> = {
+  container: {
+    display: 'flex',
+    flexDirection: 'column',
+    flex: 1,
+    height: '100%',
+    backgroundColor: colors.background,
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  scroll: {
+    flex: 1,
+    overflowY: 'auto',
+    overflowX: 'hidden',
+    WebkitOverflowScrolling: 'touch',
+  },
+};
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
     overflow: 'hidden',
-    ...(Platform.OS === 'web' ? { paddingTop: 'env(safe-area-inset-top, 12px)' as any } : {}),
   },
   scroll: {
     flex: 1,
@@ -61,12 +95,10 @@ const styles = StyleSheet.create({
   scrollContent: {
     flexGrow: 1,
   },
-  // Inside ScrollView: NO flex:1 so content takes natural height and scrolls
   scrollInner: {
     padding: spacing.md,
     paddingBottom: spacing.xxl,
   },
-  // Outside ScrollView: flex:1 to fill screen
   staticContent: {
     flex: 1,
     padding: spacing.md,
