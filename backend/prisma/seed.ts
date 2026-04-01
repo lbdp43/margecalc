@@ -53,7 +53,7 @@ const DEFAULT_RATES = [
   {
     slug: 'vin_tranquille',
     label: 'Vin tranquille',
-    examples: 'Bordeaux, Cotes-du-Rhone, rose, blanc sec',
+    examples: 'Vins rouges, blancs, roses non effervescents — Bordeaux, Bourgogne, Cotes-du-Rhone...',
     calcType: 'A',
     acciseRate: 4.19,
     acciseUnit: 'euro/hl',
@@ -65,7 +65,7 @@ const DEFAULT_RATES = [
   {
     slug: 'vin_mousseux',
     label: 'Vin mousseux',
-    examples: 'Champagne, Cremant, Prosecco, Cava',
+    examples: 'Vins effervescents — Champagne, Cremant, Prosecco, Cava, mousseux',
     calcType: 'A',
     acciseRate: 10.38,
     acciseUnit: 'euro/hl',
@@ -77,7 +77,7 @@ const DEFAULT_RATES = [
   {
     slug: 'cidre_poire',
     label: 'Cidre / Poire',
-    examples: 'Cidre brut, doux, poire, hydromel',
+    examples: 'Cidre brut, demi-sec, doux, poire, hydromel — tarif reduit',
     calcType: 'A',
     acciseRate: 1.46,
     acciseUnit: 'euro/hl',
@@ -89,7 +89,7 @@ const DEFAULT_RATES = [
   {
     slug: 'boisson_fermentee',
     label: 'Autre boisson fermentee',
-    examples: 'Kombucha alcoolise, sake, kefir',
+    examples: 'Boissons fermentees hors vin/biere — Kombucha alcoolise, sake, kefir, hydromel',
     calcType: 'A',
     acciseRate: 4.19,
     acciseUnit: 'euro/hl',
@@ -101,7 +101,7 @@ const DEFAULT_RATES = [
   {
     slug: 'prod_interm_vdl_vdn',
     label: 'Porto / VDN / VDL',
-    examples: 'Porto, Banyuls, Muscat, Rivesaltes',
+    examples: 'Vins doux naturels et de liqueur — Porto, Banyuls, Muscat, Rivesaltes (tarif reduit)',
     calcType: 'A',
     acciseRate: 52.39,
     acciseUnit: 'euro/hl',
@@ -113,7 +113,7 @@ const DEFAULT_RATES = [
   {
     slug: 'prod_interm_autre',
     label: 'Vermouth / Aperitif vine',
-    examples: 'Vermouth, Lillet, Byrrh, Pineau',
+    examples: 'Produits intermediaires a base de vin — Vermouth, Lillet, Byrrh, Pineau des Charentes',
     calcType: 'A',
     acciseRate: 209.53,
     acciseUnit: 'euro/hl',
@@ -124,8 +124,8 @@ const DEFAULT_RATES = [
   },
   {
     slug: 'biere_legere',
-    label: 'Biere legere',
-    examples: 'Bieres sans alcool, panaches',
+    label: 'Biere legere (0,5% a 2,8%)',
+    examples: 'Panaches, bieres sans alcool, radlers — jusqu\'a 2,8% vol.',
     calcType: 'B',
     acciseRate: 4.12,
     acciseUnit: 'euro/hl_degree',
@@ -136,8 +136,8 @@ const DEFAULT_RATES = [
   },
   {
     slug: 'biere',
-    label: 'Biere',
-    examples: 'IPA, lagers, stouts, blondes',
+    label: 'Biere (plus de 2,8%)',
+    examples: 'IPA, lagers, stouts, blondes, ambrées — au-dessus de 2,8% vol.',
     calcType: 'B',
     acciseRate: 8.24,
     acciseUnit: 'euro/hl_degree',
@@ -148,8 +148,8 @@ const DEFAULT_RATES = [
   },
   {
     slug: 'petite_brasserie',
-    label: 'Biere artisanale',
-    examples: 'Micro-brasseries, brasseries craft',
+    label: 'Biere artisanale (petite brasserie)',
+    examples: 'Micro-brasseries, brasseries craft — production max 200 000 hl/an, tarif reduit',
     calcType: 'B',
     acciseRate: 4.12,
     acciseUnit: 'euro/hl_degree',
@@ -161,7 +161,7 @@ const DEFAULT_RATES = [
   {
     slug: 'rhum_dom',
     label: 'Rhum des DOM',
-    examples: 'Rhum agricole Martinique, Guadeloupe',
+    examples: 'Rhum produit outre-mer (Martinique, Guadeloupe, Reunion) — tarif reduit de moitie',
     calcType: 'C',
     acciseRate: 966.75,
     acciseUnit: 'euro/hlap',
@@ -173,7 +173,7 @@ const DEFAULT_RATES = [
   {
     slug: 'liqueur',
     label: 'Liqueur',
-    examples: 'Liqueurs artisanales, cremes, elixirs',
+    examples: 'Liqueurs, cremes de fruits, elixirs, amaretto, limoncello, Chartreuse...',
     calcType: 'C',
     acciseRate: 1932.42,
     acciseUnit: 'euro/hlap',
@@ -185,7 +185,7 @@ const DEFAULT_RATES = [
   {
     slug: 'spiritueux',
     label: 'Spiritueux',
-    examples: 'Whisky, vodka, gin, cognac, armagnac',
+    examples: 'Alcools forts distilles — Whisky, vodka, gin, cognac, armagnac, tequila, mezcal...',
     calcType: 'C',
     acciseRate: 1932.42,
     acciseUnit: 'euro/hlap',
@@ -197,7 +197,7 @@ const DEFAULT_RATES = [
   {
     slug: 'rhum_hors_dom',
     label: 'Rhum (hors DOM)',
-    examples: 'Rhum cubain, jamaicain, venezuelien',
+    examples: 'Rhum d\'importation — cubain, jamaicain, venezuelien, philippin (tarif plein)',
     calcType: 'C',
     acciseRate: 1932.42,
     acciseUnit: 'euro/hlap',

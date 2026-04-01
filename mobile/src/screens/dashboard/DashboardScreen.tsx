@@ -194,7 +194,19 @@ export function DashboardScreen() {
                 </TouchableOpacity>
               </View>
               <ScrollView style={{ paddingHorizontal: spacing.md, paddingBottom: spacing.xxl }} keyboardShouldPersistTaps="handled">
-                <DroitsCalculator compact />
+                <DroitsCalculator compact onSaveProduct={(data) => {
+                  setCalcVisible(false);
+                  (navigation as any).navigate('Produits', {
+                    screen: 'ProductForm',
+                    params: {
+                      scanData: {
+                        name: data.name,
+                        containerVolumeCl: data.volumeCl,
+                        estimatedPriceHT: data.prixHTAvecDroits,
+                      },
+                    },
+                  });
+                }} />
               </ScrollView>
             </View>
           </KeyboardAvoidingView>

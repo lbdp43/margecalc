@@ -6,11 +6,21 @@ import { useRatesStore } from '../../store/rates.store';
 import { useSystemParamsStore } from '../../store/systemParams.store';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 
-interface DroitsCalculatorProps {
-  compact?: boolean; // If true, hides some details
+interface SaveProductData {
+  name: string;
+  fiscalCategory: string;
+  prixHTHorsDroit: number;
+  volumeCl: number;
+  degree: number;
+  prixHTAvecDroits: number;
 }
 
-export function DroitsCalculator({ compact = false }: DroitsCalculatorProps) {
+interface DroitsCalculatorProps {
+  compact?: boolean;
+  onSaveProduct?: (data: SaveProductData) => void;
+}
+
+export function DroitsCalculator({ compact = false, onSaveProduct }: DroitsCalculatorProps) {
   const rates = useRatesStore((s) => s.rates);
   const tarifAnnee = useSystemParamsStore((s) => s.params.find((p) => p.key === 'tarif_annee')?.value || '2026');
   const lienReference = useSystemParamsStore((s) => s.params.find((p) => p.key === 'lien_reference')?.value || '');
@@ -23,6 +33,7 @@ export function DroitsCalculator({ compact = false }: DroitsCalculatorProps) {
   const [prixHD, setPrixHD] = useState('');
   const [container, setContainer] = useState('70');
   const [degree, setDegree] = useState('');
+  const [productName, setProductName] = useState('');
 
   const selectedRate = useMemo(
     () => rates.find((r) => r.slug === selectedSlug),
@@ -160,6 +171,39 @@ export function DroitsCalculator({ compact = false }: DroitsCalculatorProps) {
               </View>
             </>
           )}
+        </View>
+      )}
+
+      {/* Save as product (only in dashboard context) */}
+      {onSaveProduct && result && parseLocaleFloat(prixHD) > 0 && (
+        <View style={styles.saveSection}>
+          <Text style={styles.label}>Nom du produit</Text>
+          <TextInput
+            style={styles.input}
+            value={productName}
+            onChangeText={setProductName}
+            placeholder="Ex : Whisky Jameson 70cl"
+            placeholderTextColor={colors.tabBarInactive}
+          />
+          <TouchableOpacity
+            style={[styles.saveBtn, !productName.trim() && styles.saveBtnDisabled]}
+            onPress={() => {
+              if (!productName.trim()) return;
+              onSaveProduct({
+                name: productName.trim(),
+                fiscalCategory: selectedSlug,
+                prixHTHorsDroit: parseLocaleFloat(prixHD) || 0,
+                volumeCl: parseLocaleFloat(container) || 0,
+                degree: parseLocaleFloat(degree) || 0,
+                prixHTAvecDroits: result.prixHTAvecDroits,
+              });
+              setProductName('');
+            }}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="save-outline" size={18} color={colors.textLight} style={{ marginRight: spacing.xs }} />
+            <Text style={styles.saveBtnText}>Enregistrer comme produit</Text>
+          </TouchableOpacity>
         </View>
       )}
 
@@ -330,6 +374,31 @@ const styles = StyleSheet.create({
     ...typography.h3,
     color: colors.primary,
     fontWeight: '800',
+  },
+
+  // Save product
+  saveSection: {
+    marginTop: spacing.md,
+    paddingTop: spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  saveBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.primary,
+    borderRadius: borderRadius.md,
+    paddingVertical: spacing.sm + 2,
+    marginTop: spacing.sm,
+  },
+  saveBtnDisabled: {
+    opacity: 0.4,
+  },
+  saveBtnText: {
+    ...typography.bodySmall,
+    fontWeight: '700',
+    color: colors.textLight,
   },
 
   // Reference link
