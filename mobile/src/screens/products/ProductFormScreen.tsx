@@ -665,10 +665,10 @@ export function ProductFormScreen({ route, navigation }: Props) {
                     </View>
                     <TextInput
                       style={{ borderWidth: 1, borderColor: colors.border, borderRadius: borderRadius.sm, paddingHorizontal: spacing.sm, paddingVertical: spacing.xs + 2, width: 75, textAlign: 'center', fontSize: 14, fontWeight: '700', color: colors.primary, backgroundColor: colors.cardBackground }}
-                      value={mode === 'price' ? String(Math.round(sliderVal * 100) / 100) : mode === 'margin' ? String(Math.round(sliderVal * 10) / 10) : String(Math.round(sliderVal * 100) / 100)}
-                      onChangeText={(v) => {
-                        const parsed = parseFloat(v.replace(',', '.'));
-                        if (!isNaN(parsed)) handleSliderChange(st, parsed, mode);
+                      defaultValue={mode === 'price' ? String(Math.round(sliderVal * 100) / 100) : mode === 'margin' ? String(Math.round(sliderVal * 10) / 10) : String(Math.round(sliderVal * 100) / 100)}
+                      onEndEditing={(e) => {
+                        const parsed = parseFloat(e.nativeEvent.text.replace(',', '.'));
+                        if (!isNaN(parsed) && parsed > 0) handleSliderChange(st, parsed, mode);
                       }}
                       keyboardType="decimal-pad"
                       placeholder={mode === 'price' ? '€' : mode === 'margin' ? '%' : 'x'}
