@@ -6,13 +6,14 @@ import { useRatesStore } from '../../store/rates.store';
 import { useSystemParamsStore } from '../../store/systemParams.store';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 
-interface SaveProductData {
+export interface SaveProductData {
   name: string;
   fiscalCategory: string;
   prixHTHorsDroit: number;
   volumeCl: number;
   degree: number;
   prixHTAvecDroits: number;
+  prixTTC: number;
 }
 
 interface DroitsCalculatorProps {
@@ -196,6 +197,7 @@ export function DroitsCalculator({ compact = false, onSaveProduct }: DroitsCalcu
                 volumeCl: parseLocaleFloat(container) || 0,
                 degree: parseLocaleFloat(degree) || 0,
                 prixHTAvecDroits: result.prixHTAvecDroits,
+                prixTTC: result.prixTTC,
               });
               setProductName('');
             }}

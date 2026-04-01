@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, useWindowDimensions, Modal, ScrollView, KeyboardAvoidingView, Platform as RNPlatform } from 'react-native';
-import { confirm } from '../../utils/alert';
+import { alert, confirm } from '../../utils/alert';
+import type { SaveProductData } from '../../components/ui/DroitsCalculator';
 import Svg, { Path } from 'react-native-svg';
 import { useNavigation } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -40,6 +41,35 @@ export function DashboardScreen() {
   const [loadingPref, setLoadingPref] = useState(true);
 
   const [calcVisible, setCalcVisible] = useState(false);
+  const [savedCalcs, setSavedCalcs] = useState<(SaveProductData & { id: string })[]>([]);
+
+  // Load saved calculations
+  useEffect(() => {
+    AsyncStorage.getItem('margebar_saved_calcs').then((val) => {
+      if (val) {
+        try { setSavedCalcs(JSON.parse(val)); } catch { /* ignore */ }
+      }
+    });
+  }, []);
+
+  const handleSaveCalc = useCallback((data: SaveProductData) => {
+    const entry = { ...data, id: Date.now().toString() };
+    setSavedCalcs((prev) => {
+      const updated = [entry, ...prev];
+      AsyncStorage.setItem('margebar_saved_calcs', JSON.stringify(updated)).catch(() => {});
+      return updated;
+    });
+    setCalcVisible(false);
+    alert('Enregistre', `${data.name} a ete ajoute a vos calculs`);
+  }, []);
+
+  const handleDeleteCalc = useCallback((id: string) => {
+    setSavedCalcs((prev) => {
+      const updated = prev.filter((c) => c.id !== id);
+      AsyncStorage.setItem('margebar_saved_calcs', JSON.stringify(updated)).catch(() => {});
+      return updated;
+    });
+  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -194,23 +224,40 @@ export function DashboardScreen() {
                 </TouchableOpacity>
               </View>
               <ScrollView style={{ paddingHorizontal: spacing.md, paddingBottom: spacing.xxl }} keyboardShouldPersistTaps="handled">
-                <DroitsCalculator compact onSaveProduct={(data) => {
-                  setCalcVisible(false);
-                  (navigation as any).navigate('Produits', {
-                    screen: 'ProductForm',
-                    params: {
-                      scanData: {
-                        name: data.name,
-                        containerVolumeCl: data.volumeCl,
-                        estimatedPriceHT: data.prixHTAvecDroits,
-                      },
-                    },
-                  });
-                }} />
+                <DroitsCalculator compact onSaveProduct={handleSaveCalc} />
               </ScrollView>
             </View>
           </KeyboardAvoidingView>
         </Modal>
+      )}
+
+      {/* Saved calculations */}
+      {savedCalcs.length > 0 && (
+        <View style={styles.savedSection}>
+          <Text style={styles.savedTitle}>Mes calculs enregistres</Text>
+          {savedCalcs.map((c) => (
+            <View key={c.id} style={styles.savedCard}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.savedName}>{c.name}</Text>
+                <Text style={styles.savedDetail}>{c.volumeCl} cl | {c.degree}° | {c.fiscalCategory}</Text>
+              </View>
+              <View style={{ alignItems: 'flex-end' }}>
+                <Text style={styles.savedPriceLabel}>HT hors droit</Text>
+                <Text style={styles.savedPrice}>{formatPrice(c.prixHTHorsDroit)}</Text>
+                <Text style={styles.savedPriceLabel}>HT avec droits</Text>
+                <Text style={[styles.savedPrice, { color: colors.primary, fontWeight: '800' }]}>{formatPrice(c.prixHTAvecDroits)}</Text>
+                <Text style={styles.savedPriceLabel}>TTC (20%)</Text>
+                <Text style={styles.savedPrice}>{formatPrice(c.prixTTC)}</Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => handleDeleteCalc(c.id)}
+                style={{ paddingLeft: spacing.sm, justifyContent: 'center' }}
+              >
+                <Ionicons name="trash-outline" size={18} color={colors.marginRed} />
+              </TouchableOpacity>
+            </View>
+          ))}
+        </View>
       )}
 
       {/* Margin by Category Chart */}
@@ -261,6 +308,43 @@ export function DashboardScreen() {
 }
 
 const styles = StyleSheet.create({
+  savedSection: {
+    marginBottom: spacing.lg,
+  },
+  savedTitle: {
+    ...typography.h3,
+    color: colors.text,
+    marginBottom: spacing.sm,
+  },
+  savedCard: {
+    flexDirection: 'row',
+    backgroundColor: colors.cardBackground,
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+    ...shadows.sm,
+  },
+  savedName: {
+    ...typography.body,
+    fontWeight: '700',
+    color: colors.text,
+    marginBottom: 2,
+  },
+  savedDetail: {
+    ...typography.caption,
+    color: colors.textSecondary,
+  },
+  savedPriceLabel: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    fontSize: 10,
+  },
+  savedPrice: {
+    ...typography.bodySmall,
+    fontWeight: '600',
+    color: colors.text,
+    marginBottom: 2,
+  },
   heroCard: {
     backgroundColor: colors.primary,
     borderTopLeftRadius: borderRadius.xxl,
