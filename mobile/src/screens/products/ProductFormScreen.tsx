@@ -15,7 +15,7 @@ import {
   MarginMode, TVA_RATES, Category, CONTAINER_PRESETS,
   parseLocaleFloat, ServingType, calculateServingMargin,
   ServingMarginResult, MARGIN_COLOR_MAP, formatPrice, formatPercent,
-  calculateAlcoholTax,
+  calculateDroits,
 } from '@margebar/shared';
 import { ScreenWrapper } from '../../components/ui/ScreenWrapper';
 import { Input } from '../../components/ui/Input';
@@ -23,7 +23,7 @@ import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
 import { PriceSlider } from '../../components/ui/PriceSlider';
 import { useAuthStore } from '../../store/auth.store';
-import { useSystemParamsStore } from '../../store/systemParams.store';
+import { useRatesStore } from '../../store/rates.store';
 import * as productService from '../../services/product.service';
 import * as categoryService from '../../services/category.service';
 import * as servingService from '../../services/serving.service';
@@ -63,14 +63,11 @@ export function ProductFormScreen({ route, navigation }: Props) {
   const [supplier, setSupplier] = useState('');
   const [alcoholDegree, setAlcoholDegree] = useState('');
   const [priceInputMode, setPriceInputMode] = useState<PriceInputMode>('ht_direct');
+  const [fiscalCategory, setFiscalCategory] = useState('spiritueux');
 
-  // Alcohol tax rates from system params (admin-managed)
-  const droitAcciseParam = useSystemParamsStore((s) => s.params.find((x) => x.key === 'droit_accise'));
-  const cotisationSecuParam = useSystemParamsStore((s) => s.params.find((x) => x.key === 'cotisation_secu'));
-  const alcoholTaxRates = {
-    droitAccise: droitAcciseParam ? parseFloat(droitAcciseParam.value) || 0 : 0,
-    cotisationSecu: cotisationSecuParam ? parseFloat(cotisationSecuParam.value) || 0 : 0,
-  };
+  // Alcohol tax rates from rates store
+  const rates = useRatesStore((s) => s.rates);
+  const selectedRate = rates.find((r) => r.slug === fiscalCategory);
 
   // Serving state
   const [enabledServings, setEnabledServings] = useState<Set<string>>(new Set());
@@ -200,11 +197,8 @@ export function ProductFormScreen({ route, navigation }: Props) {
   const currentContainerVol = parseLocaleFloat(containerVolume) || 0;
   const currentPurchasePriceRaw = parseLocaleFloat(purchasePrice) || 0;
   const currentAlcoholDegree = parseLocaleFloat(alcoholDegree) || 0;
-  const alcoholTax = priceInputMode === 'hors_droit'
-    ? calculateAlcoholTax(
-        currentContainerVol, currentAlcoholDegree,
-        alcoholTaxRates.droitAccise, alcoholTaxRates.cotisationSecu,
-      )
+  const alcoholTax = priceInputMode === 'hors_droit' && selectedRate
+    ? calculateDroits(selectedRate, currentContainerVol, currentAlcoholDegree, 0).totalDroits
     : 0;
   const currentPurchasePrice = currentPurchasePriceRaw + alcoholTax;
 
@@ -480,6 +474,21 @@ export function ProductFormScreen({ route, navigation }: Props) {
             placeholder="0,00"
             suffix="€"
           />
+
+          <Text style={{ fontSize: 13, fontWeight: '600', color: colors.textSecondary, marginBottom: 6, marginTop: 8 }}>Categorie fiscale</Text>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginBottom: 8 }}>
+            {rates.map((r) => (
+              <TouchableOpacity
+                key={r.slug}
+                style={{ paddingHorizontal: 8, paddingVertical: 4, borderRadius: 20, backgroundColor: fiscalCategory === r.slug ? colors.primary : colors.surface, borderWidth: 1, borderColor: fiscalCategory === r.slug ? colors.primary : colors.border }}
+                onPress={() => setFiscalCategory(r.slug)}
+              >
+                <Text style={{ fontSize: 11, fontWeight: '600', color: fiscalCategory === r.slug ? colors.textLight : colors.textSecondary }}>
+                  {r.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
 
           <Input
             label="Degré d'alcool"

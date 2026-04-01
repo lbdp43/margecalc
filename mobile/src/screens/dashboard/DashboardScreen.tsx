@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, useWindowDimensions } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, useWindowDimensions, Modal, ScrollView, KeyboardAvoidingView, Platform as RNPlatform } from 'react-native';
 import { confirm } from '../../utils/alert';
 import Svg, { Path } from 'react-native-svg';
 import { useNavigation } from '@react-navigation/native';
@@ -17,8 +17,7 @@ import { useOfflineQuery } from '../../hooks/useOfflineQuery';
 import * as productService from '../../services/product.service';
 import { useAuthStore } from '../../store/auth.store';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
-import { useCalculator } from './useCalculator';
-import { CalculatorModal } from './CalculatorModal';
+import { DroitsCalculator } from '../../components/ui/DroitsCalculator';
 import { ProductDashboardCard } from './ProductDashboardCard';
 import { CategoryChart } from './CategoryChart';
 import { TopFlopSection } from './TopFlopSection';
@@ -40,7 +39,7 @@ export function DashboardScreen() {
   const [welcomeVisible, setWelcomeVisible] = useState(true);
   const [loadingPref, setLoadingPref] = useState(true);
 
-  const calc = useCalculator();
+  const [calcVisible, setCalcVisible] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -172,7 +171,7 @@ export function DashboardScreen() {
         </View>
         <TouchableOpacity
           style={styles.calcButton}
-          onPress={calc.openCalc}
+          onPress={() => setCalcVisible(true)}
           activeOpacity={0.7}
           accessibilityRole="button"
           accessibilityLabel="Ouvrir le calculateur de prix HT"
@@ -184,17 +183,23 @@ export function DashboardScreen() {
       </View>
 
       {/* Alcohol Tax Calculator Modal */}
-      <CalculatorModal
-        visible={calc.calcVisible}
-        onClose={calc.closeCalc}
-        calcPriceHD={calc.calcPriceHD}
-        onChangePriceHD={calc.setCalcPriceHD}
-        calcContainer={calc.calcContainer}
-        onChangeContainer={calc.setCalcContainer}
-        calcDegree={calc.calcDegree}
-        onChangeDegree={calc.setCalcDegree}
-        calcTax={calc.calcTax}
-      />
+      {calcVisible && (
+        <Modal visible transparent animationType="slide" onRequestClose={() => setCalcVisible(false)}>
+          <KeyboardAvoidingView style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' }} behavior={RNPlatform.OS === 'ios' ? 'padding' : undefined}>
+            <View style={{ backgroundColor: colors.cardBackground, borderTopLeftRadius: 28, borderTopRightRadius: 28, maxHeight: '90%' }}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: spacing.lg, paddingTop: spacing.lg, paddingBottom: spacing.sm }}>
+                <Text style={{ ...typography.h2, color: colors.primary }}>Calculateur</Text>
+                <TouchableOpacity onPress={() => setCalcVisible(false)} style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' }}>
+                  <Ionicons name="close" size={18} color={colors.text} />
+                </TouchableOpacity>
+              </View>
+              <ScrollView style={{ paddingHorizontal: spacing.md, paddingBottom: spacing.xxl }} keyboardShouldPersistTaps="handled">
+                <DroitsCalculator compact />
+              </ScrollView>
+            </View>
+          </KeyboardAvoidingView>
+        </Modal>
+      )}
 
       {/* Margin by Category Chart */}
       <ErrorBoundary fallbackMessage="Impossible d'afficher le graphique">
