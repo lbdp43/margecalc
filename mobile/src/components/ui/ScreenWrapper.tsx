@@ -21,10 +21,6 @@ export function ScreenWrapper({
   onRefresh,
   refreshing = false,
 }: ScreenWrapperProps) {
-  const content = (
-    <View style={[styles.content, style]}>{children}</View>
-  );
-
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       {decorations && <DecorativeCurve variant="bottom" />}
@@ -43,10 +39,10 @@ export function ScreenWrapper({
             />
           ) : undefined}
         >
-          {content}
+          <View style={[styles.scrollInner, style]}>{children}</View>
         </ScrollView>
       ) : (
-        content
+        <View style={[styles.staticContent, style]}>{children}</View>
       )}
     </SafeAreaView>
   );
@@ -65,7 +61,13 @@ const styles = StyleSheet.create({
   scrollContent: {
     flexGrow: 1,
   },
-  content: {
+  // Inside ScrollView: NO flex:1 so content takes natural height and scrolls
+  scrollInner: {
+    padding: spacing.md,
+    paddingBottom: spacing.xxl,
+  },
+  // Outside ScrollView: flex:1 to fill screen
+  staticContent: {
     flex: 1,
     padding: spacing.md,
   },
