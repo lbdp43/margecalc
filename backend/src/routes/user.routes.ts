@@ -34,4 +34,15 @@ router.patch('/me', async (req: Request, res: Response) => {
   }
 });
 
+// Delete all user data (products, recipes, etc.) — keeps the account
+router.delete('/me/data', async (req: Request, res: Response) => {
+  try {
+    await userService.deleteUserData(req.user!.userId);
+    res.json({ success: true });
+  } catch (err) {
+    console.error('[USER] Error deleting user data:', err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
 export default router;

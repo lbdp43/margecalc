@@ -35,3 +35,18 @@ export async function updateUser(userId: string, data: { businessName?: string; 
   });
   return formatUser(user);
 }
+
+export async function deleteUserData(userId: string) {
+  // Delete all user data but keep the account itself
+  await prisma.$transaction([
+    prisma.recipeConsumable.deleteMany({ where: { recipe: { userId } } }),
+    prisma.recipeIngredient.deleteMany({ where: { recipe: { userId } } }),
+    prisma.recipe.deleteMany({ where: { userId } }),
+    prisma.productServing.deleteMany({ where: { product: { userId } } }),
+    prisma.priceHistory.deleteMany({ where: { product: { userId } } }),
+    prisma.product.deleteMany({ where: { userId } }),
+    prisma.servingType.deleteMany({ where: { userId } }),
+    prisma.customContainer.deleteMany({ where: { userId } }),
+    prisma.scanUsage.deleteMany({ where: { userId } }),
+  ]);
+}

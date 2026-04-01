@@ -3,6 +3,7 @@ import { View, Platform, StyleSheet } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuthStore } from '../store/auth.store';
 import { useSystemParamsStore } from '../store/systemParams.store';
+import { api } from '../services/api';
 import { AuthNavigator } from './AuthNavigator';
 import { AppNavigator } from './AppNavigator';
 import { SubscriptionScreen } from '../screens/subscription/SubscriptionScreen';
@@ -33,6 +34,9 @@ export function RootNavigator() {
       const isAdmin = user.role === 'admin';
       const hasSubscription = user.subscriptionStatus === 'active' || user.subscriptionStatus === 'trialing';
       if (!isAdmin && !hasSubscription) {
+        // Delete all server-side data (products, recipes, etc.) for non-subscribers
+        api.delete('/users/me/data').catch(() => {});
+        // Clear local session
         AsyncStorage.multiRemove(['margebar_token', 'margebar_user', PAYWALL_SEEN_KEY]).catch(() => {});
       }
     }
