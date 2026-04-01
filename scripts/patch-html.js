@@ -24,10 +24,42 @@ const extraHead = `
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="theme-color" content="#1B4332" />
     <style id="safe-area-fix">
+      html, body {
+        height: 100%;
+        width: 100%;
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+      }
       #root {
+        height: 100%;
+        width: 100%;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
         padding-top: env(safe-area-inset-top, 0px);
         padding-bottom: env(safe-area-inset-bottom, 0px);
         box-sizing: border-box;
+      }
+      /* Force all RN Web divs in the tree to take full height */
+      #root > div {
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+        min-height: 0;
+      }
+      #root > div > div {
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+        min-height: 0;
+      }
+      /* Make RN Web ScrollView actually scroll */
+      [data-testid="screen-scroll"] {
+        overflow-y: auto !important;
+        -webkit-overflow-scrolling: touch;
+        flex: 1;
+        min-height: 0;
       }
     </style>
 `;
