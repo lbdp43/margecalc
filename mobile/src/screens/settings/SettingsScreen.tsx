@@ -400,7 +400,61 @@ export function SettingsScreen() {
         </View>
       </View>
 
-      {/* Old droits d'alcool section removed — rates are now managed in admin panel */}
+      {/* Tarifs en vigueur — visible par tous, lecture seule pour non-admin */}
+      {!isAdmin && (
+        <View style={styles.sectionCard}>
+          <View style={styles.sectionHeader}>
+            <View style={styles.sectionAccent} />
+            <Text style={styles.sectionTitle}>Tarifs en vigueur</Text>
+            <View style={styles.lockBadge}>
+              <Ionicons name="lock-closed" size={12} color={colors.textSecondary} />
+            </View>
+          </View>
+          <View style={styles.sectionBody}>
+            <Text style={styles.sectionDesc}>
+              Tarifs {systemParams.find(p => p.key === 'tarif_annee')?.value || '2026'} des droits d'accise et cotisation securite sociale. Ces valeurs sont gerees par l'administrateur.
+            </Text>
+
+            <Text style={[styles.subLabel, { marginTop: spacing.sm }]}>Droits d'accise</Text>
+            {rates.map((r) => (
+              <View key={r.slug} style={styles.thresholdCard}>
+                <Text style={[styles.thresholdLabel, { flex: 1 }]}>{r.label}</Text>
+                <Text style={styles.readOnlyValue}>{r.acciseRate}</Text>
+                <Text style={styles.thresholdUnit}>{r.acciseUnit === 'euro/hl' ? '€/hl' : r.acciseUnit === 'euro/hl_degree' ? '€/hl/deg' : '€/hlap'}</Text>
+              </View>
+            ))}
+
+            <Text style={[styles.subLabel, { marginTop: spacing.md }]}>Cotisation securite sociale</Text>
+            <Text style={styles.sectionDesc}>Applicable uniquement au-dessus de 18° vol.</Text>
+            {rates.filter((r) => r.cotisationCond).map((r) => (
+              <View key={r.slug} style={styles.thresholdCard}>
+                <Text style={[styles.thresholdLabel, { flex: 1 }]}>{r.label}</Text>
+                <Text style={styles.readOnlyValue}>{r.cotisationRate}</Text>
+                <Text style={styles.thresholdUnit}>{r.cotisationUnit === 'euro/hlap' ? '€/hlap' : '€/hl'}</Text>
+              </View>
+            ))}
+
+            {systemParams.find(p => p.key === 'lien_reference')?.value ? (
+              <TouchableOpacity
+                style={styles.refLinkRow}
+                onPress={() => {
+                  const url = systemParams.find(p => p.key === 'lien_reference')?.value;
+                  if (url) {
+                    if (Platform.OS === 'web') {
+                      (window as any).open(url, '_blank');
+                    } else {
+                      Linking.openURL(url);
+                    }
+                  }
+                }}
+              >
+                <Ionicons name="open-outline" size={16} color={colors.accent} />
+                <Text style={styles.refLinkText}>Source officielle : Taxation des boissons</Text>
+              </TouchableOpacity>
+            ) : null}
+          </View>
+        </View>
+      )}
 
       {/* Seuils de marge */}
       <View style={styles.sectionCard}>
@@ -1278,6 +1332,22 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     borderRadius: borderRadius.sm,
     overflow: 'hidden',
+  },
+
+  // Reference link
+  refLinkRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: spacing.md,
+    paddingTop: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  refLinkText: {
+    ...typography.bodySmall,
+    color: colors.accent,
+    marginLeft: spacing.xs,
+    textDecorationLine: 'underline',
   },
 
   // Lock badge (for read-only sections)
