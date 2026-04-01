@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View } from 'react-native';
+import { View, Platform, StyleSheet } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuthStore } from '../store/auth.store';
 import { useSystemParamsStore } from '../store/systemParams.store';
@@ -73,7 +73,11 @@ export function RootNavigator() {
   }
 
   if (!isAuthenticated) {
-    return <AuthNavigator />;
+    return (
+      <View style={rootStyles.fullScreen}>
+        <AuthNavigator />
+      </View>
+    );
   }
 
   // Show paywall if user has no active subscription and hasn't skipped it this session
@@ -81,14 +85,14 @@ export function RootNavigator() {
   const hasActiveSubscription = user?.subscriptionStatus === 'active' || user?.subscriptionStatus === 'trialing';
   if (!isAdmin && !hasActiveSubscription && !skippedPaywall) {
     return (
-      <SubscriptionScreen
-        onDismiss={() => {
-          // Only set in-memory flag — NOT persisted to AsyncStorage.
-          // On next refresh/reopen, user will see paywall again.
-          setSkippedPaywall(true);
-          setPaywallSeen(true);
-        }}
-      />
+      <View style={rootStyles.fullScreen}>
+        <SubscriptionScreen
+          onDismiss={() => {
+            setSkippedPaywall(true);
+            setPaywallSeen(true);
+          }}
+        />
+      </View>
     );
   }
 
@@ -102,9 +106,16 @@ export function RootNavigator() {
   }
 
   return (
-    <View style={{ flex: 1 }}>
+    <View style={rootStyles.fullScreen}>
       <OfflineBanner />
       <AppNavigator />
     </View>
   );
 }
+
+const rootStyles = StyleSheet.create({
+  fullScreen: {
+    flex: 1,
+    ...(Platform.OS === 'web' ? { height: '100vh' as any } : {}),
+  },
+});
