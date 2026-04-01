@@ -483,5 +483,4 @@ const styles = StyleSheet.create({
     lineHeight: 17,
     paddingHorizontal: spacing.md,
   },
-  },
 });
