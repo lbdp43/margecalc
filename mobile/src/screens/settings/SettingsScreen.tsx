@@ -13,6 +13,7 @@ import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
 import { useAuthStore } from '../../store/auth.store';
 import { useSystemParamsStore } from '../../store/systemParams.store';
+import { useRatesStore } from '../../store/rates.store';
 import { api } from '../../services/api';
 import * as servingService from '../../services/serving.service';
 import * as categoryService from '../../services/category.service';
@@ -41,16 +42,16 @@ export function SettingsScreen() {
   const [greenThreshold, setGreenThreshold] = useState(String(DEFAULT_MARGIN_THRESHOLDS.good));
   const [orangeThreshold, setOrangeThreshold] = useState(String(DEFAULT_MARGIN_THRESHOLDS.medium));
 
-  // System params (admin-managed alcohol taxes)
-  const { params: systemParams, getParam, getParamNum, updateParam } = useSystemParamsStore();
+  // System params (admin-managed)
+  const { params: systemParams, updateParam } = useSystemParamsStore();
+  const { rates, updateRate, resetDefaults } = useRatesStore();
   const isAdmin = user?.role === 'admin';
 
-  // Local state for admin editing
-  const [editDroitAccise, setEditDroitAccise] = useState('');
-  const [editCotisationSecu, setEditCotisationSecu] = useState('');
-  const [editTvaAlcool, setEditTvaAlcool] = useState('');
+  // Local state for admin editing of rates
+  const [editRates, setEditRates] = useState<Record<string, { accise: string; cotisation: string }>>({});
   const [editTvaSoft, setEditTvaSoft] = useState('');
   const [editTvaFood, setEditTvaFood] = useState('');
+  const [editLienRef, setEditLienRef] = useState('');
   const [savingSystemParams, setSavingSystemParams] = useState(false);
 
   // Categories
@@ -78,15 +79,22 @@ export function SettingsScreen() {
       loadCategories();
       loadContainers();
       loadSubscription();
-      // Load system params and init admin edit fields
+      // Load system params and rates, init admin edit fields
       useSystemParamsStore.getState().loadParams(true).then(() => {
         if (!mounted) return;
         const state = useSystemParamsStore.getState();
-        setEditDroitAccise(state.getParam('droit_accise') || '');
-        setEditCotisationSecu(state.getParam('cotisation_secu') || '');
-        setEditTvaAlcool(state.getParam('tva_alcool') || '');
         setEditTvaSoft(state.getParam('tva_soft') || '');
         setEditTvaFood(state.getParam('tva_food') || '');
+        setEditLienRef(state.getParam('lien_reference') || '');
+      });
+      useRatesStore.getState().loadRates(true).then(() => {
+        if (!mounted) return;
+        const ratesState = useRatesStore.getState();
+        const initial: Record<string, { accise: string; cotisation: string }> = {};
+        ratesState.rates.forEach((r) => {
+          initial[r.slug] = { accise: String(r.acciseRate), cotisation: String(r.cotisationRate) };
+        });
+        setEditRates(initial);
       });
       AsyncStorage.getItem('margebar_margin_thresholds').then((thresholdsVal) => {
         if (!mounted) return;
@@ -303,14 +311,39 @@ export function SettingsScreen() {
   const handleSaveSystemParams = async () => {
     setSavingSystemParams(true);
     try {
-      await updateParam('droit_accise', editDroitAccise.replace(',', '.'));
-      await updateParam('cotisation_secu', editCotisationSecu.replace(',', '.'));
-      await updateParam('tva_alcool', editTvaAlcool.replace(',', '.'));
+      // Save system params
       await updateParam('tva_soft', editTvaSoft.replace(',', '.'));
       await updateParam('tva_food', editTvaFood.replace(',', '.'));
-      alert('Succès', 'Paramètres système mis à jour');
+      await updateParam('lien_reference', editLienRef);
+      // Save all rates
+      for (const [slug, values] of Object.entries(editRates)) {
+        await updateRate(slug, {
+          acciseRate: parseFloat(values.accise.replace(',', '.')) || 0,
+          cotisationRate: parseFloat(values.cotisation.replace(',', '.')) || 0,
+        });
+      }
+      alert('Succes', 'Tarifs mis a jour pour tous les utilisateurs');
     } catch {
-      alert('Erreur', 'Impossible de sauvegarder les paramètres système');
+      alert('Erreur', 'Impossible de sauvegarder');
+    } finally {
+      setSavingSystemParams(false);
+    }
+  };
+
+  const handleResetRates = async () => {
+    setSavingSystemParams(true);
+    try {
+      await resetDefaults();
+      // Reload edit state
+      const ratesState = useRatesStore.getState();
+      const initial: Record<string, { accise: string; cotisation: string }> = {};
+      ratesState.rates.forEach((r) => {
+        initial[r.slug] = { accise: String(r.acciseRate), cotisation: String(r.cotisationRate) };
+      });
+      setEditRates(initial);
+      alert('Succes', 'Tarifs reinitialises aux valeurs 2026');
+    } catch {
+      alert('Erreur', 'Impossible de reinitialiser');
     } finally {
       setSavingSystemParams(false);
     }
@@ -367,73 +400,7 @@ export function SettingsScreen() {
         </View>
       </View>
 
-      {/* Droits d'alcool — read-only for users, editable for admin */}
-      <View style={styles.sectionCard}>
-        <View style={styles.sectionHeader}>
-          <View style={styles.sectionAccent} />
-          <Text style={styles.sectionTitle}>Droits d'alcool</Text>
-          {!isAdmin && (
-            <View style={styles.lockBadge}>
-              <Ionicons name="lock-closed" size={12} color={colors.textSecondary} />
-            </View>
-          )}
-        </View>
-        <View style={styles.sectionBody}>
-          <Text style={styles.sectionDesc}>
-            Prix par hectolitre d'alcool pur (hlAP). Utilisé pour calculer la taxe sur les produits alcoolisés.
-            {!isAdmin ? '\nCes valeurs sont gérées par l\'administrateur.' : ''}
-          </Text>
-          <View style={styles.thresholdCard}>
-            <Text style={[styles.thresholdLabel, { flex: 1 }]}>Droit d'accise</Text>
-            <View style={styles.thresholdInputWrap}>
-              {isAdmin ? (
-                <TextInput
-                  style={[styles.thresholdInput, { width: 80 }]}
-                  value={editDroitAccise}
-                  onChangeText={setEditDroitAccise}
-                  keyboardType="decimal-pad"
-                  placeholder="0"
-                  placeholderTextColor={colors.textSecondary}
-                />
-              ) : (
-                <Text style={styles.readOnlyValue}>{systemParams.find(p => p.key === 'droit_accise')?.value || '—'}</Text>
-              )}
-              <Text style={styles.thresholdUnit}>€/hlAP</Text>
-            </View>
-          </View>
-          <View style={styles.thresholdCard}>
-            <Text style={[styles.thresholdLabel, { flex: 1 }]}>Cotisation sécu. sociale</Text>
-            <View style={styles.thresholdInputWrap}>
-              {isAdmin ? (
-                <TextInput
-                  style={[styles.thresholdInput, { width: 80 }]}
-                  value={editCotisationSecu}
-                  onChangeText={setEditCotisationSecu}
-                  keyboardType="decimal-pad"
-                  placeholder="0"
-                  placeholderTextColor={colors.textSecondary}
-                />
-              ) : (
-                <Text style={styles.readOnlyValue}>{systemParams.find(p => p.key === 'cotisation_secu')?.value || '—'}</Text>
-              )}
-              <Text style={styles.thresholdUnit}>€/hlAP</Text>
-            </View>
-          </View>
-          {isAdmin && (
-            <TouchableOpacity
-              style={[styles.adminSaveBtn, savingSystemParams && styles.saveBtnDisabled]}
-              onPress={handleSaveSystemParams}
-              disabled={savingSystemParams}
-              activeOpacity={0.8}
-            >
-              <Ionicons name="cloud-upload-outline" size={18} color={colors.textLight} style={{ marginRight: spacing.xs }} />
-              <Text style={styles.adminSaveBtnText}>
-                {savingSystemParams ? 'Enregistrement...' : 'Mettre à jour pour tous les utilisateurs'}
-              </Text>
-            </TouchableOpacity>
-          )}
-        </View>
-      </View>
+      {/* Old droits d'alcool section removed — rates are now managed in admin panel */}
 
       {/* Seuils de marge */}
       <View style={styles.sectionCard}>
@@ -763,74 +730,134 @@ export function SettingsScreen() {
 
       {/* Admin panel — visible only to admins */}
       {isAdmin && (
-        <View style={styles.sectionCard}>
-          <View style={styles.sectionHeader}>
-            <View style={[styles.sectionAccent, { backgroundColor: colors.marginOrange }]} />
-            <Text style={styles.sectionTitle}>Administration</Text>
-            <View style={styles.adminBadge}>
-              <Ionicons name="shield-checkmark" size={14} color={colors.textLight} />
-              <Text style={styles.adminBadgeText}>Admin</Text>
-            </View>
-          </View>
-          <View style={styles.sectionBody}>
-            <Text style={styles.sectionDesc}>
-              Taux de TVA appliqués à tous les utilisateurs. Seuls les administrateurs peuvent modifier ces valeurs.
-            </Text>
-            <View style={styles.thresholdCard}>
-              <Text style={[styles.thresholdLabel, { flex: 1 }]}>TVA alcool</Text>
-              <View style={styles.thresholdInputWrap}>
-                <TextInput
-                  style={[styles.thresholdInput, { width: 70 }]}
-                  value={editTvaAlcool}
-                  onChangeText={setEditTvaAlcool}
-                  keyboardType="decimal-pad"
-                  placeholder="0.20"
-                  placeholderTextColor={colors.textSecondary}
-                />
-                <Text style={styles.thresholdUnit}>%</Text>
+        <>
+          {/* Tarifs d'accise */}
+          <View style={styles.sectionCard}>
+            <View style={styles.sectionHeader}>
+              <View style={[styles.sectionAccent, { backgroundColor: colors.marginOrange }]} />
+              <Text style={styles.sectionTitle}>Tarifs d'accise</Text>
+              <View style={styles.adminBadge}>
+                <Ionicons name="shield-checkmark" size={14} color={colors.textLight} />
+                <Text style={styles.adminBadgeText}>Admin</Text>
               </View>
             </View>
-            <View style={styles.thresholdCard}>
-              <Text style={[styles.thresholdLabel, { flex: 1 }]}>TVA boissons non-alcoolisées</Text>
-              <View style={styles.thresholdInputWrap}>
-                <TextInput
-                  style={[styles.thresholdInput, { width: 70 }]}
-                  value={editTvaSoft}
-                  onChangeText={setEditTvaSoft}
-                  keyboardType="decimal-pad"
-                  placeholder="0.10"
-                  placeholderTextColor={colors.textSecondary}
-                />
-                <Text style={styles.thresholdUnit}>%</Text>
-              </View>
-            </View>
-            <View style={styles.thresholdCard}>
-              <Text style={[styles.thresholdLabel, { flex: 1 }]}>TVA alimentation</Text>
-              <View style={styles.thresholdInputWrap}>
-                <TextInput
-                  style={[styles.thresholdInput, { width: 70 }]}
-                  value={editTvaFood}
-                  onChangeText={setEditTvaFood}
-                  keyboardType="decimal-pad"
-                  placeholder="0.10"
-                  placeholderTextColor={colors.textSecondary}
-                />
-                <Text style={styles.thresholdUnit}>%</Text>
-              </View>
-            </View>
-            <TouchableOpacity
-              style={[styles.adminSaveBtn, savingSystemParams && styles.saveBtnDisabled]}
-              onPress={handleSaveSystemParams}
-              disabled={savingSystemParams}
-              activeOpacity={0.8}
-            >
-              <Ionicons name="cloud-upload-outline" size={18} color={colors.textLight} style={{ marginRight: spacing.xs }} />
-              <Text style={styles.adminSaveBtnText}>
-                {savingSystemParams ? 'Enregistrement...' : 'Mettre à jour pour tous les utilisateurs'}
+            <View style={styles.sectionBody}>
+              <Text style={styles.sectionDesc}>
+                Tarifs par categorie fiscale. Appliques a tous les utilisateurs.
               </Text>
-            </TouchableOpacity>
+              {rates.map((r) => (
+                <View key={r.slug} style={styles.systemParamRow}>
+                  <View style={{ flex: 1, marginRight: spacing.sm }}>
+                    <Text style={styles.systemParamLabel}>{r.label}</Text>
+                    <Text style={styles.systemParamDesc}>{r.acciseUnit}</Text>
+                  </View>
+                  <TextInput
+                    style={[styles.thresholdInput, { width: 80 }]}
+                    value={editRates[r.slug]?.accise || ''}
+                    onChangeText={(v) => setEditRates((prev) => ({ ...prev, [r.slug]: { ...prev[r.slug], accise: v } }))}
+                    keyboardType="decimal-pad"
+                    placeholderTextColor={colors.textSecondary}
+                  />
+                </View>
+              ))}
+            </View>
           </View>
-        </View>
+
+          {/* Cotisation securite sociale */}
+          <View style={styles.sectionCard}>
+            <View style={styles.sectionHeader}>
+              <View style={[styles.sectionAccent, { backgroundColor: colors.marginOrange }]} />
+              <Text style={styles.sectionTitle}>Cotisation secu. sociale</Text>
+            </View>
+            <View style={styles.sectionBody}>
+              <Text style={styles.sectionDesc}>
+                Applicable uniquement aux boissons dont le degre depasse 18% vol.
+              </Text>
+              {rates.filter((r) => r.cotisationCond).map((r) => (
+                <View key={r.slug} style={styles.systemParamRow}>
+                  <View style={{ flex: 1, marginRight: spacing.sm }}>
+                    <Text style={styles.systemParamLabel}>{r.label}</Text>
+                    <Text style={styles.systemParamDesc}>{r.cotisationUnit}</Text>
+                  </View>
+                  <TextInput
+                    style={[styles.thresholdInput, { width: 80 }]}
+                    value={editRates[r.slug]?.cotisation || ''}
+                    onChangeText={(v) => setEditRates((prev) => ({ ...prev, [r.slug]: { ...prev[r.slug], cotisation: v } }))}
+                    keyboardType="decimal-pad"
+                    placeholderTextColor={colors.textSecondary}
+                  />
+                </View>
+              ))}
+            </View>
+          </View>
+
+          {/* Parametres generaux admin */}
+          <View style={styles.sectionCard}>
+            <View style={styles.sectionHeader}>
+              <View style={[styles.sectionAccent, { backgroundColor: colors.marginOrange }]} />
+              <Text style={styles.sectionTitle}>Parametres generaux</Text>
+            </View>
+            <View style={styles.sectionBody}>
+              <View style={styles.thresholdCard}>
+                <Text style={[styles.thresholdLabel, { flex: 1 }]}>TVA boissons non-alcoolisees</Text>
+                <View style={styles.thresholdInputWrap}>
+                  <TextInput
+                    style={[styles.thresholdInput, { width: 70 }]}
+                    value={editTvaSoft}
+                    onChangeText={setEditTvaSoft}
+                    keyboardType="decimal-pad"
+                    placeholderTextColor={colors.textSecondary}
+                  />
+                  <Text style={styles.thresholdUnit}>%</Text>
+                </View>
+              </View>
+              <View style={styles.thresholdCard}>
+                <Text style={[styles.thresholdLabel, { flex: 1 }]}>TVA alimentation</Text>
+                <View style={styles.thresholdInputWrap}>
+                  <TextInput
+                    style={[styles.thresholdInput, { width: 70 }]}
+                    value={editTvaFood}
+                    onChangeText={setEditTvaFood}
+                    keyboardType="decimal-pad"
+                    placeholderTextColor={colors.textSecondary}
+                  />
+                  <Text style={styles.thresholdUnit}>%</Text>
+                </View>
+              </View>
+              <View style={styles.thresholdCard}>
+                <Text style={[styles.thresholdLabel, { flex: 1 }]}>Lien de reference</Text>
+              </View>
+              <TextInput
+                style={[styles.thresholdInput, { width: '100%' as any, marginBottom: spacing.sm }]}
+                value={editLienRef}
+                onChangeText={setEditLienRef}
+                placeholder="https://..."
+                placeholderTextColor={colors.textSecondary}
+                autoCapitalize="none"
+              />
+              <TouchableOpacity
+                style={[styles.adminSaveBtn, savingSystemParams && styles.saveBtnDisabled]}
+                onPress={handleSaveSystemParams}
+                disabled={savingSystemParams}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="cloud-upload-outline" size={18} color={colors.textLight} style={{ marginRight: spacing.xs }} />
+                <Text style={styles.adminSaveBtnText}>
+                  {savingSystemParams ? 'Enregistrement...' : 'Enregistrer tous les tarifs'}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.adminSaveBtn, { backgroundColor: colors.marginOrange, marginTop: spacing.sm }]}
+                onPress={handleResetRates}
+                disabled={savingSystemParams}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="refresh-outline" size={18} color={colors.textLight} style={{ marginRight: spacing.xs }} />
+                <Text style={styles.adminSaveBtnText}>Reinitialiser tarifs 2026</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </>
       )}
 
       {/* Save button */}
