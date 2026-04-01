@@ -38,7 +38,7 @@ export function RootNavigator() {
         // Delete all server-side data (products, recipes, etc.) for non-subscribers
         api.delete('/users/me/data').catch(() => {});
         // Clear local session
-        AsyncStorage.multiRemove(['margebar_token', 'margebar_user', PAYWALL_SEEN_KEY]).catch(() => {});
+        AsyncStorage.multiRemove(['margebar_token', 'margebar_user', PAYWALL_SEEN_KEY, 'margebar_saved_calcs']).catch(() => {});
       }
     }
   }, [isLoading, isAuthenticated, user]);

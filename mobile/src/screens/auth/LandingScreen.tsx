@@ -79,17 +79,8 @@ export function LandingScreen({ navigation }: Props) {
         <Text style={styles.secondaryBtnText}>J'ai deja un compte</Text>
       </TouchableOpacity>
 
-      <TouchableOpacity
-        style={styles.skipBtn}
-        onPress={() => navigation.navigate('Register')}
-        activeOpacity={0.7}
-      >
-        <Ionicons name="eye-outline" size={18} color={colors.textSecondary} style={{ marginRight: spacing.sm }} />
-        <Text style={styles.skipBtnText}>Continuer sans abonnement</Text>
-      </TouchableOpacity>
-
       <Text style={styles.skipWarningText}>
-        Le calculateur ci-dessus reste gratuit. Sans abonnement, vos donnees ne seront pas conservees.
+        Le calculateur ci-dessus est gratuit et ne necessite pas de compte.
       </Text>
 
       <Text style={styles.legal}>
