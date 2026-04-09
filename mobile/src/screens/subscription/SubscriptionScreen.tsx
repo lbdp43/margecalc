@@ -122,7 +122,7 @@ export function SubscriptionScreen({ onDismiss }: Props) {
         >
           <View style={[styles.planRadio, selectedPlan === 'monthly' && styles.planRadioActive]} />
           <Text style={[styles.planLabel, selectedPlan === 'monthly' && styles.planLabelActive]}>Mensuel</Text>
-          <Text style={[styles.planPrice, selectedPlan === 'monthly' && styles.planPriceActive]}>2,50 €</Text>
+          <Text style={[styles.planPrice, selectedPlan === 'monthly' && styles.planPriceActive]}>3 €</Text>
           <Text style={[styles.planPeriod, selectedPlan === 'monthly' && styles.planPeriodActive]}>/mois</Text>
         </TouchableOpacity>
 
@@ -136,7 +136,7 @@ export function SubscriptionScreen({ onDismiss }: Props) {
           </View>
           <View style={[styles.planRadio, selectedPlan === 'yearly' && styles.planRadioActive]} />
           <Text style={[styles.planLabel, selectedPlan === 'yearly' && styles.planLabelActive]}>Annuel</Text>
-          <Text style={[styles.planPrice, selectedPlan === 'yearly' && styles.planPriceActive]}>25 €</Text>
+          <Text style={[styles.planPrice, selectedPlan === 'yearly' && styles.planPriceActive]}>30 €</Text>
           <Text style={[styles.planPeriod, selectedPlan === 'yearly' && styles.planPeriodActive]}>/an</Text>
         </TouchableOpacity>
       </View>

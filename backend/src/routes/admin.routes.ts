@@ -5,8 +5,8 @@ import { authenticate, requireAdmin } from '../middleware/auth';
 const router = Router();
 
 // Subscription pricing (TTC). Kept in sync with the SubscriptionScreen display.
-const PRICE_MONTHLY_TTC = 2.5;
-const PRICE_YEARLY_TTC = 25;
+const PRICE_MONTHLY_TTC = 3;
+const PRICE_YEARLY_TTC = 30;
 const VAT_RATE = 0.20;
 
 router.use(authenticate, requireAdmin);

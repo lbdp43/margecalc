@@ -758,7 +758,7 @@ export function SettingsScreen() {
                 </Text>
                 {subPlan && (
                   <Text style={styles.subscriptionPlan}>
-                    Plan : {subPlan === 'pro_yearly' ? 'Annuel' : 'Mensuel'} — 2,50 €/mois
+                    Plan : {subPlan === 'pro_yearly' ? 'Annuel — 30 €/an' : 'Mensuel — 3 €/mois'}
                   </Text>
                 )}
                 {subEndDate && (

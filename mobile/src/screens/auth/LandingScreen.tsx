@@ -74,11 +74,11 @@ export function LandingScreen({ navigation }: Props) {
         </View>
         <View style={styles.plansRow}>
           <View style={styles.planMini}>
-            <Text style={styles.planMiniPrice}>2,50 €<Text style={styles.planMiniPeriod}>/mois</Text></Text>
+            <Text style={styles.planMiniPrice}>3 €<Text style={styles.planMiniPeriod}>/mois</Text></Text>
           </View>
           <Text style={styles.planOr}>ou</Text>
           <View style={styles.planMini}>
-            <Text style={styles.planMiniPrice}>25 €<Text style={styles.planMiniPeriod}>/an</Text></Text>
+            <Text style={styles.planMiniPrice}>30 €<Text style={styles.planMiniPeriod}>/an</Text></Text>
             <View style={styles.planSaveBadge}>
               <Text style={styles.planSaveText}>-17%</Text>
             </View>
