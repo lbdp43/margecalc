@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
-import { View, TouchableOpacity, StyleSheet, Platform } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigationState } from '@react-navigation/native';
 import { FeedbackModal } from './FeedbackModal';
-import { colors, spacing, borderRadius, shadows } from '../../theme';
+import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 
 const DASHBOARD_ROUTE_NAME = 'Tableau de bord';
 
@@ -16,7 +16,7 @@ function getActiveRouteName(state: any): string {
 }
 
 /**
- * Floating feedback button displayed in the top-left on every authenticated
+ * Floating feedback button displayed in the top-right on every authenticated
  * screen. Users can dismiss it with the "×" on any page EXCEPT the dashboard,
  * where it remains always visible.
  *
@@ -71,7 +71,7 @@ export function FeedbackButton() {
   return (
     <>
       <View
-        style={[styles.wrap, { top: topOffset, left: spacing.sm + 4 }]}
+        style={[styles.wrap, { top: topOffset, right: spacing.sm + 4 }]}
         pointerEvents="box-none"
       >
         <TouchableOpacity
@@ -79,12 +79,13 @@ export function FeedbackButton() {
           onPress={() => setModalVisible(true)}
           activeOpacity={0.8}
           accessibilityRole="button"
-          accessibilityLabel="Signaler un retour"
+          accessibilityLabel="Signaler un bug"
         >
-          <Ionicons name="chatbubble-ellipses-outline" size={18} color={colors.white} />
+          <Ionicons name="bug-outline" size={16} color={colors.white} />
+          <Text style={styles.buttonText}>Signaler un bug</Text>
         </TouchableOpacity>
 
-        {/* Dismiss button — hidden on the dashboard */}
+        {/* Dismiss button — placed on the left of the pill, hidden on the dashboard */}
         {!isOnDashboard && (
           <TouchableOpacity
             style={styles.dismiss}
@@ -114,19 +115,27 @@ const styles = StyleSheet.create({
     ...(Platform.OS === 'web' ? ({ pointerEvents: 'box-none' } as any) : {}),
   },
   button: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: colors.accent,
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    opacity: 0.9,
+    gap: 6,
+    height: 34,
+    paddingHorizontal: spacing.md,
+    borderRadius: borderRadius.full,
+    backgroundColor: colors.accent,
+    opacity: 0.92,
     ...shadows.md,
+  },
+  buttonText: {
+    ...typography.caption,
+    fontWeight: '700',
+    color: colors.white,
+    fontSize: 12,
+    letterSpacing: 0.2,
   },
   dismiss: {
     position: 'absolute',
-    top: -4,
-    right: -4,
+    top: -5,
+    left: -5,
     width: 18,
     height: 18,
     borderRadius: 9,
