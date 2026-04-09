@@ -14,11 +14,7 @@ interface AccessCode {
 }
 
 const ACCESS_CODES: Record<string, AccessCode> = {
-  'brasserie des plantes deux mille quinze': {
-    clientName: 'Brasserie des Plantes',
-    durationDays: 30,
-  },
-  'brasserie des plantes 2015': {
+  'brasserie des plantes': {
     clientName: 'Brasserie des Plantes',
     durationDays: 30,
   },
