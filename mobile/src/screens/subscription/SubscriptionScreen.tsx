@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Linking, Platform } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, TextInput, Linking, Platform } from 'react-native';
 import { alert, confirm } from '../../utils/alert';
 import { Ionicons } from '@expo/vector-icons';
 import { ScreenWrapper } from '../../components/ui/ScreenWrapper';
@@ -15,6 +15,8 @@ interface Props {
 export function SubscriptionScreen({ onDismiss }: Props) {
   const [selectedPlan, setSelectedPlan] = useState<'monthly' | 'yearly'>('monthly');
   const [loading, setLoading] = useState(false);
+  const [accessCode, setAccessCode] = useState('');
+  const [codeLoading, setCodeLoading] = useState(false);
   const user = useAuthStore((s) => s.user);
   const setAuth = useAuthStore((s) => s.setAuth);
   const token = useAuthStore((s) => s.token);
@@ -32,6 +34,32 @@ export function SubscriptionScreen({ onDismiss }: Props) {
       alert('Erreur', 'Impossible de lancer le paiement. Reessayez.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleRedeemCode = async () => {
+    if (!accessCode.trim() || codeLoading) return;
+    setCodeLoading(true);
+    try {
+      const result = await subscriptionService.redeemAccessCode(accessCode);
+      if (user && token) {
+        setAuth(token, {
+          ...user,
+          subscriptionStatus: result.subscriptionStatus as any,
+          subscriptionPlan: result.subscriptionPlan,
+          subscriptionEndDate: result.subscriptionEndDate,
+        });
+      }
+      setAccessCode('');
+      alert(
+        'Code valide',
+        `Bienvenue ${result.clientName} ! Vous beneficiez d'un acces gratuit de ${result.durationDays} jours.`,
+      );
+    } catch (err: any) {
+      const msg = err?.response?.data?.error || 'Code invalide';
+      alert('Erreur', msg);
+    } finally {
+      setCodeLoading(false);
     }
   };
 
@@ -125,6 +153,41 @@ export function SubscriptionScreen({ onDismiss }: Props) {
         </Text>
       </TouchableOpacity>
 
+      {/* Access code */}
+      <View style={styles.codeCard}>
+        <View style={styles.codeHeader}>
+          <Ionicons name="key-outline" size={18} color={colors.primary} />
+          <Text style={styles.codeTitle}>J'ai un code d'acces</Text>
+        </View>
+        <Text style={styles.codeDesc}>
+          Saisissez le code fourni pour beneficier d'un acces gratuit.
+        </Text>
+        <View style={styles.codeRow}>
+          <TextInput
+            style={styles.codeInput}
+            value={accessCode}
+            onChangeText={setAccessCode}
+            placeholder="Votre code"
+            placeholderTextColor={colors.textSecondary}
+            autoCapitalize="none"
+            autoCorrect={false}
+            editable={!codeLoading}
+            onSubmitEditing={handleRedeemCode}
+            returnKeyType="done"
+          />
+          <TouchableOpacity
+            style={[styles.codeBtn, (!accessCode.trim() || codeLoading) && styles.codeBtnDisabled]}
+            onPress={handleRedeemCode}
+            disabled={!accessCode.trim() || codeLoading}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.codeBtnText}>
+              {codeLoading ? '...' : 'Valider'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
       <TouchableOpacity
         style={styles.skipBtn}
         onPress={handleSkip}
@@ -172,6 +235,15 @@ const styles = StyleSheet.create({
   subscribeBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: colors.primary, borderRadius: borderRadius.md, paddingVertical: spacing.md, ...shadows.md },
   subscribeBtnDisabled: { opacity: 0.7 },
   subscribeBtnText: { ...typography.button, color: colors.white },
+  codeCard: { backgroundColor: colors.cardBackground, borderRadius: borderRadius.lg, padding: spacing.md, marginTop: spacing.md, borderWidth: 1, borderColor: colors.border },
+  codeHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: spacing.xs },
+  codeTitle: { ...typography.bodySmall, fontWeight: '600', color: colors.primary, marginLeft: spacing.sm },
+  codeDesc: { ...typography.caption, color: colors.textSecondary, marginBottom: spacing.sm },
+  codeRow: { flexDirection: 'row', gap: spacing.sm },
+  codeInput: { flex: 1, borderWidth: 1, borderColor: colors.border, borderRadius: borderRadius.md, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, ...typography.body, color: colors.text, backgroundColor: colors.background },
+  codeBtn: { paddingHorizontal: spacing.md, justifyContent: 'center', backgroundColor: colors.primary, borderRadius: borderRadius.md },
+  codeBtnDisabled: { opacity: 0.5 },
+  codeBtnText: { ...typography.button, color: colors.white, fontSize: 14 },
   skipBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.border, borderRadius: borderRadius.md, paddingVertical: spacing.md - 4, marginTop: spacing.sm, backgroundColor: colors.cardBackground },
   skipBtnText: { ...typography.bodySmall, fontWeight: '600', color: colors.textSecondary },
   skipWarningText: { ...typography.caption, color: colors.textSecondary, textAlign: 'center', marginTop: spacing.sm, lineHeight: 17, paddingHorizontal: spacing.md },

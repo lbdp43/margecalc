@@ -20,3 +20,16 @@ export async function createPortalSession(): Promise<{ url: string }> {
   const res = await api.post<{ url: string }>('/subscription/portal');
   return res.data;
 }
+
+export interface RedeemCodeResponse {
+  subscriptionStatus: string;
+  subscriptionPlan: string | null;
+  subscriptionEndDate: string | null;
+  clientName: string;
+  durationDays: number;
+}
+
+export async function redeemAccessCode(code: string): Promise<RedeemCodeResponse> {
+  const res = await api.post<RedeemCodeResponse>('/subscription/redeem-code', { code });
+  return res.data;
+}
