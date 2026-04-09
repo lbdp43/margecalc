@@ -45,10 +45,20 @@ function CocktailsNavigator() {
 function ScanTabButton() {
   const navigation = useNavigation<any>();
   const [menuVisible, setMenuVisible] = useState(false);
+  const isAdmin = useAuthStore((s) => s.user?.role === 'admin');
 
   const handleOption = (screen: string) => {
     setMenuVisible(false);
     navigation.navigate('Produits', { screen, params: {} });
+  };
+
+  const handlePress = () => {
+    // Non-admins only have the bottle scan option — skip the menu and go directly.
+    if (!isAdmin) {
+      navigation.navigate('Produits', { screen: 'ProductForm', params: {} });
+      return;
+    }
+    setMenuVisible(true);
   };
 
   return (
@@ -56,7 +66,7 @@ function ScanTabButton() {
       <TouchableOpacity
         style={scanStyles.button}
         activeOpacity={0.8}
-        onPress={() => setMenuVisible(true)}
+        onPress={handlePress}
       >
         <View style={scanStyles.innerCircle}>
           <Ionicons name="scan" size={32} color={colors.white} />
