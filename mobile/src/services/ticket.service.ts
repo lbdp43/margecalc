@@ -10,15 +10,21 @@ export interface CreateTicketPayload {
   screenshotBase64?: string | null;
 }
 
-export interface Ticket {
+export interface MyTicket {
   id: string;
   type: TicketType;
   message: string;
   screenName: string | null;
   screenshotBase64: string | null;
   status: TicketStatus;
+  adminReply: string | null;
+  repliedAt: string | null;
+  readByUser: boolean;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface Ticket extends MyTicket {
   user: {
     id: string;
     email: string;
@@ -33,6 +39,15 @@ export async function createTicket(payload: CreateTicketPayload): Promise<{ id: 
   return res.data;
 }
 
+export async function getMyTickets(): Promise<MyTicket[]> {
+  const res = await api.get<MyTicket[]>('/tickets/mine', { timeout: 30000 });
+  return res.data;
+}
+
+export async function markTicketRead(id: string): Promise<void> {
+  await api.patch(`/tickets/${id}/read`);
+}
+
 export async function getTickets(): Promise<Ticket[]> {
   const res = await api.get<Ticket[]>('/tickets', { timeout: 30000 });
   return res.data;
@@ -40,6 +55,10 @@ export async function getTickets(): Promise<Ticket[]> {
 
 export async function updateTicketStatus(id: string, status: TicketStatus): Promise<void> {
   await api.patch(`/tickets/${id}`, { status });
+}
+
+export async function replyToTicket(id: string, reply: string): Promise<void> {
+  await api.patch(`/tickets/${id}/reply`, { reply });
 }
 
 export async function deleteTicket(id: string): Promise<void> {

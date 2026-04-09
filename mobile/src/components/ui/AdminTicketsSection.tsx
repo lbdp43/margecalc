@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Image, Modal, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Image, Modal, ScrollView, TextInput, KeyboardAvoidingView, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { alert, confirm } from '../../utils/alert';
 import * as ticketService from '../../services/ticket.service';
@@ -21,6 +21,8 @@ export function AdminTicketsSection({ refreshKey }: Props) {
   const [loading, setLoading] = useState(false);
   const [filter, setFilter] = useState<'all' | TicketStatus>('open');
   const [previewTicket, setPreviewTicket] = useState<Ticket | null>(null);
+  const [replyDraft, setReplyDraft] = useState('');
+  const [sendingReply, setSendingReply] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -62,6 +64,44 @@ export function AdminTicketsSection({ refreshKey }: Props) {
       'Supprimer',
       true,
     );
+  };
+
+  const openPreview = (ticket: Ticket) => {
+    setPreviewTicket(ticket);
+    setReplyDraft(ticket.adminReply || '');
+  };
+
+  const closePreview = () => {
+    setPreviewTicket(null);
+    setReplyDraft('');
+  };
+
+  const handleSendReply = async () => {
+    if (!previewTicket) return;
+    if (!replyDraft.trim()) {
+      alert('Reponse vide', 'Ecrivez une reponse avant de l\'envoyer.');
+      return;
+    }
+    setSendingReply(true);
+    try {
+      await ticketService.replyToTicket(previewTicket.id, replyDraft.trim());
+      const now = new Date().toISOString();
+      setTickets((prev) =>
+        prev.map((t) =>
+          t.id === previewTicket.id
+            ? { ...t, adminReply: replyDraft.trim(), repliedAt: now, readByUser: false }
+            : t,
+        ),
+      );
+      setPreviewTicket((prev) =>
+        prev ? { ...prev, adminReply: replyDraft.trim(), repliedAt: now, readByUser: false } : null,
+      );
+      alert('Reponse envoyee', 'L\'utilisateur la verra a sa prochaine connexion.');
+    } catch (err: any) {
+      alert('Erreur', err?.response?.data?.error || 'Impossible d\'envoyer la reponse.');
+    } finally {
+      setSendingReply(false);
+    }
   };
 
   const filtered = filter === 'all' ? tickets : tickets.filter((t) => t.status === filter);
@@ -116,7 +156,7 @@ export function AdminTicketsSection({ refreshKey }: Props) {
               <TouchableOpacity
                 key={t.id}
                 style={[styles.ticket, t.status === 'resolved' && styles.ticketResolved]}
-                onPress={() => setPreviewTicket(t)}
+                onPress={() => openPreview(t)}
                 activeOpacity={0.7}
               >
                 <View style={styles.ticketHeader}>
@@ -127,6 +167,14 @@ export function AdminTicketsSection({ refreshKey }: Props) {
                   </Text>
                   {t.screenshotBase64 && (
                     <Ionicons name="image" size={14} color={colors.textSecondary} style={{ marginLeft: 6 }} />
+                  )}
+                  {t.adminReply && (
+                    <Ionicons
+                      name="chatbubble-ellipses"
+                      size={14}
+                      color={t.readByUser ? colors.textSecondary : colors.primary}
+                      style={{ marginLeft: 4 }}
+                    />
                   )}
                 </View>
                 <Text style={styles.ticketMessage} numberOfLines={2}>{t.message}</Text>
@@ -150,20 +198,23 @@ export function AdminTicketsSection({ refreshKey }: Props) {
         visible={!!previewTicket}
         transparent
         animationType="slide"
-        onRequestClose={() => setPreviewTicket(null)}
+        onRequestClose={closePreview}
       >
-        <View style={styles.previewOverlay}>
+        <KeyboardAvoidingView
+          style={styles.previewOverlay}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
           <View style={styles.previewSheet}>
             <View style={styles.previewHeader}>
               <Text style={styles.previewTitle}>Detail du ticket</Text>
               <TouchableOpacity
-                onPress={() => setPreviewTicket(null)}
+                onPress={closePreview}
                 hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               >
                 <Ionicons name="close" size={24} color={colors.textSecondary} />
               </TouchableOpacity>
             </View>
-            <ScrollView contentContainerStyle={styles.previewContent}>
+            <ScrollView contentContainerStyle={styles.previewContent} keyboardShouldPersistTaps="handled">
               {previewTicket && (
                 <>
                   <View style={styles.previewTopRow}>
@@ -205,6 +256,42 @@ export function AdminTicketsSection({ refreshKey }: Props) {
                     </>
                   )}
 
+                  {/* Admin reply */}
+                  <Text style={styles.previewLabel}>
+                    {previewTicket.adminReply ? 'Modifier la reponse' : 'Repondre a l\'utilisateur'}
+                  </Text>
+                  {previewTicket.adminReply && previewTicket.repliedAt && (
+                    <Text style={styles.replyInfo}>
+                      Derniere reponse le {new Date(previewTicket.repliedAt).toLocaleString('fr-FR')}
+                      {previewTicket.readByUser ? ' · Lue' : ' · Non lue'}
+                    </Text>
+                  )}
+                  <TextInput
+                    style={styles.replyInput}
+                    value={replyDraft}
+                    onChangeText={setReplyDraft}
+                    placeholder="Votre reponse..."
+                    placeholderTextColor={colors.textSecondary}
+                    multiline
+                    textAlignVertical="top"
+                    maxLength={4000}
+                  />
+                  <TouchableOpacity
+                    style={[styles.replySendBtn, (!replyDraft.trim() || sendingReply) && styles.replySendBtnDisabled]}
+                    onPress={handleSendReply}
+                    disabled={!replyDraft.trim() || sendingReply}
+                    activeOpacity={0.8}
+                  >
+                    <Ionicons name="send" size={14} color={colors.white} />
+                    <Text style={styles.replySendBtnText}>
+                      {sendingReply
+                        ? 'Envoi...'
+                        : previewTicket.adminReply
+                          ? 'Mettre a jour la reponse'
+                          : 'Envoyer la reponse'}
+                    </Text>
+                  </TouchableOpacity>
+
                   <View style={styles.previewActions}>
                     <TouchableOpacity
                       style={[styles.actionBtn, styles.actionBtnPrimary]}
@@ -234,7 +321,7 @@ export function AdminTicketsSection({ refreshKey }: Props) {
               )}
             </ScrollView>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );
@@ -447,6 +534,40 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.cardBackground,
+  },
+  replyInfo: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    marginBottom: spacing.xs,
+    fontStyle: 'italic',
+  },
+  replyInput: {
+    backgroundColor: colors.cardBackground,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    minHeight: 100,
+    ...typography.body,
+    color: colors.text,
+  },
+  replySendBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.primary,
+    borderRadius: borderRadius.md,
+    paddingVertical: spacing.sm + 2,
+    marginTop: spacing.sm,
+  },
+  replySendBtnDisabled: {
+    opacity: 0.5,
+  },
+  replySendBtnText: {
+    ...typography.bodySmall,
+    fontWeight: '700',
+    color: colors.white,
   },
   previewActions: {
     flexDirection: 'row',

@@ -7,6 +7,7 @@ const router = Router();
 const ALLOWED_TYPES = new Set(['bug', 'suggestion', 'question']);
 const ALLOWED_STATUSES = new Set(['open', 'resolved']);
 const MAX_MESSAGE_LENGTH = 4000;
+const MAX_REPLY_LENGTH = 4000;
 const MAX_SCREEN_NAME_LENGTH = 100;
 
 // POST /api/tickets — create a feedback ticket (any authenticated user)
@@ -52,6 +53,87 @@ router.post('/', authenticate, async (req: Request, res: Response) => {
   }
 });
 
+// GET /api/tickets/mine — list the authenticated user's own tickets
+// NOTE: must be declared BEFORE the admin `GET /` route so that "/mine" is
+// not mistaken for a ticket id by later param routes.
+router.get('/mine', authenticate, async (req: Request, res: Response) => {
+  try {
+    const tickets = await prisma.ticket.findMany({
+      where: { userId: req.user!.userId },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    res.json(
+      tickets.map((t) => ({
+        id: t.id,
+        type: t.type,
+        message: t.message,
+        screenName: t.screenName,
+        screenshotBase64: t.screenshotBase64,
+        status: t.status,
+        adminReply: t.adminReply,
+        repliedAt: t.repliedAt?.toISOString() || null,
+        readByUser: t.readByUser,
+        createdAt: t.createdAt.toISOString(),
+        updatedAt: t.updatedAt.toISOString(),
+      })),
+    );
+  } catch (err: any) {
+    console.error('List own tickets error:', err.message);
+    res.status(500).json({ error: 'Impossible de lister vos tickets' });
+  }
+});
+
+// PATCH /api/tickets/:id/read — mark a ticket as read by its owner
+router.patch('/:id/read', authenticate, async (req: Request, res: Response) => {
+  try {
+    const ticket = await prisma.ticket.findUnique({ where: { id: req.params.id } });
+    if (!ticket || ticket.userId !== req.user!.userId) {
+      return res.status(404).json({ error: 'Ticket introuvable' });
+    }
+    const updated = await prisma.ticket.update({
+      where: { id: req.params.id },
+      data: { readByUser: true },
+    });
+    res.json({ id: updated.id, readByUser: updated.readByUser });
+  } catch (err: any) {
+    console.error('Mark ticket read error:', err.message);
+    res.status(500).json({ error: 'Impossible de marquer le ticket' });
+  }
+});
+
+// PATCH /api/tickets/:id/reply — post or edit the admin reply (admin only)
+router.patch('/:id/reply', authenticate, requireAdmin, async (req: Request, res: Response) => {
+  try {
+    const { reply } = req.body;
+    if (typeof reply !== 'string' || !reply.trim()) {
+      return res.status(400).json({ error: 'Reponse requise' });
+    }
+    if (reply.length > MAX_REPLY_LENGTH) {
+      return res.status(400).json({ error: 'Reponse trop longue' });
+    }
+
+    const updated = await prisma.ticket.update({
+      where: { id: req.params.id },
+      data: {
+        adminReply: reply.trim(),
+        repliedAt: new Date(),
+        readByUser: false,
+      },
+    });
+
+    res.json({
+      id: updated.id,
+      adminReply: updated.adminReply,
+      repliedAt: updated.repliedAt?.toISOString() || null,
+      readByUser: updated.readByUser,
+    });
+  } catch (err: any) {
+    console.error('Reply ticket error:', err.message);
+    res.status(500).json({ error: 'Impossible de publier la reponse' });
+  }
+});
+
 // GET /api/tickets — list all tickets (admin only)
 router.get('/', authenticate, requireAdmin, async (_req: Request, res: Response) => {
   try {
@@ -72,6 +154,9 @@ router.get('/', authenticate, requireAdmin, async (_req: Request, res: Response)
         screenName: t.screenName,
         screenshotBase64: t.screenshotBase64,
         status: t.status,
+        adminReply: t.adminReply,
+        repliedAt: t.repliedAt?.toISOString() || null,
+        readByUser: t.readByUser,
         createdAt: t.createdAt.toISOString(),
         updatedAt: t.updatedAt.toISOString(),
         user: t.user,

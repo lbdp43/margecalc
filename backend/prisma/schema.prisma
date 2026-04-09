@@ -39,6 +39,9 @@ model Ticket {
   screenName       String?
   screenshotBase64 String?
   status           String   @default("open") // open | resolved
+  adminReply       String?
+  repliedAt        DateTime?
+  readByUser       Boolean  @default(true)
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 

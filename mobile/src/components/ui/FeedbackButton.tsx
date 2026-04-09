@@ -1,9 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigationState } from '@react-navigation/native';
 import { FeedbackModal } from './FeedbackModal';
+import { useAuthStore } from '../../store/auth.store';
+import * as ticketService from '../../services/ticket.service';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 
 const DASHBOARD_ROUTE_NAME = 'Tableau de bord';
@@ -33,8 +35,10 @@ function setDismissedGlobal(value: boolean) {
 
 export function FeedbackButton() {
   const insets = useSafeAreaInsets();
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const [modalVisible, setModalVisible] = useState(false);
   const [dismissed, setDismissed] = useState(dismissedThisSession);
+  const [unreadCount, setUnreadCount] = useState(0);
 
   // Subscribe to global dismissal changes so all mounted instances stay in sync.
   React.useEffect(() => {
@@ -53,13 +57,38 @@ export function FeedbackButton() {
     }
   }, [isOnDashboard]);
 
+  // Load the unread-reply count for the authenticated user.
+  const refreshUnreadCount = useCallback(async () => {
+    if (!isAuthenticated) {
+      setUnreadCount(0);
+      return;
+    }
+    try {
+      const tickets = await ticketService.getMyTickets();
+      const n = tickets.filter((t) => !!t.adminReply && !t.readByUser).length;
+      setUnreadCount(n);
+    } catch {
+      // silent — don't let the button break the whole UI
+    }
+  }, [isAuthenticated]);
+
+  React.useEffect(() => {
+    refreshUnreadCount();
+  }, [refreshUnreadCount]);
+
+  // Refresh after closing the modal (the user may have just read replies or sent a new ticket).
+  const handleCloseModal = useCallback(() => {
+    setModalVisible(false);
+    refreshUnreadCount();
+  }, [refreshUnreadCount]);
+
   const visible = isOnDashboard || !dismissed;
   if (!visible || modalVisible) {
     return (
       <>
         <FeedbackModal
           visible={modalVisible}
-          onClose={() => setModalVisible(false)}
+          onClose={handleCloseModal}
           screenName={activeRoute || undefined}
         />
       </>
@@ -79,11 +108,18 @@ export function FeedbackButton() {
           onPress={() => setModalVisible(true)}
           activeOpacity={0.8}
           accessibilityRole="button"
-          accessibilityLabel="Signaler un bug"
+          accessibilityLabel={unreadCount > 0 ? `Signaler un bug (${unreadCount} nouvelle reponse)` : 'Signaler un bug'}
         >
           <Ionicons name="bug-outline" size={16} color={colors.white} />
           <Text style={styles.buttonText}>Signaler un bug</Text>
         </TouchableOpacity>
+
+        {/* Unread-reply badge — right side of the pill */}
+        {unreadCount > 0 && (
+          <View style={styles.unreadBadge} pointerEvents="none">
+            <Text style={styles.unreadBadgeText}>{unreadCount > 9 ? '9+' : unreadCount}</Text>
+          </View>
+        )}
 
         {/* Dismiss button — placed on the left of the pill, hidden on the dashboard */}
         {!isOnDashboard && (
@@ -101,7 +137,7 @@ export function FeedbackButton() {
 
       <FeedbackModal
         visible={modalVisible}
-        onClose={() => setModalVisible(false)}
+        onClose={handleCloseModal}
         screenName={activeRoute || undefined}
       />
     </>
@@ -144,5 +180,24 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: 1.5,
     borderColor: colors.background,
+  },
+  unreadBadge: {
+    position: 'absolute',
+    top: -6,
+    right: -6,
+    minWidth: 20,
+    height: 20,
+    paddingHorizontal: 5,
+    borderRadius: 10,
+    backgroundColor: colors.marginRed,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: colors.background,
+  },
+  unreadBadgeText: {
+    color: colors.white,
+    fontSize: 10,
+    fontWeight: '800',
   },
 });
