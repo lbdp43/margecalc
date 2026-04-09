@@ -20,6 +20,7 @@ model User {
   subscriptionStatus         String    @default("none") // none | trialing | active | past_due | canceled
   subscriptionPlan           String?   // e.g. "pro_monthly", "pro_yearly"
   subscriptionEndDate        DateTime?
+  lastSeenAt                 DateTime?
   createdAt                  DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
   products           Product[]

@@ -12,6 +12,7 @@ import { Input } from '../../components/ui/Input';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
 import { AdminTicketsSection } from '../../components/ui/AdminTicketsSection';
+import { AdminUsersSection } from '../../components/ui/AdminUsersSection';
 import { useAuthStore } from '../../store/auth.store';
 import { useSystemParamsStore } from '../../store/systemParams.store';
 import { useRatesStore } from '../../store/rates.store';
@@ -786,6 +787,9 @@ export function SettingsScreen() {
       {/* Admin panel — visible only to admins */}
       {isAdmin && (
         <>
+          {/* Utilisateurs */}
+          <AdminUsersSection />
+
           {/* Tickets / retours beta */}
           <AdminTicketsSection />
 
