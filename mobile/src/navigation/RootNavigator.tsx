@@ -10,16 +10,20 @@ import { AppNavigator } from './AppNavigator';
 import { SubscriptionScreen } from '../screens/subscription/SubscriptionScreen';
 import { YinYangSpinner } from '../components/ui/YinYangSpinner';
 import { OfflineBanner } from '../components/ui/OfflineBanner';
+import { WelcomeModal } from '../components/ui/WelcomeModal';
 import { initOfflineMode, cleanupOfflineMode } from '../services/offline';
 import { colors } from '../theme';
 
 const PAYWALL_SEEN_KEY = 'margebar_paywall_seen';
+const WELCOME_SEEN_KEY = 'margebar_welcome_seen';
 
 export function RootNavigator() {
   const { isAuthenticated, isLoading, loadStoredAuth, user, logout } = useAuthStore();
   const [paywallSeen, setPaywallSeen] = useState<boolean | null>(null);
   // Track if user skipped paywall this session (in-memory only, not persisted)
   const [skippedPaywall, setSkippedPaywall] = useState(false);
+  // One-time beta welcome modal
+  const [welcomeVisible, setWelcomeVisible] = useState(false);
 
   useEffect(() => {
     loadStoredAuth();
@@ -64,6 +68,10 @@ export function RootNavigator() {
       if (isAdmin || hasSubscription) {
         // Admins and subscribers always get through
         setPaywallSeen(true);
+        // Check whether the one-time beta welcome should be shown
+        AsyncStorage.getItem(WELCOME_SEEN_KEY).then((seen) => {
+          if (mounted && !seen) setWelcomeVisible(true);
+        }).catch(() => {});
       } else {
         // Non-subscribers always see the paywall on load
         setPaywallSeen(false);
@@ -71,9 +79,15 @@ export function RootNavigator() {
     } else {
       setPaywallSeen(null);
       setSkippedPaywall(false);
+      setWelcomeVisible(false);
     }
     return () => { mounted = false; };
   }, [isAuthenticated, user?.subscriptionStatus]);
+
+  const handleCloseWelcome = () => {
+    setWelcomeVisible(false);
+    AsyncStorage.setItem(WELCOME_SEEN_KEY, '1').catch(() => {});
+  };
 
   if (isLoading) {
     return (
@@ -120,6 +134,7 @@ export function RootNavigator() {
     <View style={rootStyles.fullScreen}>
       <OfflineBanner />
       <AppNavigator />
+      <WelcomeModal visible={welcomeVisible} onClose={handleCloseWelcome} />
     </View>
   );
 }
