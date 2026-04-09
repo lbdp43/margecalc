@@ -27,6 +27,24 @@ model User {
   customContainers   CustomContainer[]
   recipes            Recipe[]
   scanUsages         ScanUsage[]
+  tickets            Ticket[]
+}
+
+model Ticket {
+  id               String   @id @default(uuid())
+  userId           String
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type             String   // bug | suggestion | question
+  message          String
+  screenName       String?
+  screenshotBase64 String?
+  status           String   @default("open") // open | resolved
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
 }
 
 model SystemParam {

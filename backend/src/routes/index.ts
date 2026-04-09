@@ -11,6 +11,7 @@ import subscriptionRoutes from './subscription.routes';
 import recipeRoutes from './recipe.routes';
 import systemParamRoutes from './systemParam.routes';
 import rateRoutes from './rate.routes';
+import ticketRoutes from './ticket.routes';
 
 const router = Router();
 
@@ -26,5 +27,6 @@ router.use('/subscription', subscriptionRoutes);
 router.use('/recipes', recipeRoutes);
 router.use('/system-params', systemParamRoutes);
 router.use('/rates', rateRoutes);
+router.use('/tickets', ticketRoutes);
 
 export default router;

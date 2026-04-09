@@ -11,6 +11,7 @@ import { SubscriptionScreen } from '../screens/subscription/SubscriptionScreen';
 import { YinYangSpinner } from '../components/ui/YinYangSpinner';
 import { OfflineBanner } from '../components/ui/OfflineBanner';
 import { WelcomeModal } from '../components/ui/WelcomeModal';
+import { FeedbackButton } from '../components/ui/FeedbackButton';
 import { initOfflineMode, cleanupOfflineMode } from '../services/offline';
 import { colors } from '../theme';
 
@@ -134,6 +135,7 @@ export function RootNavigator() {
     <View style={rootStyles.fullScreen}>
       <OfflineBanner />
       <AppNavigator />
+      <FeedbackButton />
       <WelcomeModal visible={welcomeVisible} onClose={handleCloseWelcome} />
     </View>
   );

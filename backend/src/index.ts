@@ -51,9 +51,10 @@ const authLimiter = rateLimit({
 });
 app.use('/api/auth', authLimiter);
 
-// Smaller JSON limit for general requests; scan endpoints get 10mb below
+// Smaller JSON limit for general requests; scan + tickets (with screenshots) get bigger limits below
 app.use('/api/subscription/webhook', express.raw({ type: 'application/json' }));
 app.use('/api/scan', express.json({ limit: '10mb' }));
+app.use('/api/tickets', express.json({ limit: '5mb' }));
 app.use(express.json({ limit: '1mb' }));
 
 // HTTPS enforcement in production — validate Host header to prevent injection
