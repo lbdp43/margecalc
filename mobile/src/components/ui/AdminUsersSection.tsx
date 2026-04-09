@@ -3,7 +3,8 @@ import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { alert } from '../../utils/alert';
 import * as adminService from '../../services/admin.service';
-import type { AdminUser, AdminUsersStats } from '../../services/admin.service';
+import type { AdminUser, AdminUsersStats, AdminRevenue } from '../../services/admin.service';
+import { formatPrice } from '@margebar/shared';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 
 const SUB_BADGE: Record<string, { label: string; color: string }> = {
@@ -41,6 +42,7 @@ function formatDate(iso: string): string {
 export function AdminUsersSection() {
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [stats, setStats] = useState<AdminUsersStats | null>(null);
+  const [revenue, setRevenue] = useState<AdminRevenue | null>(null);
   const [loading, setLoading] = useState(false);
 
   const load = useCallback(async () => {
@@ -49,6 +51,7 @@ export function AdminUsersSection() {
       const data = await adminService.getAdminUsers();
       setUsers(data.users);
       setStats(data.stats);
+      setRevenue(data.revenue);
     } catch {
       alert('Erreur', 'Impossible de charger les utilisateurs.');
     } finally {
@@ -99,6 +102,42 @@ export function AdminUsersSection() {
               </Text>
               <Text style={styles.statLabel}>Sans abo.</Text>
             </View>
+          </View>
+        )}
+
+        {/* Revenue */}
+        {revenue && (
+          <View style={styles.revenueCard}>
+            <View style={styles.revenueHeader}>
+              <Ionicons name="wallet-outline" size={16} color={colors.primary} />
+              <Text style={styles.revenueTitle}>Revenu (abonnements)</Text>
+            </View>
+            <Text style={styles.revenueSubscribers}>
+              {revenue.paidSubscribers} abonne{revenue.paidSubscribers > 1 ? 's' : ''} payant{revenue.paidSubscribers > 1 ? 's' : ''}
+              {revenue.paidSubscribers > 0 && (
+                <Text style={styles.revenueBreakdown}>
+                  {' '}· {revenue.monthlyCount} mensuel{revenue.monthlyCount > 1 ? 's' : ''}
+                  {' '}· {revenue.yearlyCount} annuel{revenue.yearlyCount > 1 ? 's' : ''}
+                </Text>
+              )}
+            </Text>
+            <View style={styles.revenueRow}>
+              <Text style={styles.revenueLabel}>Mensuel</Text>
+              <View style={styles.revenueValues}>
+                <Text style={styles.revenueTTC}>{formatPrice(revenue.mrrTTC)} TTC</Text>
+                <Text style={styles.revenueHT}>{formatPrice(revenue.mrrHT)} HT</Text>
+              </View>
+            </View>
+            <View style={styles.revenueRow}>
+              <Text style={styles.revenueLabel}>Annuel</Text>
+              <View style={styles.revenueValues}>
+                <Text style={styles.revenueTTC}>{formatPrice(revenue.arrTTC)} TTC</Text>
+                <Text style={styles.revenueHT}>{formatPrice(revenue.arrHT)} HT</Text>
+              </View>
+            </View>
+            <Text style={styles.revenueFootnote}>
+              TVA {Math.round(revenue.vatRate * 100)}% (taux standard SaaS) — tarifs affiches sur la page d'abonnement
+            </Text>
           </View>
         )}
 
@@ -224,6 +263,68 @@ const styles = StyleSheet.create({
     ...typography.caption,
     color: colors.textSecondary,
     marginTop: 2,
+  },
+  revenueCard: {
+    backgroundColor: colors.light,
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+    borderLeftWidth: 3,
+    borderLeftColor: colors.primary,
+  },
+  revenueHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: spacing.xs,
+  },
+  revenueTitle: {
+    ...typography.bodySmall,
+    fontWeight: '700',
+    color: colors.primary,
+  },
+  revenueSubscribers: {
+    ...typography.bodySmall,
+    color: colors.text,
+    marginBottom: spacing.sm,
+  },
+  revenueBreakdown: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    fontWeight: '400',
+  },
+  revenueRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 4,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  revenueLabel: {
+    ...typography.bodySmall,
+    color: colors.textSecondary,
+    fontWeight: '600',
+  },
+  revenueValues: {
+    alignItems: 'flex-end',
+  },
+  revenueTTC: {
+    ...typography.bodySmall,
+    fontWeight: '700',
+    color: colors.primary,
+  },
+  revenueHT: {
+    ...typography.caption,
+    color: colors.textSecondary,
+  },
+  revenueFootnote: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    fontStyle: 'italic',
+    marginTop: spacing.sm,
+    fontSize: 10,
+    lineHeight: 14,
   },
   emptyText: {
     ...typography.bodySmall,

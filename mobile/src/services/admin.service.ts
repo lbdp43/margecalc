@@ -22,8 +22,20 @@ export interface AdminUsersStats {
   admins: number;
 }
 
+export interface AdminRevenue {
+  paidSubscribers: number;
+  monthlyCount: number;
+  yearlyCount: number;
+  mrrTTC: number;
+  mrrHT: number;
+  arrTTC: number;
+  arrHT: number;
+  vatRate: number;
+}
+
 export interface AdminUsersResponse {
   stats: AdminUsersStats;
+  revenue: AdminRevenue;
   users: AdminUser[];
 }
 
