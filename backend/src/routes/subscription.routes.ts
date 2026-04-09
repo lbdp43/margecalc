@@ -109,7 +109,7 @@ router.post('/redeem-code', authenticate, async (req: Request, res: Response) =>
     const updated = await prisma.user.update({
       where: { id: req.user!.userId },
       data: {
-        subscriptionStatus: 'active',
+        subscriptionStatus: 'trialing',
         subscriptionPlan: 'access_code',
         subscriptionEndDate: endDate,
       },

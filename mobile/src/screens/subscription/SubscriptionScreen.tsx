@@ -53,7 +53,7 @@ export function SubscriptionScreen({ onDismiss }: Props) {
       setAccessCode('');
       alert(
         'Code valide',
-        `Bienvenue ${result.clientName} ! Vous beneficiez d'un acces gratuit de ${result.durationDays} jours.`,
+        `Bienvenue ${result.clientName} ! Vous beneficiez d'une periode d'essai gratuite de ${result.durationDays} jours avec toutes les fonctionnalites.`,
       );
     } catch (err: any) {
       const msg = err?.response?.data?.error || 'Code invalide';
