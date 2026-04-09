@@ -426,7 +426,7 @@ export function SettingsScreen() {
             ))}
 
             <Text style={[styles.subLabel, { marginTop: spacing.md }]}>Cotisation securite sociale</Text>
-            <Text style={styles.sectionDesc}>Applicable uniquement au-dessus de 18° vol.</Text>
+            <Text style={styles.sectionDesc}>Varie selon la categorie de boisson alcoolisee.</Text>
             {rates.filter((r) => r.cotisationCond).map((r) => (
               <View key={r.slug} style={styles.thresholdCard}>
                 <Text style={[styles.thresholdLabel, { flex: 1 }]}>{r.label}</Text>
@@ -829,7 +829,7 @@ export function SettingsScreen() {
             </View>
             <View style={styles.sectionBody}>
               <Text style={styles.sectionDesc}>
-                Applicable uniquement aux boissons dont le degre depasse 18% vol.
+                Varie selon la categorie de boisson alcoolisee.
               </Text>
               {rates.filter((r) => r.cotisationCond).map((r) => (
                 <View key={r.slug} style={styles.systemParamRow}>
