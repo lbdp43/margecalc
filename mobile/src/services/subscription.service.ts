@@ -29,7 +29,13 @@ export interface RedeemCodeResponse {
   durationDays: number;
 }
 
-export async function redeemAccessCode(code: string): Promise<RedeemCodeResponse> {
-  const res = await api.post<RedeemCodeResponse>('/subscription/redeem-code', { code });
+export async function redeemAccessCode(code: string, token?: string): Promise<RedeemCodeResponse> {
+  // Optional explicit token for use before the auth store is updated (e.g. right after register).
+  const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
+  const res = await api.post<RedeemCodeResponse>(
+    '/subscription/redeem-code',
+    { code },
+    headers ? { headers } : undefined,
+  );
   return res.data;
 }

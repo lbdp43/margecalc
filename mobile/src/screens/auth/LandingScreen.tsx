@@ -105,6 +105,15 @@ export function LandingScreen({ navigation }: Props) {
         <Text style={styles.secondaryBtnText}>J'ai deja un compte</Text>
       </TouchableOpacity>
 
+      <TouchableOpacity
+        style={styles.promoBtn}
+        onPress={() => navigation.navigate('Register', { withPromoCode: true })}
+        activeOpacity={0.7}
+      >
+        <Ionicons name="key-outline" size={18} color={colors.accent} style={{ marginRight: spacing.sm }} />
+        <Text style={styles.promoBtnText}>J'ai un code promo</Text>
+      </TouchableOpacity>
+
       <Text style={styles.skipWarningText}>
         Le calculateur ci-dessus est gratuit et ne necessite pas de compte.
       </Text>
@@ -318,6 +327,23 @@ const styles = StyleSheet.create({
   secondaryBtnText: {
     ...typography.button,
     color: colors.primary,
+  },
+  promoBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.accent,
+    borderStyle: 'dashed',
+    borderRadius: borderRadius.md,
+    paddingVertical: spacing.sm + 2,
+    marginTop: spacing.sm,
+    backgroundColor: colors.cardBackground,
+  },
+  promoBtnText: {
+    ...typography.bodySmall,
+    fontWeight: '600',
+    color: colors.accent,
   },
   skipBtn: {
     flexDirection: 'row',
