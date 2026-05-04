@@ -97,6 +97,7 @@ export function ProductFormScreen({ route, navigation }: Props) {
   const [enabledServings, setEnabledServings] = useState<Set<string>>(new Set());
   const [servingPrices, setServingPrices] = useState<Record<string, number>>({});
   const [servingModes, setServingModes] = useState<Record<string, ServingMode>>({});
+  const [editingText, setEditingText] = useState<Record<string, string>>({});
 
   const { data: categories = [] } = useOfflineQuery<Category[]>(
     ['categories'],
@@ -734,10 +735,24 @@ export function ProductFormScreen({ route, navigation }: Props) {
                     </View>
                     <TextInput
                       style={{ borderWidth: 1, borderColor: colors.border, borderRadius: borderRadius.sm, paddingHorizontal: spacing.sm, paddingVertical: spacing.xs + 2, width: 75, textAlign: 'center', fontSize: 14, fontWeight: '700', color: colors.primary, backgroundColor: colors.cardBackground }}
-                      defaultValue={mode === 'price' ? String(Math.round(sliderVal * 100) / 100) : mode === 'margin' ? String(Math.round(sliderVal * 10) / 10) : String(Math.round(sliderVal * 100) / 100)}
-                      onEndEditing={(e) => {
-                        const parsed = parseFloat(e.nativeEvent.text.replace(',', '.'));
+                      value={editingText[st.id] !== undefined
+                        ? editingText[st.id]
+                        : mode === 'price' ? String(Math.round(sliderVal * 100) / 100) : mode === 'margin' ? String(Math.round(sliderVal * 10) / 10) : String(Math.round(sliderVal * 100) / 100)}
+                      onFocus={() => {
+                        const display = mode === 'price' ? String(Math.round(sliderVal * 100) / 100) : mode === 'margin' ? String(Math.round(sliderVal * 10) / 10) : String(Math.round(sliderVal * 100) / 100);
+                        setEditingText((prev) => ({ ...prev, [st.id]: display }));
+                      }}
+                      onChangeText={(text) => {
+                        setEditingText((prev) => ({ ...prev, [st.id]: text }));
+                        const parsed = parseFloat(text.replace(',', '.'));
                         if (!isNaN(parsed) && parsed > 0) handleSliderChange(st, parsed, mode);
+                      }}
+                      onEndEditing={() => {
+                        setEditingText((prev) => {
+                          const next = { ...prev };
+                          delete next[st.id];
+                          return next;
+                        });
                       }}
                       keyboardType="decimal-pad"
                       placeholder={mode === 'price' ? '€' : mode === 'margin' ? '%' : 'x'}
