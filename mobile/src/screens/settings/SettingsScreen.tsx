@@ -741,45 +741,16 @@ export function SettingsScreen() {
         <View style={styles.sectionBody}>
           <View style={styles.subscriptionCard}>
             <View style={styles.subscriptionInfo}>
-              <View style={[styles.subscriptionBadge, subStatus === 'active' || subStatus === 'trialing' ? styles.subscriptionBadgeActive : styles.subscriptionBadgeInactive]}>
-                <Ionicons
-                  name={subStatus === 'active' || subStatus === 'trialing' ? 'checkmark-circle' : 'close-circle'}
-                  size={20}
-                  color={subStatus === 'active' || subStatus === 'trialing' ? colors.marginGreen : colors.tabBarInactive}
-                />
+              <View style={[styles.subscriptionBadge, styles.subscriptionBadgeActive]}>
+                <Ionicons name="checkmark-circle" size={20} color={colors.marginGreen} />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={styles.subscriptionStatus}>
-                  {subStatus === 'active' ? 'Abonnement actif' :
-                   subStatus === 'trialing' ? 'Période d\'essai' :
-                   subStatus === 'past_due' ? 'Paiement en retard' :
-                   subStatus === 'canceled' ? 'Abonnement annulé' :
-                   'Aucun abonnement'}
+                <Text style={styles.subscriptionStatus}>Gratuit — open source</Text>
+                <Text style={styles.subscriptionPlan}>
+                  Toutes les fonctionnalites sont accessibles gratuitement.
                 </Text>
-                {subPlan && (
-                  <Text style={styles.subscriptionPlan}>
-                    Plan : {subPlan === 'pro_yearly' ? 'Annuel — 30 €/an' : 'Mensuel — 3 €/mois'}
-                  </Text>
-                )}
-                {subEndDate && (
-                  <Text style={styles.subscriptionDate}>
-                    {subStatus === 'active' ? 'Renouvellement' : 'Expire'} le {new Date(subEndDate).toLocaleDateString('fr-FR')}
-                  </Text>
-                )}
               </View>
             </View>
-            <TouchableOpacity
-              style={styles.subscriptionBtn}
-              onPress={handleManageSubscription}
-              disabled={subLoading}
-              activeOpacity={0.7}
-            >
-              <Ionicons name="card-outline" size={18} color={colors.primary} style={{ marginRight: spacing.xs }} />
-              <Text style={styles.subscriptionBtnText}>
-                {subLoading ? 'Chargement...' : subStatus === 'active' ? 'Gérer mon abonnement' : 'Voir les offres'}
-              </Text>
-              <Ionicons name="chevron-forward" size={16} color={colors.primary} />
-            </TouchableOpacity>
           </View>
         </View>
       </View>

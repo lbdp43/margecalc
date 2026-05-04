@@ -54,11 +54,11 @@ export function LandingScreen({ navigation }: Props) {
       {/* Support */}
       <View style={styles.supportCard}>
         <View style={styles.supportHeader}>
-          <Ionicons name="heart-outline" size={22} color={colors.primary} />
-          <Text style={styles.supportTitle}>Soutenez MargeBar Pro</Text>
+          <Ionicons name="sparkles-outline" size={22} color={colors.primary} />
+          <Text style={styles.supportTitle}>Application gratuite et open source</Text>
         </View>
         <Text style={styles.supportDesc}>
-          Votre abonnement permet de maintenir l'application, financer les serveurs et developper de nouvelles fonctionnalites.
+          MargeBar Pro est gratuit. Creez un compte pour sauvegarder vos produits et acceder a toutes les fonctionnalites.
         </Text>
         <View style={styles.featuresRow}>
           {[
@@ -72,18 +72,6 @@ export function LandingScreen({ navigation }: Props) {
             </View>
           ))}
         </View>
-        <View style={styles.plansRow}>
-          <View style={styles.planMini}>
-            <Text style={styles.planMiniPrice}>3 €<Text style={styles.planMiniPeriod}>/mois</Text></Text>
-          </View>
-          <Text style={styles.planOr}>ou</Text>
-          <View style={styles.planMini}>
-            <Text style={styles.planMiniPrice}>30 €<Text style={styles.planMiniPeriod}>/an</Text></Text>
-            <View style={styles.planSaveBadge}>
-              <Text style={styles.planSaveText}>-17%</Text>
-            </View>
-          </View>
-        </View>
       </View>
 
       {/* Auth buttons */}
@@ -92,8 +80,8 @@ export function LandingScreen({ navigation }: Props) {
         onPress={() => navigation.navigate('Register')}
         activeOpacity={0.8}
       >
-        <Ionicons name="heart" size={20} color={colors.white} style={{ marginRight: spacing.sm }} />
-        <Text style={styles.primaryBtnText}>Creer un compte et soutenir</Text>
+        <Ionicons name="person-add-outline" size={20} color={colors.white} style={{ marginRight: spacing.sm }} />
+        <Text style={styles.primaryBtnText}>Creer un compte gratuit</Text>
       </TouchableOpacity>
 
       <TouchableOpacity
@@ -105,21 +93,8 @@ export function LandingScreen({ navigation }: Props) {
         <Text style={styles.secondaryBtnText}>J'ai deja un compte</Text>
       </TouchableOpacity>
 
-      <TouchableOpacity
-        style={styles.promoBtn}
-        onPress={() => navigation.navigate('Register', { withPromoCode: true })}
-        activeOpacity={0.7}
-      >
-        <Ionicons name="key-outline" size={18} color={colors.accent} style={{ marginRight: spacing.sm }} />
-        <Text style={styles.promoBtnText}>J'ai un code promo</Text>
-      </TouchableOpacity>
-
       <Text style={styles.skipWarningText}>
         Le calculateur ci-dessus est gratuit et ne necessite pas de compte.
-      </Text>
-
-      <Text style={styles.legal}>
-        Paiement securise par Stripe. Annulable a tout moment.
       </Text>
     </View>
   );
