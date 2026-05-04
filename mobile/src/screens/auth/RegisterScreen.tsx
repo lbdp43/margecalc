@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, Switch, Alert, KeyboardAvoidingView, Platform, Keyboard } from 'react-native';
+import { View, Text, StyleSheet, Switch, KeyboardAvoidingView, Platform, Keyboard } from 'react-native';
+import { alert } from '../../utils/alert';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { ScreenWrapper } from '../../components/ui/ScreenWrapper';
 import { Input } from '../../components/ui/Input';
@@ -23,15 +24,15 @@ export function RegisterScreen({ navigation }: Props) {
   const handleRegister = async () => {
     Keyboard.dismiss();
     if (!email || !password) {
-      Alert.alert('Erreur', 'Email et mot de passe requis');
+      alert('Erreur', 'Email et mot de passe requis');
       return;
     }
     if (!EMAIL_REGEX.test(email)) {
-      Alert.alert('Erreur', 'Veuillez entrer une adresse email valide');
+      alert('Erreur', 'Veuillez entrer une adresse email valide');
       return;
     }
     if (password.length < 8) {
-      Alert.alert('Erreur', 'Le mot de passe doit contenir au moins 8 caractères');
+      alert('Erreur', 'Le mot de passe doit contenir au moins 8 caractères');
       return;
     }
 
@@ -45,7 +46,7 @@ export function RegisterScreen({ navigation }: Props) {
       });
       setAuth(result.token, result.user);
     } catch (err: any) {
-      Alert.alert('Erreur', err.response?.data?.error || 'Inscription impossible');
+      alert('Erreur', err.response?.data?.error || 'Inscription impossible');
     } finally {
       setLoading(false);
     }

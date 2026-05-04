@@ -4,6 +4,7 @@
  * - Adds viewport-fit=cover for iOS safe areas
  * - Adds safe-area CSS padding
  * - Adds PWA meta tags
+ * - Fixes layout for proper scrolling
  */
 const fs = require('fs');
 const path = require('path');
@@ -23,11 +24,12 @@ const extraHead = `
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="theme-color" content="#1B4332" />
-    <style id="safe-area-fix">
-      #root {
-        padding-top: env(safe-area-inset-top, 0px);
-        padding-bottom: env(safe-area-inset-bottom, 0px);
-        box-sizing: border-box;
+    <style id="layout-fix">
+      html, body, #root {
+        height: 100%;
+        width: 100%;
+        margin: 0;
+        padding: 0;
       }
     </style>
 `;
@@ -35,4 +37,4 @@ const extraHead = `
 html = html.replace('</head>', extraHead + '  </head>');
 
 fs.writeFileSync(htmlPath, html, 'utf-8');
-console.log('✓ Patched index.html with safe-area support');
+console.log('✓ Patched index.html with layout and safe-area support');

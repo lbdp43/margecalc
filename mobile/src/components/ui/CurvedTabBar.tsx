@@ -89,6 +89,7 @@ export function CurvedTabBar({ state, descriptors, navigation }: BottomTabBarPro
 const styles = StyleSheet.create({
   container: {
     position: 'relative',
+    backgroundColor: colors.primary,
   },
   svgWrap: {
     position: 'absolute',

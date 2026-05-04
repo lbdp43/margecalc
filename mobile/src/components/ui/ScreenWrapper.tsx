@@ -21,9 +21,21 @@ export function ScreenWrapper({
   onRefresh,
   refreshing = false,
 }: ScreenWrapperProps) {
-  const content = (
-    <View style={[styles.content, style]}>{children}</View>
-  );
+  // On web, use native browser scrolling instead of RN ScrollView
+  if (Platform.OS === 'web') {
+    return (
+      <div style={webStyles.container}>
+        {decorations && <DecorativeCurve variant="bottom" />}
+        {scrollable ? (
+          <div style={webStyles.scroll}>
+            <View style={[styles.scrollInner, style]}>{children}</View>
+          </div>
+        ) : (
+          <View style={[styles.staticContent, style]}>{children}</View>
+        )}
+      </div>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -43,21 +55,42 @@ export function ScreenWrapper({
             />
           ) : undefined}
         >
-          {content}
+          <View style={[styles.scrollInner, style]}>{children}</View>
         </ScrollView>
       ) : (
-        content
+        <View style={[styles.staticContent, style]}>{children}</View>
       )}
     </SafeAreaView>
   );
 }
+
+// Native CSS styles for web — bypasses RN Web's broken ScrollView
+const webStyles: Record<string, React.CSSProperties> = {
+  container: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    display: 'flex',
+    flexDirection: 'column',
+    backgroundColor: colors.background,
+    overflow: 'hidden',
+  },
+  scroll: {
+    flex: 1,
+    overflowY: 'auto',
+    overflowX: 'hidden',
+    WebkitOverflowScrolling: 'touch',
+    minHeight: 0,
+  },
+};
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
     overflow: 'hidden',
-    ...(Platform.OS === 'web' ? { paddingTop: 'env(safe-area-inset-top, 12px)' as any } : {}),
   },
   scroll: {
     flex: 1,
@@ -65,7 +98,11 @@ const styles = StyleSheet.create({
   scrollContent: {
     flexGrow: 1,
   },
-  content: {
+  scrollInner: {
+    padding: spacing.md,
+    paddingBottom: spacing.xxl,
+  },
+  staticContent: {
     flex: 1,
     padding: spacing.md,
   },

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert, KeyboardAvoidingView, Platform, Keyboard } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, KeyboardAvoidingView, Platform, Keyboard } from 'react-native';
+import { alert } from '../../utils/alert';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { ScreenWrapper } from '../../components/ui/ScreenWrapper';
 import { Input } from '../../components/ui/Input';
@@ -21,11 +22,11 @@ export function LoginScreen({ navigation }: Props) {
   const handleLogin = async () => {
     Keyboard.dismiss();
     if (!email || !password) {
-      Alert.alert('Erreur', 'Veuillez remplir tous les champs');
+      alert('Erreur', 'Veuillez remplir tous les champs');
       return;
     }
     if (!EMAIL_REGEX.test(email)) {
-      Alert.alert('Erreur', 'Veuillez entrer une adresse email valide');
+      alert('Erreur', 'Veuillez entrer une adresse email valide');
       return;
     }
 
@@ -34,7 +35,7 @@ export function LoginScreen({ navigation }: Props) {
       const result = await authService.login({ email, password });
       setAuth(result.token, result.user);
     } catch (err: any) {
-      Alert.alert('Erreur', err.response?.data?.error || 'Connexion impossible');
+      alert('Erreur', err.response?.data?.error || 'Connexion impossible');
     } finally {
       setLoading(false);
     }
@@ -47,7 +48,7 @@ export function LoginScreen({ navigation }: Props) {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <View style={styles.header}>
-          <Text style={styles.title}>MargeBar</Text>
+          <Text style={styles.title}>MargeBar Pro</Text>
           <Text style={styles.subtitle}>Calculez vos marges.{'\n'}Maîtrisez votre rentabilité.</Text>
         </View>
 

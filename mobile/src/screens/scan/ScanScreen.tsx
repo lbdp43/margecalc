@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, Alert, Image, FlatList, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, Image, FlatList, TouchableOpacity } from 'react-native';
+import { alert, confirm } from '../../utils/alert';
 import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -41,7 +42,7 @@ export function ScanScreen({ navigation }: Props) {
       : await ImagePicker.requestMediaLibraryPermissionsAsync();
 
     if (!permission.granted) {
-      Alert.alert('Permission requise', 'Autorisez l\'accès à la caméra/galerie');
+      alert('Permission requise', 'Autorisez l\'accès à la caméra/galerie');
       return;
     }
 
@@ -67,7 +68,7 @@ export function ScanScreen({ navigation }: Props) {
       );
 
       if (!compressed.base64) {
-        Alert.alert('Erreur', 'Impossible de lire l\'image');
+        alert('Erreur', 'Impossible de lire l\'image');
         setScanning(false);
         return;
       }
@@ -78,7 +79,7 @@ export function ScanScreen({ navigation }: Props) {
       const message = err.response?.data?.error
         || err.message
         || 'Impossible d\'analyser l\'image';
-      Alert.alert('Erreur de scan', message);
+      alert('Erreur de scan', message);
     } finally {
       setScanning(false);
     }
@@ -109,7 +110,7 @@ export function ScanScreen({ navigation }: Props) {
       containerVolumeCl: result.containerVolumeCl,
       estimatedPriceHT: result.estimatedPriceHT,
     });
-    Alert.alert('Brouillon sauvegardé', `"${result.name}" a été sauvegardé. Vous pourrez le reprendre plus tard.`);
+    alert('Brouillon sauvegardé', `"${result.name}" a été sauvegardé. Vous pourrez le reprendre plus tard.`);
     setResult(null);
     setImageUri(null);
     await loadDrafts();
@@ -132,16 +133,16 @@ export function ScanScreen({ navigation }: Props) {
   };
 
   const handleDeleteDraft = (draft: ScanDraft) => {
-    Alert.alert('Supprimer', `Supprimer le brouillon "${draft.name}" ?`, [
-      { text: 'Annuler', style: 'cancel' },
-      {
-        text: 'Supprimer', style: 'destructive',
-        onPress: async () => {
-          await draftService.deleteDraft(draft.id);
-          await loadDrafts();
-        },
+    confirm(
+      'Supprimer',
+      `Supprimer le brouillon "${draft.name}" ?`,
+      async () => {
+        await draftService.deleteDraft(draft.id);
+        await loadDrafts();
       },
-    ]);
+      'Supprimer',
+      true,
+    );
   };
 
   const getContainerLabel = (cl: number | null) => {

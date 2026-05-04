@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert, useWindowDimensions } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, useWindowDimensions, Modal, ScrollView, KeyboardAvoidingView, Platform as RNPlatform } from 'react-native';
+import { alert, confirm } from '../../utils/alert';
+import type { SaveProductData } from '../../components/ui/DroitsCalculator';
 import Svg, { Path } from 'react-native-svg';
 import { useNavigation } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -16,8 +18,7 @@ import { useOfflineQuery } from '../../hooks/useOfflineQuery';
 import * as productService from '../../services/product.service';
 import { useAuthStore } from '../../store/auth.store';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
-import { useCalculator } from './useCalculator';
-import { CalculatorModal } from './CalculatorModal';
+import { DroitsCalculator } from '../../components/ui/DroitsCalculator';
 import { ProductDashboardCard } from './ProductDashboardCard';
 import { CategoryChart } from './CategoryChart';
 import { TopFlopSection } from './TopFlopSection';
@@ -39,7 +40,36 @@ export function DashboardScreen() {
   const [welcomeVisible, setWelcomeVisible] = useState(true);
   const [loadingPref, setLoadingPref] = useState(true);
 
-  const calc = useCalculator();
+  const [calcVisible, setCalcVisible] = useState(false);
+  const [savedCalcs, setSavedCalcs] = useState<(SaveProductData & { id: string })[]>([]);
+
+  // Load saved calculations
+  useEffect(() => {
+    AsyncStorage.getItem('margebar_saved_calcs').then((val) => {
+      if (val) {
+        try { setSavedCalcs(JSON.parse(val)); } catch { /* ignore */ }
+      }
+    });
+  }, []);
+
+  const handleSaveCalc = useCallback((data: SaveProductData) => {
+    const entry = { ...data, id: Date.now().toString() };
+    setSavedCalcs((prev) => {
+      const updated = [entry, ...prev];
+      AsyncStorage.setItem('margebar_saved_calcs', JSON.stringify(updated)).catch(() => {});
+      return updated;
+    });
+    setCalcVisible(false);
+    alert('Enregistre', `${data.name} a ete ajoute a vos calculs`);
+  }, []);
+
+  const handleDeleteCalc = useCallback((id: string) => {
+    setSavedCalcs((prev) => {
+      const updated = prev.filter((c) => c.id !== id);
+      AsyncStorage.setItem('margebar_saved_calcs', JSON.stringify(updated)).catch(() => {});
+      return updated;
+    });
+  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -53,16 +83,11 @@ export function DashboardScreen() {
 
   const handleDismiss = useCallback(() => {
     setWelcomeVisible(false);
-    Alert.alert(
+    confirm(
       'Masquer le message de bienvenue',
       'Voulez-vous le masquer définitivement ?',
-      [
-        { text: 'Revoir plus tard', style: 'cancel' },
-        {
-          text: 'Masquer',
-          onPress: () => AsyncStorage.setItem(WELCOME_DISMISSED_KEY, 'true'),
-        },
-      ],
+      () => AsyncStorage.setItem(WELCOME_DISMISSED_KEY, 'true'),
+      'Masquer',
     );
   }, []);
 
@@ -140,7 +165,7 @@ export function DashboardScreen() {
             >
               <Ionicons name="close" size={14} color={colors.textLight} />
             </TouchableOpacity>
-            <Text style={styles.welcomeTitle}>Bienvenue sur MargeBar</Text>
+            <Text style={styles.welcomeTitle}>Bienvenue sur MargeBar Pro</Text>
             <Text style={styles.welcomeText}>
               Calculez vos marges sur chaque produit : spiritueux, vins, bières, softs...
               Ajoutez vos produits, choisissez votre méthode de calcul et visualisez votre rentabilité.
@@ -176,7 +201,7 @@ export function DashboardScreen() {
         </View>
         <TouchableOpacity
           style={styles.calcButton}
-          onPress={calc.openCalc}
+          onPress={() => setCalcVisible(true)}
           activeOpacity={0.7}
           accessibilityRole="button"
           accessibilityLabel="Ouvrir le calculateur de prix HT"
@@ -188,17 +213,52 @@ export function DashboardScreen() {
       </View>
 
       {/* Alcohol Tax Calculator Modal */}
-      <CalculatorModal
-        visible={calc.calcVisible}
-        onClose={calc.closeCalc}
-        calcPriceHD={calc.calcPriceHD}
-        onChangePriceHD={calc.setCalcPriceHD}
-        calcContainer={calc.calcContainer}
-        onChangeContainer={calc.setCalcContainer}
-        calcDegree={calc.calcDegree}
-        onChangeDegree={calc.setCalcDegree}
-        calcTax={calc.calcTax}
-      />
+      {calcVisible && (
+        <Modal visible transparent animationType="slide" onRequestClose={() => setCalcVisible(false)}>
+          <KeyboardAvoidingView style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' }} behavior={RNPlatform.OS === 'ios' ? 'padding' : undefined}>
+            <View style={{ backgroundColor: colors.cardBackground, borderTopLeftRadius: 28, borderTopRightRadius: 28, maxHeight: '90%' }}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: spacing.lg, paddingTop: spacing.lg, paddingBottom: spacing.sm }}>
+                <Text style={{ ...typography.h2, color: colors.primary }}>Calculateur</Text>
+                <TouchableOpacity onPress={() => setCalcVisible(false)} style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' }}>
+                  <Ionicons name="close" size={18} color={colors.text} />
+                </TouchableOpacity>
+              </View>
+              <ScrollView style={{ paddingHorizontal: spacing.md, paddingBottom: spacing.xxl }} keyboardShouldPersistTaps="handled">
+                <DroitsCalculator compact onSaveProduct={handleSaveCalc} />
+              </ScrollView>
+            </View>
+          </KeyboardAvoidingView>
+        </Modal>
+      )}
+
+      {/* Saved calculations */}
+      {savedCalcs.length > 0 && (
+        <View style={styles.savedSection}>
+          <Text style={styles.savedTitle}>Mes calculs enregistres</Text>
+          {savedCalcs.map((c) => (
+            <View key={c.id} style={styles.savedCard}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.savedName}>{c.name}</Text>
+                <Text style={styles.savedDetail}>{c.volumeCl} cl | {c.degree}° | {c.fiscalCategory}</Text>
+              </View>
+              <View style={{ alignItems: 'flex-end' }}>
+                <Text style={styles.savedPriceLabel}>HT hors droit</Text>
+                <Text style={styles.savedPrice}>{formatPrice(c.prixHTHorsDroit)}</Text>
+                <Text style={styles.savedPriceLabel}>HT avec droits</Text>
+                <Text style={[styles.savedPrice, { color: colors.primary, fontWeight: '800' }]}>{formatPrice(c.prixHTAvecDroits)}</Text>
+                <Text style={styles.savedPriceLabel}>TTC (20%)</Text>
+                <Text style={styles.savedPrice}>{formatPrice(c.prixTTC)}</Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => handleDeleteCalc(c.id)}
+                style={{ paddingLeft: spacing.sm, justifyContent: 'center' }}
+              >
+                <Ionicons name="trash-outline" size={18} color={colors.marginRed} />
+              </TouchableOpacity>
+            </View>
+          ))}
+        </View>
+      )}
 
       {/* Margin by Category Chart */}
       <ErrorBoundary fallbackMessage="Impossible d'afficher le graphique">
@@ -248,6 +308,43 @@ export function DashboardScreen() {
 }
 
 const styles = StyleSheet.create({
+  savedSection: {
+    marginBottom: spacing.lg,
+  },
+  savedTitle: {
+    ...typography.h3,
+    color: colors.text,
+    marginBottom: spacing.sm,
+  },
+  savedCard: {
+    flexDirection: 'row',
+    backgroundColor: colors.cardBackground,
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+    ...shadows.sm,
+  },
+  savedName: {
+    ...typography.body,
+    fontWeight: '700',
+    color: colors.text,
+    marginBottom: 2,
+  },
+  savedDetail: {
+    ...typography.caption,
+    color: colors.textSecondary,
+  },
+  savedPriceLabel: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    fontSize: 10,
+  },
+  savedPrice: {
+    ...typography.bodySmall,
+    fontWeight: '600',
+    color: colors.text,
+    marginBottom: 2,
+  },
   heroCard: {
     backgroundColor: colors.primary,
     borderTopLeftRadius: borderRadius.xxl,

@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import {
-  View, Text, StyleSheet, Alert, ScrollView,
+  View, Text, StyleSheet, ScrollView, TextInput,
   TouchableOpacity, Image, ActivityIndicator,
 } from 'react-native';
+import { alert, confirm } from '../../utils/alert';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useOfflineQuery } from '../../hooks/useOfflineQuery';
@@ -10,12 +11,11 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
 import { ServingTypeIcon } from '../../components/ui/ServingTypeIcon';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   MarginMode, TVA_RATES, Category, CONTAINER_PRESETS,
   parseLocaleFloat, ServingType, calculateServingMargin,
   ServingMarginResult, MARGIN_COLOR_MAP, formatPrice, formatPercent,
-  calculateAlcoholTax,
+  calculateDroits,
 } from '@margebar/shared';
 import { ScreenWrapper } from '../../components/ui/ScreenWrapper';
 import { Input } from '../../components/ui/Input';
@@ -23,6 +23,7 @@ import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
 import { PriceSlider } from '../../components/ui/PriceSlider';
 import { useAuthStore } from '../../store/auth.store';
+import { useRatesStore } from '../../store/rates.store';
 import * as productService from '../../services/product.service';
 import * as categoryService from '../../services/category.service';
 import * as servingService from '../../services/serving.service';
@@ -62,26 +63,11 @@ export function ProductFormScreen({ route, navigation }: Props) {
   const [supplier, setSupplier] = useState('');
   const [alcoholDegree, setAlcoholDegree] = useState('');
   const [priceInputMode, setPriceInputMode] = useState<PriceInputMode>('ht_direct');
+  const [fiscalCategory, setFiscalCategory] = useState('spiritueux');
 
-  // Alcohol tax settings from AsyncStorage
-  const [alcoholTaxRates, setAlcoholTaxRates] = useState({ droitAccise: 0, cotisationSecu: 0 });
-
-  useEffect(() => {
-    let mounted = true;
-    AsyncStorage.getItem('margebar_alcohol_tax').then((val) => {
-      if (!mounted) return;
-      if (val) {
-        try {
-          const parsed = JSON.parse(val);
-          setAlcoholTaxRates({
-            droitAccise: parsed.droitAccise || 0,
-            cotisationSecu: parsed.cotisationSecu || 0,
-          });
-        } catch { /* ignore corrupted data */ }
-      }
-    }).catch(() => {});
-    return () => { mounted = false; };
-  }, []);
+  // Alcohol tax rates from rates store
+  const rates = useRatesStore((s) => s.rates);
+  const selectedRate = rates.find((r) => r.slug === fiscalCategory);
 
   // Serving state
   const [enabledServings, setEnabledServings] = useState<Set<string>>(new Set());
@@ -158,7 +144,7 @@ export function ProductFormScreen({ route, navigation }: Props) {
       : await ImagePicker.requestMediaLibraryPermissionsAsync();
 
     if (!permission.granted) {
-      Alert.alert('Permission requise', 'Autorisez l\'accès à la caméra/galerie');
+      alert('Permission requise', 'Autorisez l\'accès à la caméra/galerie');
       return;
     }
 
@@ -182,7 +168,7 @@ export function ProductFormScreen({ route, navigation }: Props) {
       );
 
       if (!compressed.base64) {
-        Alert.alert('Erreur', 'Impossible de lire l\'image');
+        alert('Erreur', 'Impossible de lire l\'image');
         setScanning(false);
         return;
       }
@@ -201,7 +187,7 @@ export function ProductFormScreen({ route, navigation }: Props) {
       // Go to form
       setStep('form');
     } catch (err: any) {
-      Alert.alert('Erreur de scan', err.response?.data?.error || err.message || 'Impossible d\'analyser');
+      alert('Erreur de scan', err.response?.data?.error || err.message || 'Impossible d\'analyser');
     } finally {
       setScanning(false);
     }
@@ -211,11 +197,8 @@ export function ProductFormScreen({ route, navigation }: Props) {
   const currentContainerVol = parseLocaleFloat(containerVolume) || 0;
   const currentPurchasePriceRaw = parseLocaleFloat(purchasePrice) || 0;
   const currentAlcoholDegree = parseLocaleFloat(alcoholDegree) || 0;
-  const alcoholTax = priceInputMode === 'hors_droit'
-    ? calculateAlcoholTax(
-        currentContainerVol, currentAlcoholDegree,
-        alcoholTaxRates.droitAccise, alcoholTaxRates.cotisationSecu,
-      )
+  const alcoholTax = priceInputMode === 'hors_droit' && selectedRate
+    ? calculateDroits(selectedRate, currentContainerVol, currentAlcoholDegree, 0).totalDroits
     : 0;
   const currentPurchasePrice = currentPurchasePriceRaw + alcoholTax;
 
@@ -339,7 +322,7 @@ export function ProductFormScreen({ route, navigation }: Props) {
       navigation.goBack();
     },
     onError: (err: any) => {
-      Alert.alert('Erreur', err.response?.data?.error || err.message || 'Impossible de sauvegarder');
+      alert('Erreur', err.response?.data?.error || err.message || 'Impossible de sauvegarder');
     },
   });
 
@@ -353,7 +336,7 @@ export function ProductFormScreen({ route, navigation }: Props) {
 
   const handleSave = () => {
     if (!name || !purchasePrice || !containerVolume) {
-      Alert.alert('Erreur', 'Remplissez le nom, le prix et le volume');
+      alert('Erreur', 'Remplissez le nom, le prix et le volume');
       return;
     }
     saveMutation.mutate();
@@ -491,6 +474,21 @@ export function ProductFormScreen({ route, navigation }: Props) {
             placeholder="0,00"
             suffix="€"
           />
+
+          <Text style={{ fontSize: 13, fontWeight: '600', color: colors.textSecondary, marginBottom: 6, marginTop: 8 }}>Categorie fiscale</Text>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginBottom: 8 }}>
+            {rates.map((r) => (
+              <TouchableOpacity
+                key={r.slug}
+                style={{ paddingHorizontal: 8, paddingVertical: 4, borderRadius: 20, backgroundColor: fiscalCategory === r.slug ? colors.primary : colors.surface, borderWidth: 1, borderColor: fiscalCategory === r.slug ? colors.primary : colors.border }}
+                onPress={() => setFiscalCategory(r.slug)}
+              >
+                <Text style={{ fontSize: 11, fontWeight: '600', color: fiscalCategory === r.slug ? colors.textLight : colors.textSecondary }}>
+                  {r.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
 
           <Input
             label="Degré d'alcool"
@@ -653,15 +651,30 @@ export function ProductFormScreen({ route, navigation }: Props) {
                     ))}
                   </View>
 
-                  <PriceSlider
-                    min={config.min}
-                    max={config.max}
-                    step={config.step}
-                    value={isNaN(sliderVal) ? config.min : Math.max(config.min, Math.min(config.max, sliderVal))}
-                    onValueChange={(v) => handleSliderChange(st, v, mode)}
-                    formatLabel={config.formatLabel}
-                    accentColor={accent}
-                  />
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+                    <View style={{ flex: 1 }}>
+                      <PriceSlider
+                        min={config.min}
+                        max={config.max}
+                        step={config.step}
+                        value={isNaN(sliderVal) ? config.min : Math.max(config.min, Math.min(config.max, sliderVal))}
+                        onValueChange={(v) => handleSliderChange(st, v, mode)}
+                        formatLabel={config.formatLabel}
+                        accentColor={accent}
+                      />
+                    </View>
+                    <TextInput
+                      style={{ borderWidth: 1, borderColor: colors.border, borderRadius: borderRadius.sm, paddingHorizontal: spacing.sm, paddingVertical: spacing.xs + 2, width: 75, textAlign: 'center', fontSize: 14, fontWeight: '700', color: colors.primary, backgroundColor: colors.cardBackground }}
+                      defaultValue={mode === 'price' ? String(Math.round(sliderVal * 100) / 100) : mode === 'margin' ? String(Math.round(sliderVal * 10) / 10) : String(Math.round(sliderVal * 100) / 100)}
+                      onEndEditing={(e) => {
+                        const parsed = parseFloat(e.nativeEvent.text.replace(',', '.'));
+                        if (!isNaN(parsed) && parsed > 0) handleSliderChange(st, parsed, mode);
+                      }}
+                      keyboardType="decimal-pad"
+                      placeholder={mode === 'price' ? '€' : mode === 'margin' ? '%' : 'x'}
+                      placeholderTextColor={colors.textSecondary}
+                    />
+                  </View>
 
                   {margin && (
                     <View style={styles.resultRow}>
@@ -670,13 +683,21 @@ export function ProductFormScreen({ route, navigation }: Props) {
                         <Text style={styles.resultValue}>{formatPrice(margin.sellingPriceTTC)}</Text>
                       </View>
                       <View style={styles.resultItem}>
+                        <Text style={styles.resultLabel}>Prix HT</Text>
+                        <Text style={styles.resultValue}>{formatPrice(margin.sellingPriceHT)}</Text>
+                      </View>
+                      <View style={styles.resultItem}>
                         <Text style={styles.resultLabel}>Marge</Text>
                         <Text style={[styles.resultValueBig, { color: accent }]}>
                           {formatPercent(margin.marginPercent)}
                         </Text>
                       </View>
                       <View style={styles.resultItem}>
-                        <Text style={styles.resultLabel}>Gain/dose</Text>
+                        <Text style={styles.resultLabel}>Cout/dose</Text>
+                        <Text style={styles.resultValue}>{formatPrice(margin.costPerServingHT)}</Text>
+                      </View>
+                      <View style={styles.resultItem}>
+                        <Text style={[styles.resultLabel, { color: accent }]}>Gain/dose</Text>
                         <Text style={[styles.resultValue, { color: accent }]}>
                           {formatPrice(margin.marginPerServingHT)}
                         </Text>
@@ -708,10 +729,7 @@ export function ProductFormScreen({ route, navigation }: Props) {
         <Button
           title="Supprimer"
           onPress={() => {
-            Alert.alert('Supprimer', `Supprimer "${name}" ?`, [
-              { text: 'Annuler', style: 'cancel' },
-              { text: 'Supprimer', style: 'destructive', onPress: () => deleteMutation.mutate() },
-            ]);
+            confirm('Supprimer', `Supprimer "${name}" ?`, () => deleteMutation.mutate(), 'Supprimer', true);
           }}
           variant="danger"
           style={styles.deleteBtn}

@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Image, ActivityIndicator,
-  Alert, ScrollView, Switch,
+  ScrollView, Switch,
 } from 'react-native';
+import { alert } from '../../utils/alert';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useQueryClient } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
@@ -42,7 +43,7 @@ export function InvoiceScanScreen({ navigation }: Props) {
       : await ImagePicker.requestMediaLibraryPermissionsAsync();
 
     if (!permission.granted) {
-      Alert.alert('Permission requise', "Autorisez l'accès à la caméra/galerie");
+      alert('Permission requise', "Autorisez l'accès à la caméra/galerie");
       return;
     }
 
@@ -71,7 +72,7 @@ export function InvoiceScanScreen({ navigation }: Props) {
       );
 
       if (!compressed.base64) {
-        Alert.alert('Erreur', "Impossible de lire l'image");
+        alert('Erreur', "Impossible de lire l'image");
         setScanning(false);
         return;
       }
@@ -83,9 +84,9 @@ export function InvoiceScanScreen({ navigation }: Props) {
         result.products.map((p) => ({ ...p, selected: p.confidence >= 0.5 }))
       );
     } catch (err: any) {
-      Alert.alert(
+      alert(
         'Erreur de scan',
-        err.response?.data?.error || err.message || "Impossible d'analyser la facture"
+        err.response?.data?.error || err.message || "Impossible d'analyser la facture",
       );
     } finally {
       setScanning(false);
@@ -106,7 +107,7 @@ export function InvoiceScanScreen({ navigation }: Props) {
   const handleImport = async () => {
     const selected = products.filter((p) => p.selected);
     if (selected.length === 0) {
-      Alert.alert('Erreur', 'Sélectionnez au moins un produit');
+      alert('Erreur', 'Sélectionnez au moins un produit');
       return;
     }
 
@@ -138,22 +139,21 @@ export function InvoiceScanScreen({ navigation }: Props) {
 
       queryClient.invalidateQueries({ queryKey: ['products'] });
       if (failCount > 0) {
-        Alert.alert(
+        alert(
           'Import partiel',
           `${importCount} importé(s), ${failCount} échoué(s). Configurez les prix de vente dans chaque fiche produit.`,
-          [{ text: 'OK', onPress: () => navigation.goBack() }]
         );
       } else {
-        Alert.alert(
+        alert(
           'Import terminé',
           `${importCount} produit${importCount > 1 ? 's' : ''} importé${importCount > 1 ? 's' : ''}. Configurez les prix de vente dans chaque fiche produit.`,
-          [{ text: 'OK', onPress: () => navigation.goBack() }]
         );
       }
+      navigation.goBack();
     } catch (err: any) {
-      Alert.alert(
+      alert(
         'Erreur',
-        `${importCount} importé(s). Erreur : ${err.message || "Impossible d'importer"}`
+        `${importCount} importé(s). Erreur : ${err.message || "Impossible d'importer"}`,
       );
     } finally {
       setImporting(false);

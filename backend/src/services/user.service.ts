@@ -1,7 +1,7 @@
 import { prisma } from '../config/database';
 
 export function formatUser(user: {
-  id: string; email: string; businessName: string | null;
+  id: string; email: string; role: string; businessName: string | null;
   isAutoEntrepreneur: boolean; defaultTvaRate: number; defaultContainerVolumeCl: number;
   subscriptionStatus: string; subscriptionPlan: string | null;
   subscriptionEndDate: Date | null; createdAt: Date; updatedAt: Date;
@@ -9,6 +9,7 @@ export function formatUser(user: {
   return {
     id: user.id,
     email: user.email,
+    role: user.role as 'user' | 'admin',
     businessName: user.businessName,
     isAutoEntrepreneur: user.isAutoEntrepreneur,
     defaultTvaRate: user.defaultTvaRate,
@@ -33,4 +34,19 @@ export async function updateUser(userId: string, data: { businessName?: string; 
     data,
   });
   return formatUser(user);
+}
+
+export async function deleteUserData(userId: string) {
+  // Delete all user data but keep the account itself
+  await prisma.$transaction([
+    prisma.recipeConsumable.deleteMany({ where: { recipe: { userId } } }),
+    prisma.recipeIngredient.deleteMany({ where: { recipe: { userId } } }),
+    prisma.recipe.deleteMany({ where: { userId } }),
+    prisma.productServing.deleteMany({ where: { product: { userId } } }),
+    prisma.priceHistory.deleteMany({ where: { product: { userId } } }),
+    prisma.product.deleteMany({ where: { userId } }),
+    prisma.servingType.deleteMany({ where: { userId } }),
+    prisma.customContainer.deleteMany({ where: { userId } }),
+    prisma.scanUsage.deleteMany({ where: { userId } }),
+  ]);
 }

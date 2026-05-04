@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, TextInput, ScrollView, Alert, KeyboardAvoidingView, Platform,
+  View, Text, StyleSheet, TouchableOpacity, TextInput, ScrollView, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { useQueryClient } from '@tanstack/react-query';
@@ -13,6 +13,7 @@ import {
 } from '@margebar/shared';
 import { ScreenWrapper } from '../../components/ui/ScreenWrapper';
 import { useOfflineQuery } from '../../hooks/useOfflineQuery';
+import { alert } from '../../utils/alert';
 import * as recipeService from '../../services/recipe.service';
 import * as productService from '../../services/product.service';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
@@ -184,13 +185,13 @@ export function CocktailFormScreen() {
 
   const handleSave = async () => {
     if (!name.trim()) {
-      Alert.alert('Erreur', 'Le nom du cocktail est requis');
+      alert('Erreur', 'Le nom du cocktail est requis');
       return;
     }
 
     const validIngredients = ingredients.filter((i) => i.name.trim());
     if (validIngredients.length === 0) {
-      Alert.alert('Erreur', 'Ajoutez au moins un ingrédient');
+      alert('Erreur', 'Ajoutez au moins un ingrédient');
       return;
     }
 
@@ -200,7 +201,7 @@ export function CocktailFormScreen() {
       return isNaN(qty) || qty <= 0;
     });
     if (badQty) {
-      Alert.alert('Erreur', `Quantité invalide pour "${badQty.name}"`);
+      alert('Erreur', `Quantité invalide pour "${badQty.name}"`);
       return;
     }
 
@@ -239,7 +240,7 @@ export function CocktailFormScreen() {
       }
       navigation.goBack();
     } catch (err: any) {
-      Alert.alert('Erreur', err.message || 'Impossible de sauvegarder');
+      alert('Erreur', err.message || 'Impossible de sauvegarder');
     } finally {
       setSaving(false);
     }
