@@ -184,7 +184,7 @@ export function DashboardScreen() {
                 Ajoutez vos produits, choisissez votre méthode et visualisez votre rentabilité.
               </Text>
               <Text style={styles.welcomePrivacy}>
-                Vos données restent privées. Vous seul·e les voyez.
+                Vos produits et vos marges restent privés vis-à-vis des autres utilisateurs.
               </Text>
             </View>
           ) : null}

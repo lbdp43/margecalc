@@ -39,11 +39,11 @@ const FEATURES: Array<{ icon: string; title: string; desc: string }> = [
 const DATA_POINTS: Array<{ icon: string; text: string }> = [
   {
     icon: 'lock-closed-outline',
-    text: 'Vos données sont protégées et stockées de manière sécurisée. Seul vous pouvez voir vos produits et vos résultats.',
+    text: 'Vos données sont stockées de manière sécurisée. Aucun autre utilisateur ne peut voir vos produits, vos prix ou vos marges.',
   },
   {
-    icon: 'eye-off-outline',
-    text: 'Vos données sont privées. Aucun autre utilisateur n\'y a accès — elles ne servent qu\'à faire fonctionner votre espace.',
+    icon: 'shield-checkmark-outline',
+    text: 'Vos données ne sont jamais partagées avec des tiers — elles ne servent qu\'à faire fonctionner votre espace MargeBar Pro.',
   },
   {
     icon: 'trash-outline',
@@ -95,7 +95,7 @@ export const WelcomeModal = React.memo(function WelcomeModal({ visible, onClose 
             {/* Data handling */}
             <Text style={styles.sectionTitle}>Vos données sont protégées</Text>
             <Text style={styles.sectionIntro}>
-              Vous seul pouvez consulter vos produits et vos résultats.
+              Vos produits et marges restent privés vis-à-vis des autres utilisateurs.
             </Text>
             {DATA_POINTS.map((d, i) => (
               <View key={i} style={styles.dataRow}>

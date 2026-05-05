@@ -87,7 +87,7 @@ export function LandingScreen({ navigation }: Props) {
           <Text style={styles.supportTitle}>Application gratuite</Text>
         </View>
         <Text style={styles.supportDesc}>
-          Créez un compte gratuit pour profiter de toutes les fonctionnalités. Vos données sont protégées : vous seul pouvez y accéder.
+          Créez un compte gratuit pour profiter de toutes les fonctionnalités. Vos produits et vos marges restent privés vis-à-vis des autres utilisateurs.
         </Text>
         <View style={styles.featuresRow}>
           {[
