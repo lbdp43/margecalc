@@ -299,6 +299,7 @@ export function AdminUsersSection() {
                   const pct = (s.count / max) * 100;
                   return (
                     <View key={i} style={styles.miniBarCol}>
+                      <Text style={styles.miniBarValue}>{s.count > 0 ? s.count : ''}</Text>
                       <View style={[styles.miniBar, { height: `${Math.max(pct, 2)}%` }]} />
                       <Text style={styles.miniBarLabel}>{s.month.slice(5)}</Text>
                     </View>
@@ -953,9 +954,9 @@ const styles = StyleSheet.create({
   miniChart: {
     flexDirection: 'row',
     alignItems: 'flex-end',
-    height: 80,
+    height: 100,
     gap: 4,
-    marginTop: spacing.xs,
+    marginTop: spacing.sm,
   },
   miniBarCol: {
     flex: 1,
@@ -970,8 +971,15 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 4,
     minHeight: 2,
   },
+  miniBarValue: {
+    fontSize: 10,
+    color: colors.text,
+    fontWeight: '700',
+    marginBottom: 2,
+    minHeight: 12,
+  },
   miniBarLabel: {
-    fontSize: 8,
+    fontSize: 9,
     color: colors.textSecondary,
     marginTop: 2,
     fontWeight: '600',
