@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import * as authService from '../services/auth.service';
+import { BannedAccountError } from '../services/auth.service';
 
 const router = Router();
 
@@ -39,6 +40,8 @@ router.post('/login', async (req: Request, res: Response) => {
   } catch (err: any) {
     if (err.name === 'ZodError') {
       res.status(400).json({ error: err.message });
+    } else if (err instanceof BannedAccountError) {
+      res.status(403).json({ error: err.message });
     } else {
       res.status(401).json({ error: 'Email ou mot de passe incorrect' });
     }

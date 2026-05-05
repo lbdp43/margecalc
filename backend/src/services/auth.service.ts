@@ -34,6 +34,13 @@ export async function register(email: string, password: string, businessName?: s
   };
 }
 
+export class BannedAccountError extends Error {
+  constructor() {
+    super('Ce compte a été banni. Contactez La Brasserie des Plantes pour plus d\'informations.');
+    this.name = 'BannedAccountError';
+  }
+}
+
 export async function login(email: string, password: string) {
   const user = await prisma.user.findUnique({ where: { email } });
   if (!user) {
@@ -43,6 +50,10 @@ export async function login(email: string, password: string) {
   const valid = await bcrypt.compare(password, user.passwordHash);
   if (!valid) {
     throw new Error('Email ou mot de passe incorrect');
+  }
+
+  if (user.bannedAt) {
+    throw new BannedAccountError();
   }
 
   const payload: AuthPayload = { userId: user.id, email: user.email, role: user.role as 'user' | 'admin' };
@@ -68,6 +79,9 @@ export async function refreshAccessToken(refreshToken: string) {
   const user = await prisma.user.findUnique({ where: { id: decoded.userId } });
   if (!user) {
     throw new Error('Utilisateur introuvable');
+  }
+  if (user.bannedAt) {
+    throw new BannedAccountError();
   }
 
   const payload: AuthPayload = { userId: user.id, email: user.email, role: user.role as 'user' | 'admin' };

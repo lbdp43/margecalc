@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Modal, ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { alert } from '../../utils/alert';
+import { alert, confirm } from '../../utils/alert';
 import * as adminService from '../../services/admin.service';
 import type { AdminUser, AdminUsersStats, AdminRevenue, AdminProduct } from '../../services/admin.service';
 import { formatPrice, formatPercent } from '@margebar/shared';
@@ -76,6 +76,54 @@ export function AdminUsersSection() {
     } finally {
       setLoadingProducts(false);
     }
+  };
+
+  const handleBanToggle = (user: AdminUser) => {
+    const isBanned = !!user.bannedAt;
+    const verb = isBanned ? 'débannir' : 'bannir';
+    confirm(
+      isBanned ? 'Débannir cet utilisateur ?' : 'Bannir cet utilisateur ?',
+      isBanned
+        ? `${user.businessName || user.email} pourra de nouveau se connecter.`
+        : `${user.businessName || user.email} ne pourra plus se connecter. Ses données restent conservées.`,
+      async () => {
+        try {
+          const updated = isBanned
+            ? await adminService.unbanUser(user.id)
+            : await adminService.banUser(user.id);
+          setUsers((prev) =>
+            prev.map((u) => (u.id === user.id ? { ...u, bannedAt: updated.bannedAt } : u)),
+          );
+          if (selectedUser?.id === user.id) {
+            setSelectedUser({ ...user, bannedAt: updated.bannedAt });
+          }
+          alert('Succès', isBanned ? 'Utilisateur débanni.' : 'Utilisateur banni.');
+        } catch (err: any) {
+          alert('Erreur', err?.response?.data?.error || `Impossible de ${verb} l'utilisateur.`);
+        }
+      },
+      isBanned ? 'Débannir' : 'Bannir',
+      !isBanned, // destructive style only when banning
+    );
+  };
+
+  const handleDelete = (user: AdminUser) => {
+    confirm(
+      'Supprimer définitivement ce compte ?',
+      `Tous les produits, recettes, factures et données de ${user.businessName || user.email} seront supprimés. Cette action est irréversible.`,
+      async () => {
+        try {
+          await adminService.deleteUser(user.id);
+          setUsers((prev) => prev.filter((u) => u.id !== user.id));
+          if (selectedUser?.id === user.id) setSelectedUser(null);
+          alert('Compte supprimé', `${user.email} a été supprimé.`);
+        } catch (err: any) {
+          alert('Erreur', err?.response?.data?.error || 'Impossible de supprimer l\'utilisateur.');
+        }
+      },
+      'Supprimer définitivement',
+      true,
+    );
   };
 
   return (
@@ -167,8 +215,14 @@ export function AdminUsersSection() {
           users.map((u) => {
             const sub = SUB_BADGE[u.subscriptionStatus] || SUB_BADGE.none;
             const isAdmin = u.role === 'admin';
+            const isBanned = !!u.bannedAt;
             return (
-              <TouchableOpacity key={u.id} style={styles.userRow} onPress={() => openUserProducts(u)} activeOpacity={0.7}>
+              <TouchableOpacity
+                key={u.id}
+                style={[styles.userRow, isBanned && styles.userRowBanned]}
+                onPress={() => openUserProducts(u)}
+                activeOpacity={0.7}
+              >
                 <View style={styles.userMain}>
                   <View style={styles.userNameRow}>
                     <Text style={styles.userName} numberOfLines={1}>
@@ -177,6 +231,12 @@ export function AdminUsersSection() {
                     {isAdmin && (
                       <View style={styles.adminChip}>
                         <Ionicons name="shield-checkmark" size={10} color={colors.textLight} />
+                      </View>
+                    )}
+                    {isBanned && (
+                      <View style={styles.bannedChip}>
+                        <Ionicons name="ban-outline" size={10} color={colors.textLight} />
+                        <Text style={styles.bannedChipText}>Banni</Text>
                       </View>
                     )}
                   </View>
@@ -224,6 +284,7 @@ export function AdminUsersSection() {
                 </Text>
                 <Text style={styles.productsSubtitle}>
                   {userProducts.length} produit{userProducts.length > 1 ? 's' : ''}
+                  {selectedUser?.bannedAt && ' · banni'}
                 </Text>
               </View>
               <TouchableOpacity
@@ -233,6 +294,37 @@ export function AdminUsersSection() {
                 <Ionicons name="close" size={24} color={colors.textSecondary} />
               </TouchableOpacity>
             </View>
+
+            {selectedUser && selectedUser.role !== 'admin' && (
+              <View style={styles.adminActionsRow}>
+                <TouchableOpacity
+                  style={[
+                    styles.adminActionBtn,
+                    selectedUser.bannedAt ? styles.adminActionBtnUnban : styles.adminActionBtnBan,
+                  ]}
+                  onPress={() => handleBanToggle(selectedUser)}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons
+                    name={selectedUser.bannedAt ? 'lock-open-outline' : 'ban-outline'}
+                    size={14}
+                    color={colors.textLight}
+                  />
+                  <Text style={styles.adminActionBtnText}>
+                    {selectedUser.bannedAt ? 'Débannir' : 'Bannir'}
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.adminActionBtn, styles.adminActionBtnDelete]}
+                  onPress={() => handleDelete(selectedUser)}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="trash-outline" size={14} color={colors.textLight} />
+                  <Text style={styles.adminActionBtnText}>Supprimer</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
             <ScrollView contentContainerStyle={styles.productsContent}>
               {loadingProducts ? (
                 <Text style={styles.productsEmpty}>Chargement...</Text>
@@ -447,6 +539,59 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
     borderLeftWidth: 3,
     borderLeftColor: colors.primary,
+  },
+  userRowBanned: {
+    opacity: 0.6,
+    borderLeftColor: colors.marginRed,
+  },
+  bannedChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: colors.marginRed,
+    borderRadius: borderRadius.full,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  bannedChipText: {
+    fontSize: 9,
+    fontWeight: '700',
+    letterSpacing: 0.4,
+    color: colors.textLight,
+    textTransform: 'uppercase',
+  },
+  adminActionsRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  adminActionBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    borderRadius: borderRadius.md,
+    paddingVertical: spacing.sm,
+  },
+  adminActionBtnBan: {
+    backgroundColor: colors.marginOrange,
+  },
+  adminActionBtnUnban: {
+    backgroundColor: colors.primary,
+  },
+  adminActionBtnDelete: {
+    backgroundColor: colors.marginRed,
+  },
+  adminActionBtnText: {
+    ...typography.caption,
+    fontWeight: '700',
+    color: colors.textLight,
+    letterSpacing: 0.3,
   },
   userMain: {
     flex: 1,

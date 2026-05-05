@@ -28,6 +28,7 @@ router.get('/users', async (_req: Request, res: Response) => {
         subscriptionEndDate: true,
         createdAt: true,
         lastSeenAt: true,
+        bannedAt: true,
       },
       orderBy: [
         { lastSeenAt: { sort: 'desc', nulls: 'last' } },
@@ -85,6 +86,7 @@ router.get('/users', async (_req: Request, res: Response) => {
         subscriptionEndDate: u.subscriptionEndDate?.toISOString() ?? null,
         createdAt: u.createdAt.toISOString(),
         lastSeenAt: u.lastSeenAt?.toISOString() ?? null,
+        bannedAt: u.bannedAt?.toISOString() ?? null,
       })),
     });
   } catch (err: any) {
@@ -195,6 +197,97 @@ router.get('/users/:userId/products', async (req: Request, res: Response) => {
   } catch (err: any) {
     console.error('Admin user products error:', err.message);
     res.status(500).json({ error: 'Impossible de charger les produits' });
+  }
+});
+
+// PATCH /api/admin/users/:userId/ban — ban a user (prevents login)
+router.patch('/users/:userId/ban', async (req: Request, res: Response): Promise<void> => {
+  try {
+    if (req.user?.userId === req.params.userId) {
+      res.status(400).json({ error: 'Vous ne pouvez pas vous bannir vous-même' });
+      return;
+    }
+    const target = await prisma.user.findUnique({ where: { id: req.params.userId } });
+    if (!target) {
+      res.status(404).json({ error: 'Utilisateur introuvable' });
+      return;
+    }
+    if (target.role === 'admin') {
+      res.status(400).json({ error: 'Impossible de bannir un administrateur' });
+      return;
+    }
+    const updated = await prisma.user.update({
+      where: { id: req.params.userId },
+      data: { bannedAt: new Date() },
+      select: { id: true, email: true, bannedAt: true },
+    });
+    res.json({
+      id: updated.id,
+      email: updated.email,
+      bannedAt: updated.bannedAt?.toISOString() ?? null,
+    });
+  } catch (err: any) {
+    console.error('Admin ban user error:', err.message);
+    res.status(500).json({ error: 'Impossible de bannir l\'utilisateur' });
+  }
+});
+
+// PATCH /api/admin/users/:userId/unban — lift the ban
+router.patch('/users/:userId/unban', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const target = await prisma.user.findUnique({ where: { id: req.params.userId } });
+    if (!target) {
+      res.status(404).json({ error: 'Utilisateur introuvable' });
+      return;
+    }
+    const updated = await prisma.user.update({
+      where: { id: req.params.userId },
+      data: { bannedAt: null },
+      select: { id: true, email: true, bannedAt: true },
+    });
+    res.json({
+      id: updated.id,
+      email: updated.email,
+      bannedAt: updated.bannedAt?.toISOString() ?? null,
+    });
+  } catch (err: any) {
+    console.error('Admin unban user error:', err.message);
+    res.status(500).json({ error: 'Impossible de débannir l\'utilisateur' });
+  }
+});
+
+// DELETE /api/admin/users/:userId — permanently delete the account + all data
+router.delete('/users/:userId', async (req: Request, res: Response): Promise<void> => {
+  try {
+    if (req.user?.userId === req.params.userId) {
+      res.status(400).json({ error: 'Vous ne pouvez pas supprimer votre propre compte' });
+      return;
+    }
+    const target = await prisma.user.findUnique({ where: { id: req.params.userId } });
+    if (!target) {
+      res.status(404).json({ error: 'Utilisateur introuvable' });
+      return;
+    }
+    if (target.role === 'admin') {
+      res.status(400).json({ error: 'Impossible de supprimer un administrateur' });
+      return;
+    }
+    // Cascade-delete dependent rows that don't have ON DELETE CASCADE in schema.
+    await prisma.$transaction([
+      prisma.productServing.deleteMany({ where: { product: { userId: req.params.userId } } }),
+      prisma.recipeIngredient.deleteMany({ where: { recipe: { userId: req.params.userId } } }),
+      prisma.recipe.deleteMany({ where: { userId: req.params.userId } }),
+      prisma.product.deleteMany({ where: { userId: req.params.userId } }),
+      prisma.servingType.deleteMany({ where: { userId: req.params.userId } }),
+      prisma.customContainer.deleteMany({ where: { userId: req.params.userId } }),
+      prisma.scanUsage.deleteMany({ where: { userId: req.params.userId } }),
+      prisma.ticket.deleteMany({ where: { userId: req.params.userId } }),
+      prisma.user.delete({ where: { id: req.params.userId } }),
+    ]);
+    res.json({ ok: true });
+  } catch (err: any) {
+    console.error('Admin delete user error:', err.message);
+    res.status(500).json({ error: 'Impossible de supprimer l\'utilisateur' });
   }
 });
 

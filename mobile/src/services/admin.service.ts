@@ -10,6 +10,7 @@ export interface AdminUser {
   subscriptionEndDate: string | null;
   createdAt: string;
   lastSeenAt: string | null;
+  bannedAt: string | null;
 }
 
 export interface AdminUsersStats {
@@ -69,4 +70,24 @@ export async function getAllProducts(): Promise<AdminProduct[]> {
 export async function getAdminUserProducts(userId: string): Promise<AdminProduct[]> {
   const res = await api.get<AdminProduct[]>(`/admin/users/${userId}/products`, { timeout: 30000 });
   return res.data;
+}
+
+export interface BanResponse {
+  id: string;
+  email: string;
+  bannedAt: string | null;
+}
+
+export async function banUser(userId: string): Promise<BanResponse> {
+  const res = await api.patch<BanResponse>(`/admin/users/${userId}/ban`);
+  return res.data;
+}
+
+export async function unbanUser(userId: string): Promise<BanResponse> {
+  const res = await api.patch<BanResponse>(`/admin/users/${userId}/unban`);
+  return res.data;
+}
+
+export async function deleteUser(userId: string): Promise<void> {
+  await api.delete(`/admin/users/${userId}`);
 }

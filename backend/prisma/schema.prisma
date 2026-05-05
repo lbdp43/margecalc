@@ -21,6 +21,7 @@ model User {
   subscriptionPlan           String?   // e.g. "pro_monthly", "pro_yearly"
   subscriptionEndDate        DateTime?
   lastSeenAt                 DateTime?
+  bannedAt                   DateTime?
   createdAt                  DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
   products           Product[]
