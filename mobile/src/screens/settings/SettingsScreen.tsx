@@ -1,21 +1,28 @@
 import React, { useState, useCallback } from 'react';
-import { View, Text, StyleSheet, Switch, Alert, TouchableOpacity, ScrollView, TextInput, Linking, Platform } from 'react-native';
-import { useFocusEffect } from '@react-navigation/native';
+import { View, Text, StyleSheet, Switch, TouchableOpacity, ScrollView, TextInput, Linking, Platform } from 'react-native';
+import { alert, confirm } from '../../utils/alert';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { TVA_RATES, CONTAINER_PRESETS, ServingType, DEFAULT_MARGIN_THRESHOLDS, Category, CustomContainer } from '@margebar/shared';
 import { ScreenWrapper } from '../../components/ui/ScreenWrapper';
 import { DecorativeCurve } from '../../components/ui/DecorativeCurve';
+import { ServingTypeIcon } from '../../components/ui/ServingTypeIcon';
 import { Input } from '../../components/ui/Input';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
+import { AdminTicketsSection } from '../../components/ui/AdminTicketsSection';
+import { AdminUsersSection } from '../../components/ui/AdminUsersSection';
 import { useAuthStore } from '../../store/auth.store';
+import { useSystemParamsStore } from '../../store/systemParams.store';
+import { useRatesStore } from '../../store/rates.store';
 import { api } from '../../services/api';
 import * as servingService from '../../services/serving.service';
 import * as categoryService from '../../services/category.service';
 import * as containerService from '../../services/container.service';
 import * as subscriptionService from '../../services/subscription.service';
-import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
+import { colors, spacing, borderRadius, typography, shadows, fonts } from '../../theme';
+import { Display, Eyebrow, InkStamp, Scribble } from '../../components/ui/atelier';
 
 export function SettingsScreen() {
   const { user, setAuth, logout } = useAuthStore();
@@ -38,6 +45,19 @@ export function SettingsScreen() {
   const [greenThreshold, setGreenThreshold] = useState(String(DEFAULT_MARGIN_THRESHOLDS.good));
   const [orangeThreshold, setOrangeThreshold] = useState(String(DEFAULT_MARGIN_THRESHOLDS.medium));
 
+  // System params (admin-managed)
+  const { params: systemParams, updateParam } = useSystemParamsStore();
+  const { rates, updateRate, resetDefaults } = useRatesStore();
+  const isAdmin = user?.role === 'admin';
+  const navigation = useNavigation<any>();
+
+  // Local state for admin editing of rates
+  const [editRates, setEditRates] = useState<Record<string, { accise: string; cotisation: string }>>({});
+  const [editTvaSoft, setEditTvaSoft] = useState('');
+  const [editTvaFood, setEditTvaFood] = useState('');
+  const [editLienRef, setEditLienRef] = useState('');
+  const [savingSystemParams, setSavingSystemParams] = useState(false);
+
   // Categories
   const [categories, setCategories] = useState<Category[]>([]);
   const [newCategoryName, setNewCategoryName] = useState('');
@@ -58,17 +78,39 @@ export function SettingsScreen() {
 
   useFocusEffect(
     useCallback(() => {
+      let mounted = true;
       loadServingTypes();
       loadCategories();
       loadContainers();
       loadSubscription();
-      AsyncStorage.getItem('margebar_margin_thresholds').then((val) => {
-        if (val) {
-          const parsed = JSON.parse(val);
-          setGreenThreshold(String(parsed.good));
-          setOrangeThreshold(String(parsed.medium));
-        }
+      // Load system params and rates, init admin edit fields
+      useSystemParamsStore.getState().loadParams(true).then(() => {
+        if (!mounted) return;
+        const state = useSystemParamsStore.getState();
+        setEditTvaSoft(state.getParam('tva_soft') || '');
+        setEditTvaFood(state.getParam('tva_food') || '');
+        setEditLienRef(state.getParam('lien_reference') || '');
       });
+      useRatesStore.getState().loadRates(true).then(() => {
+        if (!mounted) return;
+        const ratesState = useRatesStore.getState();
+        const initial: Record<string, { accise: string; cotisation: string }> = {};
+        ratesState.rates.forEach((r) => {
+          initial[r.slug] = { accise: String(r.acciseRate), cotisation: String(r.cotisationRate) };
+        });
+        setEditRates(initial);
+      });
+      AsyncStorage.getItem('margebar_margin_thresholds').then((thresholdsVal) => {
+        if (!mounted) return;
+        if (thresholdsVal) {
+          try {
+            const parsed = JSON.parse(thresholdsVal);
+            setGreenThreshold(String(parsed.good));
+            setOrangeThreshold(String(parsed.medium));
+          } catch { /* ignore corrupted data */ }
+        }
+      }).catch(() => {});
+      return () => { mounted = false; };
     }, [])
   );
 
@@ -100,7 +142,7 @@ export function SettingsScreen() {
         await Linking.openURL(url);
       }
     } catch {
-      Alert.alert('Erreur', 'Impossible d\'ouvrir le portail d\'abonnement');
+      alert('Erreur', 'Impossible d\'ouvrir le portail d\'abonnement');
     } finally {
       setSubLoading(false);
     }
@@ -109,7 +151,7 @@ export function SettingsScreen() {
   const handleAddServing = async () => {
     const vol = parseFloat(newVolume.replace(',', '.'));
     if (!newName.trim() || isNaN(vol) || vol <= 0) {
-      Alert.alert('Erreur', 'Entrez un nom et un volume valide');
+      alert('Erreur', 'Entrez un nom et un volume valide');
       return;
     }
     try {
@@ -122,14 +164,14 @@ export function SettingsScreen() {
       setNewVolume('');
       loadServingTypes();
     } catch {
-      Alert.alert('Erreur', 'Impossible de créer le type de service');
+      alert('Erreur', 'Impossible de créer le type de service');
     }
   };
 
   const handleEditServing = async (id: string) => {
     const vol = parseFloat(editVolume.replace(',', '.'));
     if (!editName.trim() || isNaN(vol) || vol <= 0) {
-      Alert.alert('Erreur', 'Entrez un nom et un volume valide');
+      alert('Erreur', 'Entrez un nom et un volume valide');
       return;
     }
     try {
@@ -140,26 +182,25 @@ export function SettingsScreen() {
       setEditingId(null);
       loadServingTypes();
     } catch {
-      Alert.alert('Erreur', 'Impossible de modifier');
+      alert('Erreur', 'Impossible de modifier');
     }
   };
 
   const handleDeleteServing = (id: string, name: string) => {
-    Alert.alert('Supprimer', `Supprimer "${name}" ?`, [
-      { text: 'Annuler', style: 'cancel' },
-      {
-        text: 'Supprimer',
-        style: 'destructive',
-        onPress: async () => {
-          try {
-            await servingService.deleteServingType(id);
-            loadServingTypes();
-          } catch {
-            Alert.alert('Erreur', 'Impossible de supprimer');
-          }
-        },
+    confirm(
+      'Supprimer',
+      `Supprimer "${name}" ?`,
+      async () => {
+        try {
+          await servingService.deleteServingType(id);
+          loadServingTypes();
+        } catch {
+          alert('Erreur', 'Impossible de supprimer');
+        }
       },
-    ]);
+      'Supprimer',
+      true,
+    );
   };
 
   const startEdit = (st: ServingType) => {
@@ -177,7 +218,7 @@ export function SettingsScreen() {
 
   const handleAddCategory = async () => {
     if (!newCategoryName.trim()) {
-      Alert.alert('Erreur', 'Entrez un nom de catégorie');
+      alert('Erreur', 'Entrez un nom de catégorie');
       return;
     }
     try {
@@ -185,7 +226,7 @@ export function SettingsScreen() {
       setNewCategoryName('');
       loadCategories();
     } catch {
-      Alert.alert('Erreur', 'Impossible de créer la catégorie');
+      alert('Erreur', 'Impossible de créer la catégorie');
     }
   };
 
@@ -200,7 +241,7 @@ export function SettingsScreen() {
   const handleAddContainer = async () => {
     const vol = parseFloat(newContainerVolume.replace(',', '.'));
     if (!newContainerName.trim() || isNaN(vol) || vol <= 0) {
-      Alert.alert('Erreur', 'Entrez un nom et un volume valide');
+      alert('Erreur', 'Entrez un nom et un volume valide');
       return;
     }
     try {
@@ -209,14 +250,14 @@ export function SettingsScreen() {
       setNewContainerVolume('');
       loadContainers();
     } catch {
-      Alert.alert('Erreur', 'Impossible de créer le contenant');
+      alert('Erreur', 'Impossible de créer le contenant');
     }
   };
 
   const handleEditContainer = async (id: string) => {
     const vol = parseFloat(editContainerVolume.replace(',', '.'));
     if (!editContainerName.trim() || isNaN(vol) || vol <= 0) {
-      Alert.alert('Erreur', 'Entrez un nom et un volume valide');
+      alert('Erreur', 'Entrez un nom et un volume valide');
       return;
     }
     try {
@@ -227,26 +268,19 @@ export function SettingsScreen() {
       setEditingContainerId(null);
       loadContainers();
     } catch {
-      Alert.alert('Erreur', 'Impossible de modifier');
+      alert('Erreur', 'Impossible de modifier');
     }
   };
 
   const handleDeleteContainer = (id: string, name: string) => {
-    Alert.alert('Supprimer', `Supprimer "${name}" ?`, [
-      { text: 'Annuler', style: 'cancel' },
-      {
-        text: 'Supprimer',
-        style: 'destructive',
-        onPress: async () => {
-          try {
-            await containerService.deleteContainer(id);
-            loadContainers();
-          } catch {
-            Alert.alert('Erreur', 'Impossible de supprimer');
-          }
-        },
-      },
-    ]);
+    confirm('Supprimer', `Supprimer "${name}" ?`, async () => {
+      try {
+        await containerService.deleteContainer(id);
+        loadContainers();
+      } catch {
+        alert('Erreur', 'Impossible de supprimer');
+      }
+    }, 'Supprimer', true);
   };
 
   const startEditContainer = (c: CustomContainer) => {
@@ -270,25 +304,69 @@ export function SettingsScreen() {
       });
       const token = useAuthStore.getState().token!;
       setAuth(token, res.data);
-      Alert.alert('Succès', 'Paramètres mis à jour');
+      alert('Succès', 'Paramètres mis à jour');
     } catch {
-      Alert.alert('Erreur', 'Impossible de sauvegarder');
+      alert('Erreur', 'Impossible de sauvegarder');
     } finally {
       setSaving(false);
     }
   };
 
+  const handleSaveSystemParams = async () => {
+    setSavingSystemParams(true);
+    try {
+      // Save system params
+      await updateParam('tva_soft', editTvaSoft.replace(',', '.'));
+      await updateParam('tva_food', editTvaFood.replace(',', '.'));
+      await updateParam('lien_reference', editLienRef);
+      // Save all rates
+      for (const [slug, values] of Object.entries(editRates)) {
+        await updateRate(slug, {
+          acciseRate: parseFloat(values.accise.replace(',', '.')) || 0,
+          cotisationRate: parseFloat(values.cotisation.replace(',', '.')) || 0,
+        });
+      }
+      alert('Succes', 'Tarifs mis a jour pour tous les utilisateurs');
+    } catch {
+      alert('Erreur', 'Impossible de sauvegarder');
+    } finally {
+      setSavingSystemParams(false);
+    }
+  };
+
+  const handleResetRates = async () => {
+    setSavingSystemParams(true);
+    try {
+      await resetDefaults();
+      // Reload edit state
+      const ratesState = useRatesStore.getState();
+      const initial: Record<string, { accise: string; cotisation: string }> = {};
+      ratesState.rates.forEach((r) => {
+        initial[r.slug] = { accise: String(r.acciseRate), cotisation: String(r.cotisationRate) };
+      });
+      setEditRates(initial);
+      alert('Succes', 'Tarifs reinitialises aux valeurs 2026');
+    } catch {
+      alert('Erreur', 'Impossible de reinitialiser');
+    } finally {
+      setSavingSystemParams(false);
+    }
+  };
+
   const handleLogout = () => {
-    Alert.alert('Déconnexion', 'Voulez-vous vous déconnecter ?', [
-      { text: 'Annuler', style: 'cancel' },
-      { text: 'Déconnexion', style: 'destructive', onPress: logout },
-    ]);
+    confirm('Déconnexion', 'Voulez-vous vous déconnecter ?', logout, 'Déconnexion', true);
   };
 
   return (
     <ScreenWrapper>
       <DecorativeCurve variant="top" />
-      <Text style={styles.title}>Paramètres</Text>
+      <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: spacing.lg }}>
+        <InkStamp size={44} color={colors.primary} rotate={-6} />
+        <View style={{ marginLeft: spacing.sm + 2 }}>
+          <Eyebrow color={colors.textMuted}>Atelier</Eyebrow>
+          <Display size={28} style={{ marginTop: 2 }}>Paramètres</Display>
+        </View>
+      </View>
 
       {/* Mon établissement */}
       <View style={styles.sectionCard}>
@@ -331,6 +409,62 @@ export function SettingsScreen() {
           </View>
         </View>
       </View>
+
+      {/* Tarifs en vigueur — visible par tous, lecture seule pour non-admin */}
+      {!isAdmin && (
+        <View style={styles.sectionCard}>
+          <View style={styles.sectionHeader}>
+            <View style={styles.sectionAccent} />
+            <Text style={styles.sectionTitle}>Tarifs en vigueur</Text>
+            <View style={styles.lockBadge}>
+              <Ionicons name="lock-closed" size={12} color={colors.textSecondary} />
+            </View>
+          </View>
+          <View style={styles.sectionBody}>
+            <Text style={styles.sectionDesc}>
+              Tarifs {systemParams.find(p => p.key === 'tarif_annee')?.value || '2026'} des droits d'accise et cotisation securite sociale. Ces valeurs sont gerees par l'administrateur.
+            </Text>
+
+            <Text style={[styles.subLabel, { marginTop: spacing.sm }]}>Droits d'accise</Text>
+            {rates.map((r) => (
+              <View key={r.slug} style={styles.thresholdCard}>
+                <Text style={[styles.thresholdLabel, { flex: 1 }]}>{r.label}</Text>
+                <Text style={styles.readOnlyValue}>{r.acciseRate}</Text>
+                <Text style={styles.thresholdUnit}>{r.acciseUnit === 'euro/hl' ? '€/hl' : r.acciseUnit === 'euro/hl_degree' ? '€/hl/deg' : '€/hlap'}</Text>
+              </View>
+            ))}
+
+            <Text style={[styles.subLabel, { marginTop: spacing.md }]}>Cotisation securite sociale</Text>
+            <Text style={styles.sectionDesc}>Applicable uniquement au-dessus de 18° vol.</Text>
+            {rates.filter((r) => r.cotisationCond).map((r) => (
+              <View key={r.slug} style={styles.thresholdCard}>
+                <Text style={[styles.thresholdLabel, { flex: 1 }]}>{r.label}</Text>
+                <Text style={styles.readOnlyValue}>{r.cotisationRate}</Text>
+                <Text style={styles.thresholdUnit}>{r.cotisationUnit === 'euro/hlap' ? '€/hlap' : '€/hl'}</Text>
+              </View>
+            ))}
+
+            {systemParams.find(p => p.key === 'lien_reference')?.value ? (
+              <TouchableOpacity
+                style={styles.refLinkRow}
+                onPress={() => {
+                  const url = systemParams.find(p => p.key === 'lien_reference')?.value;
+                  if (url) {
+                    if (Platform.OS === 'web') {
+                      (window as any).open(url, '_blank');
+                    } else {
+                      Linking.openURL(url);
+                    }
+                  }
+                }}
+              >
+                <Ionicons name="open-outline" size={16} color={colors.accent} />
+                <Text style={styles.refLinkText}>Source officielle : Taxation des boissons</Text>
+              </TouchableOpacity>
+            ) : null}
+          </View>
+        </View>
+      )}
 
       {/* Seuils de marge */}
       <View style={styles.sectionCard}>
@@ -531,9 +665,7 @@ export function SettingsScreen() {
               ) : (
                 <>
                   <View style={styles.servingInfo}>
-                    <View style={styles.servingIconBadge}>
-                      <Text style={styles.servingIconEmoji}>{st.icon || '🍷'}</Text>
-                    </View>
+                    <ServingTypeIcon name={st.name} icon={st.icon} size={40} />
                     <View style={styles.servingTextBlock}>
                       <Text style={styles.servingName}>{st.name}</Text>
                       <Text style={styles.servingVolume}>{st.volumeCl} cl</Text>
@@ -617,48 +749,173 @@ export function SettingsScreen() {
         <View style={styles.sectionBody}>
           <View style={styles.subscriptionCard}>
             <View style={styles.subscriptionInfo}>
-              <View style={[styles.subscriptionBadge, subStatus === 'active' || subStatus === 'trialing' ? styles.subscriptionBadgeActive : styles.subscriptionBadgeInactive]}>
-                <Ionicons
-                  name={subStatus === 'active' || subStatus === 'trialing' ? 'checkmark-circle' : 'close-circle'}
-                  size={20}
-                  color={subStatus === 'active' || subStatus === 'trialing' ? colors.marginGreen : colors.tabBarInactive}
-                />
+              <View style={[styles.subscriptionBadge, styles.subscriptionBadgeActive]}>
+                <Ionicons name="checkmark-circle" size={20} color={colors.marginGreen} />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={styles.subscriptionStatus}>
-                  {subStatus === 'active' ? 'Abonnement actif' :
-                   subStatus === 'trialing' ? 'Période d\'essai' :
-                   subStatus === 'past_due' ? 'Paiement en retard' :
-                   subStatus === 'canceled' ? 'Abonnement annulé' :
-                   'Aucun abonnement'}
+                <Text style={styles.subscriptionStatus}>Gratuit — open source</Text>
+                <Text style={styles.subscriptionPlan}>
+                  Toutes les fonctionnalites sont accessibles gratuitement.
                 </Text>
-                {subPlan && (
-                  <Text style={styles.subscriptionPlan}>
-                    Plan : {subPlan === 'pro_yearly' ? 'Annuel' : 'Mensuel'} — 2,50 €/mois
-                  </Text>
-                )}
-                {subEndDate && (
-                  <Text style={styles.subscriptionDate}>
-                    {subStatus === 'active' ? 'Renouvellement' : 'Expire'} le {new Date(subEndDate).toLocaleDateString('fr-FR')}
-                  </Text>
-                )}
               </View>
             </View>
-            <TouchableOpacity
-              style={styles.subscriptionBtn}
-              onPress={handleManageSubscription}
-              disabled={subLoading}
-              activeOpacity={0.7}
-            >
-              <Ionicons name="card-outline" size={18} color={colors.primary} style={{ marginRight: spacing.xs }} />
-              <Text style={styles.subscriptionBtnText}>
-                {subLoading ? 'Chargement...' : subStatus === 'active' ? 'Gérer mon abonnement' : 'Voir les offres'}
-              </Text>
-              <Ionicons name="chevron-forward" size={16} color={colors.primary} />
-            </TouchableOpacity>
           </View>
         </View>
       </View>
+
+      {/* Admin panel — visible only to admins */}
+      {isAdmin && (
+        <>
+          {/* Utilisateurs */}
+          <AdminUsersSection />
+
+          {/* Voir tous les produits */}
+          <TouchableOpacity
+            style={styles.adminNavBtn}
+            onPress={() => navigation.navigate('AdminProducts')}
+            activeOpacity={0.7}
+          >
+            <View style={styles.adminNavBtnLeft}>
+              <Ionicons name="grid-outline" size={20} color={colors.primary} />
+              <View>
+                <Text style={styles.adminNavBtnTitle}>Tous les produits</Text>
+                <Text style={styles.adminNavBtnDesc}>Vue d'ensemble de tous les utilisateurs</Text>
+              </View>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={colors.primary} />
+          </TouchableOpacity>
+
+          {/* Tickets / retours beta */}
+          <AdminTicketsSection />
+
+          {/* Tarifs d'accise */}
+          <View style={styles.sectionCard}>
+            <View style={styles.sectionHeader}>
+              <View style={[styles.sectionAccent, { backgroundColor: colors.marginOrange }]} />
+              <Text style={styles.sectionTitle}>Tarifs d'accise</Text>
+              <View style={styles.adminBadge}>
+                <Ionicons name="shield-checkmark" size={14} color={colors.textLight} />
+                <Text style={styles.adminBadgeText}>Admin</Text>
+              </View>
+            </View>
+            <View style={styles.sectionBody}>
+              <Text style={styles.sectionDesc}>
+                Tarifs par categorie fiscale. Appliques a tous les utilisateurs.
+              </Text>
+              {rates.map((r) => (
+                <View key={r.slug} style={styles.systemParamRow}>
+                  <View style={{ flex: 1, marginRight: spacing.sm }}>
+                    <Text style={styles.systemParamLabel}>{r.label}</Text>
+                    <Text style={styles.systemParamDesc}>{r.acciseUnit}</Text>
+                  </View>
+                  <TextInput
+                    style={[styles.thresholdInput, { width: 80 }]}
+                    value={editRates[r.slug]?.accise || ''}
+                    onChangeText={(v) => setEditRates((prev) => ({ ...prev, [r.slug]: { ...prev[r.slug], accise: v } }))}
+                    keyboardType="decimal-pad"
+                    placeholderTextColor={colors.textSecondary}
+                  />
+                </View>
+              ))}
+            </View>
+          </View>
+
+          {/* Cotisation securite sociale */}
+          <View style={styles.sectionCard}>
+            <View style={styles.sectionHeader}>
+              <View style={[styles.sectionAccent, { backgroundColor: colors.marginOrange }]} />
+              <Text style={styles.sectionTitle}>Cotisation secu. sociale</Text>
+            </View>
+            <View style={styles.sectionBody}>
+              <Text style={styles.sectionDesc}>
+                Applicable uniquement aux boissons dont le degre depasse 18% vol.
+              </Text>
+              {rates.filter((r) => r.cotisationCond).map((r) => (
+                <View key={r.slug} style={styles.systemParamRow}>
+                  <View style={{ flex: 1, marginRight: spacing.sm }}>
+                    <Text style={styles.systemParamLabel}>{r.label}</Text>
+                    <Text style={styles.systemParamDesc}>{r.cotisationUnit}</Text>
+                  </View>
+                  <TextInput
+                    style={[styles.thresholdInput, { width: 80 }]}
+                    value={editRates[r.slug]?.cotisation || ''}
+                    onChangeText={(v) => setEditRates((prev) => ({ ...prev, [r.slug]: { ...prev[r.slug], cotisation: v } }))}
+                    keyboardType="decimal-pad"
+                    placeholderTextColor={colors.textSecondary}
+                  />
+                </View>
+              ))}
+            </View>
+          </View>
+
+          {/* Parametres generaux admin */}
+          <View style={styles.sectionCard}>
+            <View style={styles.sectionHeader}>
+              <View style={[styles.sectionAccent, { backgroundColor: colors.marginOrange }]} />
+              <Text style={styles.sectionTitle}>Parametres generaux</Text>
+            </View>
+            <View style={styles.sectionBody}>
+              <View style={styles.thresholdCard}>
+                <Text style={[styles.thresholdLabel, { flex: 1 }]}>TVA boissons non-alcoolisees</Text>
+                <View style={styles.thresholdInputWrap}>
+                  <TextInput
+                    style={[styles.thresholdInput, { width: 70 }]}
+                    value={editTvaSoft}
+                    onChangeText={setEditTvaSoft}
+                    keyboardType="decimal-pad"
+                    placeholderTextColor={colors.textSecondary}
+                  />
+                  <Text style={styles.thresholdUnit}>%</Text>
+                </View>
+              </View>
+              <View style={styles.thresholdCard}>
+                <Text style={[styles.thresholdLabel, { flex: 1 }]}>TVA alimentation</Text>
+                <View style={styles.thresholdInputWrap}>
+                  <TextInput
+                    style={[styles.thresholdInput, { width: 70 }]}
+                    value={editTvaFood}
+                    onChangeText={setEditTvaFood}
+                    keyboardType="decimal-pad"
+                    placeholderTextColor={colors.textSecondary}
+                  />
+                  <Text style={styles.thresholdUnit}>%</Text>
+                </View>
+              </View>
+              <View style={styles.thresholdCard}>
+                <Text style={[styles.thresholdLabel, { flex: 1 }]}>Lien de reference</Text>
+              </View>
+              <TextInput
+                style={[styles.thresholdInput, { width: '100%' as any, marginBottom: spacing.sm }]}
+                value={editLienRef}
+                onChangeText={setEditLienRef}
+                placeholder="https://..."
+                placeholderTextColor={colors.textSecondary}
+                autoCapitalize="none"
+              />
+              <TouchableOpacity
+                style={[styles.adminSaveBtn, savingSystemParams && styles.saveBtnDisabled]}
+                onPress={handleSaveSystemParams}
+                disabled={savingSystemParams}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="cloud-upload-outline" size={18} color={colors.textLight} style={{ marginRight: spacing.xs }} />
+                <Text style={styles.adminSaveBtnText}>
+                  {savingSystemParams ? 'Enregistrement...' : 'Enregistrer tous les tarifs'}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.adminSaveBtn, { backgroundColor: colors.marginOrange, marginTop: spacing.sm }]}
+                onPress={handleResetRates}
+                disabled={savingSystemParams}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="refresh-outline" size={18} color={colors.textLight} style={{ marginRight: spacing.xs }} />
+                <Text style={styles.adminSaveBtnText}>Reinitialiser tarifs 2026</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </>
+      )}
 
       {/* Save button */}
       <TouchableOpacity
@@ -681,7 +938,23 @@ export function SettingsScreen() {
         <Text style={styles.logoutBtnText}>Se déconnecter</Text>
       </TouchableOpacity>
 
-      <Text style={styles.version}>MargeBar v1.0.0</Text>
+      <View style={styles.aboutSection}>
+        <Text style={styles.aboutTitle}>
+          Application crée par{' '}
+          <Text
+            style={styles.aboutTitleLink}
+            onPress={() => Linking.openURL('https://labrasseriedesplantes.fr/')}
+          >
+            La Brasserie des Plantes
+          </Text>
+        </Text>
+        <TouchableOpacity style={styles.aboutRow} onPress={() => Linking.openURL('mailto:labrasseriedesplantes@gmail.com')}>
+          <Ionicons name="mail-outline" size={14} color={colors.primary} />
+          <Text style={styles.aboutLink}>labrasseriedesplantes@gmail.com</Text>
+        </TouchableOpacity>
+      </View>
+
+      <Text style={styles.version}>MargeBar Pro v3.14</Text>
     </ScreenWrapper>
   );
 }
@@ -698,7 +971,9 @@ const styles = StyleSheet.create({
     backgroundColor: colors.cardBackground,
     borderRadius: borderRadius.lg,
     marginBottom: spacing.lg,
-    ...shadows.sm,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    ...shadows.paper,
     overflow: 'hidden',
   },
   sectionHeader: {
@@ -717,7 +992,11 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     ...typography.h3,
+    fontFamily: fonts.serif,
+    fontStyle: 'italic',
+    fontWeight: '500',
     color: colors.text,
+    letterSpacing: -0.3,
   },
   sectionBody: {
     paddingHorizontal: spacing.lg,
@@ -876,9 +1155,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     ...shadows.sm,
-  },
-  servingIconEmoji: {
-    fontSize: 22,
   },
   servingTextBlock: {
     marginLeft: spacing.sm,
@@ -1069,12 +1345,165 @@ const styles = StyleSheet.create({
     flex: 1,
   },
 
+  // Read-only value display
+  readOnlyValue: {
+    ...typography.bodySmall,
+    fontWeight: '700',
+    color: colors.text,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs + 2,
+    minWidth: 56,
+    textAlign: 'center',
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.sm,
+    overflow: 'hidden',
+  },
+
+  // Reference link
+  refLinkRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: spacing.md,
+    paddingTop: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  refLinkText: {
+    ...typography.bodySmall,
+    color: colors.accent,
+    marginLeft: spacing.xs,
+    textDecorationLine: 'underline',
+  },
+
+  // Lock badge (for read-only sections)
+  lockBadge: {
+    marginLeft: spacing.xs,
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.full,
+    width: 22,
+    height: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  // Admin badge
+  adminBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.marginOrange,
+    borderRadius: borderRadius.full,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 3,
+    marginLeft: 'auto',
+  },
+  adminBadgeText: {
+    ...typography.caption,
+    fontWeight: '700',
+    color: colors.textLight,
+    marginLeft: 4,
+    fontSize: 11,
+  },
+
+  // Admin save button
+  adminSaveBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.accent,
+    borderRadius: borderRadius.md,
+    paddingVertical: spacing.sm,
+    marginTop: spacing.md,
+  },
+  adminSaveBtnText: {
+    ...typography.caption,
+    fontWeight: '700',
+    color: colors.textLight,
+  },
+
+  // System param rows
+  systemParamRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm + 2,
+    marginBottom: spacing.sm,
+  },
+  systemParamLabel: {
+    ...typography.bodySmall,
+    fontWeight: '600',
+    color: colors.text,
+  },
+  systemParamDesc: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    marginTop: 2,
+    lineHeight: 15,
+  },
+
+  adminNavBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: colors.cardBackground,
+    borderRadius: borderRadius.lg,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    ...shadows.sm,
+  },
+  adminNavBtnLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    flex: 1,
+  },
+  adminNavBtnTitle: {
+    ...typography.bodySmall,
+    fontWeight: '700',
+    color: colors.primary,
+  },
+  adminNavBtnDesc: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  aboutSection: {
+    alignItems: 'center',
+    paddingVertical: spacing.lg,
+    marginTop: spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  aboutTitle: {
+    ...typography.bodySmall,
+    fontWeight: '700',
+    color: colors.primary,
+    marginBottom: spacing.sm,
+  },
+  aboutTitleLink: {
+    textDecorationLine: 'underline',
+  },
+  aboutRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginBottom: spacing.xs,
+  },
+  aboutLink: {
+    ...typography.bodySmall,
+    color: colors.primary,
+    fontWeight: '600',
+  },
+
   // Version
   version: {
     ...typography.caption,
     color: colors.textSecondary,
     textAlign: 'center',
-    marginTop: spacing.xl,
+    marginTop: spacing.sm,
     marginBottom: spacing.md,
   },
 });

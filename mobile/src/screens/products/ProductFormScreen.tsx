@@ -1,44 +1,75 @@
 import React, { useState, useEffect } from 'react';
 import {
-  View, Text, StyleSheet, Alert, ScrollView,
-  TouchableOpacity, Image, ActivityIndicator,
+  View, Text, StyleSheet, ScrollView, TextInput,
+  TouchableOpacity, Image, ActivityIndicator, Modal,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { alert, confirm } from '../../utils/alert';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useOfflineQuery } from '../../hooks/useOfflineQuery';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
+import { ServingTypeIcon } from '../../components/ui/ServingTypeIcon';
 import {
   MarginMode, TVA_RATES, Category, CONTAINER_PRESETS,
   parseLocaleFloat, ServingType, calculateServingMargin,
   ServingMarginResult, MARGIN_COLOR_MAP, formatPrice, formatPercent,
+  calculateDroits,
 } from '@margebar/shared';
 import { ScreenWrapper } from '../../components/ui/ScreenWrapper';
 import { Input } from '../../components/ui/Input';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
 import { PriceSlider } from '../../components/ui/PriceSlider';
+import type { SaveProductData } from '../../components/ui/DroitsCalculator';
 import { useAuthStore } from '../../store/auth.store';
+import { useRatesStore } from '../../store/rates.store';
 import * as productService from '../../services/product.service';
 import * as categoryService from '../../services/category.service';
 import * as servingService from '../../services/serving.service';
 import * as scanService from '../../services/scan.service';
 import { YinYangSpinner } from '../../components/ui/YinYangSpinner';
-import { colors, spacing, borderRadius, typography } from '../../theme';
+import { colors, spacing, borderRadius, typography, fonts } from '../../theme';
+import { Display, Eyebrow, Scribble } from '../../components/ui/atelier';
 
 type Props = NativeStackScreenProps<any, 'ProductForm'>;
 type ServingMode = 'price' | 'margin' | 'coefficient';
 type FormStep = 'scan' | 'form';
+type PriceInputMode = 'hors_droit' | 'ht_direct';
+type SavedCalc = SaveProductData & { id: string };
+
+// Map a fiscal category (rate slug) to a product category (Category slug)
+const FISCAL_TO_PRODUCT_CATEGORY: Record<string, string> = {
+  vin_tranquille: 'vins',
+  vin_mousseux: 'vins',
+  cidre_poire: 'vins',
+  boisson_fermentee: 'vins',
+  prod_interm_vdl_vdn: 'vins',
+  prod_interm_autre: 'spiritueux',
+  biere_legere: 'bieres',
+  biere: 'bieres',
+  petite_brasserie: 'bieres',
+  rhum_dom: 'spiritueux',
+  liqueur: 'spiritueux',
+  spiritueux: 'spiritueux',
+  rhum_hors_dom: 'spiritueux',
+};
 
 export function ProductFormScreen({ route, navigation }: Props) {
   const productId = route.params?.productId;
+  const incomingScanData = route.params?.scanData as {
+    name?: string; categoryId?: string;
+    containerVolumeCl?: number; estimatedPriceHT?: number;
+  } | undefined;
   const isEditing = !!productId;
   const queryClient = useQueryClient();
   const user = useAuthStore((s) => s.user);
   const defaultContainer = user?.defaultContainerVolumeCl || 70;
 
-  // Step: scan first, then form
-  const [step, setStep] = useState<FormStep>(isEditing ? 'form' : 'scan');
+  // Skip scan step if we already have scan data from ScanScreen or editing
+  const [step, setStep] = useState<FormStep>(isEditing || incomingScanData ? 'form' : 'scan');
 
   // Scan state
   const [imageUri, setImageUri] = useState<string | null>(null);
@@ -51,33 +82,45 @@ export function ProductFormScreen({ route, navigation }: Props) {
   const [containerVolume, setContainerVolume] = useState(String(defaultContainer));
   const [tvaRate, setTvaRate] = useState(user?.isAutoEntrepreneur ? 0 : TVA_RATES.RATE_20);
   const [supplier, setSupplier] = useState('');
+  const [alcoholDegree, setAlcoholDegree] = useState('');
+  const [priceInputMode, setPriceInputMode] = useState<PriceInputMode>('ht_direct');
+  const [fiscalCategory, setFiscalCategory] = useState('spiritueux');
+
+  // Alcohol tax rates from rates store
+  const rates = useRatesStore((s) => s.rates);
+  const selectedRate = rates.find((r) => r.slug === fiscalCategory);
+
+  // Saved calcs from dashboard droits calculator
+  const [savedCalcs, setSavedCalcs] = useState<SavedCalc[]>([]);
+  const [calcPickerVisible, setCalcPickerVisible] = useState(false);
 
   // Serving state
   const [enabledServings, setEnabledServings] = useState<Set<string>>(new Set());
   const [servingPrices, setServingPrices] = useState<Record<string, number>>({});
   const [servingModes, setServingModes] = useState<Record<string, ServingMode>>({});
+  const [editingText, setEditingText] = useState<Record<string, string>>({});
 
-  const { data: categories = [] } = useQuery<Category[]>({
-    queryKey: ['categories'],
-    queryFn: categoryService.getCategories,
-  });
+  const { data: categories = [] } = useOfflineQuery<Category[]>(
+    ['categories'],
+    categoryService.getCategories,
+  );
 
-  const { data: servingTypes = [] } = useQuery<ServingType[]>({
-    queryKey: ['servingTypes'],
-    queryFn: servingService.getServingTypes,
-  });
+  const { data: servingTypes = [] } = useOfflineQuery<ServingType[]>(
+    ['servingTypes'],
+    servingService.getServingTypes,
+  );
 
-  const { data: existingProduct } = useQuery({
-    queryKey: ['product', productId],
-    queryFn: () => productService.getProduct(productId!),
-    enabled: isEditing,
-  });
+  const { data: existingProduct } = useOfflineQuery(
+    ['product', productId],
+    () => productService.getProduct(productId!),
+    { enabled: isEditing },
+  );
 
-  const { data: existingServings } = useQuery({
-    queryKey: ['productServings', productId],
-    queryFn: () => servingService.getProductServings(productId!),
-    enabled: isEditing,
-  });
+  const { data: existingServings } = useOfflineQuery(
+    ['productServings', productId],
+    () => servingService.getProductServings(productId!),
+    { enabled: isEditing },
+  );
 
   useEffect(() => {
     if (existingProduct) {
@@ -86,6 +129,7 @@ export function ProductFormScreen({ route, navigation }: Props) {
       setPurchasePrice(String(existingProduct.purchasePriceHT));
       setContainerVolume(String(existingProduct.containerVolumeCl));
       setTvaRate(existingProduct.tvaRate);
+      setAlcoholDegree(existingProduct.alcoholDegree ? String(existingProduct.alcoholDegree) : '');
       setSupplier(existingProduct.supplier || '');
     }
   }, [existingProduct]);
@@ -103,11 +147,48 @@ export function ProductFormScreen({ route, navigation }: Props) {
     }
   }, [existingServings]);
 
+  // Pre-fill from incoming scan data (from ScanScreen or draft)
+  useEffect(() => {
+    if (incomingScanData) {
+      if (incomingScanData.name) setName(incomingScanData.name);
+      if (incomingScanData.categoryId) setCategoryId(incomingScanData.categoryId);
+      if (incomingScanData.containerVolumeCl) setContainerVolume(String(incomingScanData.containerVolumeCl));
+      if (incomingScanData.estimatedPriceHT) setPurchasePrice(String(incomingScanData.estimatedPriceHT));
+    }
+  }, []);  // eslint-disable-line react-hooks/exhaustive-deps
+
   useEffect(() => {
     if (categories.length > 0 && !categoryId) {
       setCategoryId(categories[0].id);
     }
   }, [categories, categoryId]);
+
+  // Load saved calcs from the dashboard droits calculator
+  useEffect(() => {
+    if (isEditing) return;
+    AsyncStorage.getItem('margebar_saved_calcs').then((val) => {
+      if (!val) return;
+      try {
+        const parsed = JSON.parse(val);
+        if (Array.isArray(parsed)) setSavedCalcs(parsed);
+      } catch { /* ignore corrupted data */ }
+    }).catch(() => {});
+  }, [isEditing]);
+
+  const handleImportCalc = (calc: SavedCalc) => {
+    setName(calc.name);
+    setPriceInputMode('ht_direct');
+    setPurchasePrice(calc.prixHTAvecDroits.toFixed(2));
+    setContainerVolume(String(calc.volumeCl));
+    if (calc.degree) setAlcoholDegree(String(calc.degree));
+    setFiscalCategory(calc.fiscalCategory);
+    const productSlug = FISCAL_TO_PRODUCT_CATEGORY[calc.fiscalCategory];
+    if (productSlug) {
+      const matched = categories.find((c) => c.slug === productSlug);
+      if (matched) setCategoryId(matched.id);
+    }
+    setCalcPickerVisible(false);
+  };
 
   // === SCAN ===
   const pickImage = async (useCamera: boolean) => {
@@ -116,7 +197,7 @@ export function ProductFormScreen({ route, navigation }: Props) {
       : await ImagePicker.requestMediaLibraryPermissionsAsync();
 
     if (!permission.granted) {
-      Alert.alert('Permission requise', 'Autorisez l\'accès à la caméra/galerie');
+      alert('Permission requise', 'Autorisez l\'accès à la caméra/galerie');
       return;
     }
 
@@ -140,7 +221,7 @@ export function ProductFormScreen({ route, navigation }: Props) {
       );
 
       if (!compressed.base64) {
-        Alert.alert('Erreur', 'Impossible de lire l\'image');
+        alert('Erreur', 'Impossible de lire l\'image');
         setScanning(false);
         return;
       }
@@ -159,7 +240,7 @@ export function ProductFormScreen({ route, navigation }: Props) {
       // Go to form
       setStep('form');
     } catch (err: any) {
-      Alert.alert('Erreur de scan', err.response?.data?.error || err.message || 'Impossible d\'analyser');
+      alert('Erreur de scan', err.response?.data?.error || err.message || 'Impossible d\'analyser');
     } finally {
       setScanning(false);
     }
@@ -167,7 +248,12 @@ export function ProductFormScreen({ route, navigation }: Props) {
 
   // === FORM LOGIC ===
   const currentContainerVol = parseLocaleFloat(containerVolume) || 0;
-  const currentPurchasePrice = parseLocaleFloat(purchasePrice) || 0;
+  const currentPurchasePriceRaw = parseLocaleFloat(purchasePrice) || 0;
+  const currentAlcoholDegree = parseLocaleFloat(alcoholDegree) || 0;
+  const alcoholTax = priceInputMode === 'hors_droit' && selectedRate
+    ? calculateDroits(selectedRate, currentContainerVol, currentAlcoholDegree, 0).totalDroits
+    : 0;
+  const currentPurchasePrice = currentPurchasePriceRaw + alcoholTax;
 
   const toggleServing = (id: string) => {
     setEnabledServings((prev) => {
@@ -257,16 +343,21 @@ export function ProductFormScreen({ route, navigation }: Props) {
       if (servings.length === 0) throw new Error('Sélectionnez au moins un type de service');
 
       const firstST = servingTypes.find((st) => st.id === servings[0].servingTypeId);
+      const parsedContainerVol = parseLocaleFloat(containerVolume);
+      if (isNaN(parsedContainerVol) || parsedContainerVol <= 0) {
+        throw new Error('Volume du contenant invalide');
+      }
 
       const productData = {
         name,
         categoryId,
-        purchasePriceHT: parseLocaleFloat(purchasePrice),
-        containerVolumeCl: parseLocaleFloat(containerVolume),
-        doseVolumeCl: firstST?.volumeCl || 5,
+        purchasePriceHT: currentPurchasePrice,
+        containerVolumeCl: parsedContainerVol,
+        doseVolumeCl: firstST?.volumeCl ?? 5,
         marginMode: MarginMode.FIX_SELLING_PRICE,
         sellingPriceTTC: servings[0].sellingPriceTTC,
         tvaRate,
+        alcoholDegree: parseLocaleFloat(alcoholDegree) || 0,
         supplier: supplier || undefined,
         imageUrl: imageUri || undefined,
       };
@@ -284,7 +375,7 @@ export function ProductFormScreen({ route, navigation }: Props) {
       navigation.goBack();
     },
     onError: (err: any) => {
-      Alert.alert('Erreur', err.response?.data?.error || err.message || 'Impossible de sauvegarder');
+      alert('Erreur', err.response?.data?.error || err.message || 'Impossible de sauvegarder');
     },
   });
 
@@ -298,13 +389,13 @@ export function ProductFormScreen({ route, navigation }: Props) {
 
   const handleSave = () => {
     if (!name || !purchasePrice || !containerVolume) {
-      Alert.alert('Erreur', 'Remplissez le nom, le prix et le volume');
+      alert('Erreur', 'Remplissez le nom, le prix et le volume');
       return;
     }
     saveMutation.mutate();
   };
 
-  const hasValidProduct = name && currentPurchasePrice > 0 && currentContainerVol > 0;
+  const hasValidProduct = name && currentPurchasePriceRaw > 0 && currentContainerVol > 0;
   const tvaOptions = [
     { label: '20%', value: TVA_RATES.RATE_20 },
     { label: '10%', value: TVA_RATES.RATE_10 },
@@ -322,7 +413,11 @@ export function ProductFormScreen({ route, navigation }: Props) {
   if (step === 'scan') {
     return (
       <ScreenWrapper>
-        <Text style={styles.title}>Nouveau produit</Text>
+        <View style={{ marginBottom: spacing.lg }}>
+          <Eyebrow color={colors.textMuted}>Une bouteille</Eyebrow>
+          <Display size={30} style={{ marginTop: spacing.xs }}>Nouveau produit</Display>
+          <Scribble width={50} color={colors.primary} style={{ marginTop: spacing.xs }} />
+        </View>
 
         {/* Photo preview */}
         {imageUri && (
@@ -371,7 +466,13 @@ export function ProductFormScreen({ route, navigation }: Props) {
   // =====================
   return (
     <ScreenWrapper>
-      <Text style={styles.title}>{isEditing ? 'Modifier le produit' : 'Nouveau produit'}</Text>
+      <View style={{ marginBottom: spacing.lg }}>
+        <Eyebrow color={colors.textMuted}>{isEditing ? 'Atelier' : 'Une bouteille'}</Eyebrow>
+        <Display size={30} style={{ marginTop: spacing.xs }}>
+          {isEditing ? 'Modifier le produit' : 'Nouveau produit'}
+        </Display>
+        <Scribble width={50} color={colors.primary} style={{ marginTop: spacing.xs }} />
+      </View>
 
       {/* Scanned image thumbnail */}
       {imageUri && (
@@ -381,6 +482,24 @@ export function ProductFormScreen({ route, navigation }: Props) {
             <Text style={styles.rescanText}>Rescanner</Text>
           </TouchableOpacity>
         </View>
+      )}
+
+      {/* Import from saved dashboard calculations */}
+      {!isEditing && savedCalcs.length > 0 && (
+        <TouchableOpacity
+          style={styles.importCalcBtn}
+          onPress={() => setCalcPickerVisible(true)}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="download-outline" size={18} color={colors.primary} />
+          <View style={styles.importCalcTextWrap}>
+            <Text style={styles.importCalcTitle}>Importer un produit hors-taxe hors droit</Text>
+            <Text style={styles.importCalcSub}>
+              {savedCalcs.length} calcul{savedCalcs.length > 1 ? 's' : ''} sauvegarde{savedCalcs.length > 1 ? 's' : ''} depuis le tableau de bord
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color={colors.primary} />
+        </TouchableOpacity>
       )}
 
       {/* === Produit === */}
@@ -406,14 +525,84 @@ export function ProductFormScreen({ route, navigation }: Props) {
         </ScrollView>
       </View>
 
-      <Input
-        label="Prix d'achat HT *"
-        value={purchasePrice}
-        onChangeText={setPurchasePrice}
-        keyboardType="decimal-pad"
-        placeholder="0,00"
-        suffix="€"
-      />
+      {/* Price input mode toggle */}
+      <View style={styles.priceModeTabs}>
+        <TouchableOpacity
+          style={[styles.priceModeTab, priceInputMode === 'ht_direct' && styles.priceModeTabActive]}
+          onPress={() => setPriceInputMode('ht_direct')}
+        >
+          <Text style={[styles.priceModeTabText, priceInputMode === 'ht_direct' && styles.priceModeTabTextActive]}>
+            Prix HT direct
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.priceModeTab, priceInputMode === 'hors_droit' && styles.priceModeTabActive]}
+          onPress={() => setPriceInputMode('hors_droit')}
+        >
+          <Text style={[styles.priceModeTabText, priceInputMode === 'hors_droit' && styles.priceModeTabTextActive]}>
+            HT hors droit + degré
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {priceInputMode === 'hors_droit' ? (
+        <>
+          <Input
+            label="Prix d'achat HT hors droit *"
+            value={purchasePrice}
+            onChangeText={setPurchasePrice}
+            keyboardType="decimal-pad"
+            placeholder="0,00"
+            suffix="€"
+          />
+
+          <Text style={{ fontSize: 13, fontWeight: '600', color: colors.textSecondary, marginBottom: 6, marginTop: 8 }}>Categorie fiscale</Text>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginBottom: 8 }}>
+            {rates.map((r) => (
+              <TouchableOpacity
+                key={r.slug}
+                style={{ paddingHorizontal: 8, paddingVertical: 4, borderRadius: 20, backgroundColor: fiscalCategory === r.slug ? colors.primary : colors.surface, borderWidth: 1, borderColor: fiscalCategory === r.slug ? colors.primary : colors.border }}
+                onPress={() => setFiscalCategory(r.slug)}
+              >
+                <Text style={{ fontSize: 11, fontWeight: '600', color: fiscalCategory === r.slug ? colors.textLight : colors.textSecondary }}>
+                  {r.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          <Input
+            label="Degré d'alcool"
+            value={alcoholDegree}
+            onChangeText={setAlcoholDegree}
+            keyboardType="decimal-pad"
+            placeholder="0"
+            suffix="%"
+          />
+
+          {alcoholTax > 0 && (
+            <View style={styles.taxInfoCard}>
+              <View style={styles.taxInfoRow}>
+                <Text style={styles.taxInfoLabel}>Droit d'accise + Sécu. sociale</Text>
+                <Text style={styles.taxInfoValue}>{formatPrice(alcoholTax)}</Text>
+              </View>
+              <View style={[styles.taxInfoRow, styles.taxInfoTotal]}>
+                <Text style={styles.taxInfoTotalLabel}>Prix d'achat HT (avec droits)</Text>
+                <Text style={styles.taxInfoTotalValue}>{formatPrice(currentPurchasePrice)}</Text>
+              </View>
+            </View>
+          )}
+        </>
+      ) : (
+        <Input
+          label="Prix d'achat HT (droits inclus) *"
+          value={purchasePrice}
+          onChangeText={setPurchasePrice}
+          keyboardType="decimal-pad"
+          placeholder="0,00"
+          suffix="€"
+        />
+      )}
 
       {/* === Contenant === */}
       <View style={styles.section}>
@@ -491,9 +680,12 @@ export function ProductFormScreen({ route, navigation }: Props) {
                   style={[styles.servingToggle, isOn && styles.servingToggleActive]}
                   onPress={() => toggleServing(st.id)}
                 >
-                  <Text style={[styles.servingToggleText, isOn && styles.servingToggleTextActive]}>
-                    {st.icon} {st.name}
-                  </Text>
+                  <View style={styles.servingToggleRow}>
+                    <ServingTypeIcon name={st.name} icon={st.icon} size={28} />
+                    <Text style={[styles.servingToggleText, isOn && styles.servingToggleTextActive]}>
+                      {st.name}
+                    </Text>
+                  </View>
                   <Text style={[styles.servingToggleVol, isOn && styles.servingToggleTextActive]}>
                     {st.volumeCl} cl
                   </Text>
@@ -515,9 +707,12 @@ export function ProductFormScreen({ route, navigation }: Props) {
               return (
                 <Card key={st.id} style={styles.servingCard}>
                   <View style={styles.servingCardHeader}>
-                    <Text style={styles.servingCardName}>
-                      {st.icon} {st.name} ({st.volumeCl} cl)
-                    </Text>
+                    <View style={styles.servingCardNameRow}>
+                      <ServingTypeIcon name={st.name} icon={st.icon} size={28} />
+                      <Text style={styles.servingCardName}>
+                        {st.name} ({st.volumeCl} cl)
+                      </Text>
+                    </View>
                     <Text style={styles.servingCardMeta}>
                       {nbServings.toFixed(1)} / contenant
                     </Text>
@@ -537,15 +732,44 @@ export function ProductFormScreen({ route, navigation }: Props) {
                     ))}
                   </View>
 
-                  <PriceSlider
-                    min={config.min}
-                    max={config.max}
-                    step={config.step}
-                    value={isNaN(sliderVal) ? config.min : Math.max(config.min, Math.min(config.max, sliderVal))}
-                    onValueChange={(v) => handleSliderChange(st, v, mode)}
-                    formatLabel={config.formatLabel}
-                    accentColor={accent}
-                  />
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+                    <View style={{ flex: 1 }}>
+                      <PriceSlider
+                        min={config.min}
+                        max={config.max}
+                        step={config.step}
+                        value={isNaN(sliderVal) ? config.min : Math.max(config.min, Math.min(config.max, sliderVal))}
+                        onValueChange={(v) => handleSliderChange(st, v, mode)}
+                        formatLabel={config.formatLabel}
+                        accentColor={accent}
+                      />
+                    </View>
+                    <TextInput
+                      style={{ borderWidth: 1, borderColor: colors.border, borderRadius: borderRadius.sm, paddingHorizontal: spacing.sm, paddingVertical: spacing.xs + 2, width: 75, textAlign: 'center', fontSize: 14, fontWeight: '700', color: colors.primary, backgroundColor: colors.cardBackground }}
+                      value={editingText[st.id] !== undefined
+                        ? editingText[st.id]
+                        : mode === 'price' ? String(Math.round(sliderVal * 100) / 100) : mode === 'margin' ? String(Math.round(sliderVal * 10) / 10) : String(Math.round(sliderVal * 100) / 100)}
+                      onFocus={() => {
+                        const display = mode === 'price' ? String(Math.round(sliderVal * 100) / 100) : mode === 'margin' ? String(Math.round(sliderVal * 10) / 10) : String(Math.round(sliderVal * 100) / 100);
+                        setEditingText((prev) => ({ ...prev, [st.id]: display }));
+                      }}
+                      onChangeText={(text) => {
+                        setEditingText((prev) => ({ ...prev, [st.id]: text }));
+                        const parsed = parseFloat(text.replace(',', '.'));
+                        if (!isNaN(parsed) && parsed > 0) handleSliderChange(st, parsed, mode);
+                      }}
+                      onEndEditing={() => {
+                        setEditingText((prev) => {
+                          const next = { ...prev };
+                          delete next[st.id];
+                          return next;
+                        });
+                      }}
+                      keyboardType="decimal-pad"
+                      placeholder={mode === 'price' ? '€' : mode === 'margin' ? '%' : 'x'}
+                      placeholderTextColor={colors.textSecondary}
+                    />
+                  </View>
 
                   {margin && (
                     <View style={styles.resultRow}>
@@ -554,13 +778,21 @@ export function ProductFormScreen({ route, navigation }: Props) {
                         <Text style={styles.resultValue}>{formatPrice(margin.sellingPriceTTC)}</Text>
                       </View>
                       <View style={styles.resultItem}>
+                        <Text style={styles.resultLabel}>Prix HT</Text>
+                        <Text style={styles.resultValue}>{formatPrice(margin.sellingPriceHT)}</Text>
+                      </View>
+                      <View style={styles.resultItem}>
                         <Text style={styles.resultLabel}>Marge</Text>
                         <Text style={[styles.resultValueBig, { color: accent }]}>
                           {formatPercent(margin.marginPercent)}
                         </Text>
                       </View>
                       <View style={styles.resultItem}>
-                        <Text style={styles.resultLabel}>Gain/dose</Text>
+                        <Text style={styles.resultLabel}>Cout/dose</Text>
+                        <Text style={styles.resultValue}>{formatPrice(margin.costPerServingHT)}</Text>
+                      </View>
+                      <View style={styles.resultItem}>
+                        <Text style={[styles.resultLabel, { color: accent }]}>Gain/dose</Text>
                         <Text style={[styles.resultValue, { color: accent }]}>
                           {formatPrice(margin.marginPerServingHT)}
                         </Text>
@@ -592,10 +824,7 @@ export function ProductFormScreen({ route, navigation }: Props) {
         <Button
           title="Supprimer"
           onPress={() => {
-            Alert.alert('Supprimer', `Supprimer "${name}" ?`, [
-              { text: 'Annuler', style: 'cancel' },
-              { text: 'Supprimer', style: 'destructive', onPress: () => deleteMutation.mutate() },
-            ]);
+            confirm('Supprimer', `Supprimer "${name}" ?`, () => deleteMutation.mutate(), 'Supprimer', true);
           }}
           variant="danger"
           style={styles.deleteBtn}
@@ -603,6 +832,54 @@ export function ProductFormScreen({ route, navigation }: Props) {
       )}
 
       <View style={styles.bottomSpacer} />
+
+      {/* Saved calcs picker */}
+      <Modal
+        visible={calcPickerVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setCalcPickerVisible(false)}
+      >
+        <View style={styles.pickerOverlay}>
+          <View style={styles.pickerSheet}>
+            <View style={styles.pickerHeader}>
+              <Text style={styles.pickerTitle}>Choisir un produit calcule</Text>
+              <TouchableOpacity
+                onPress={() => setCalcPickerVisible(false)}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <Ionicons name="close" size={24} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+            <ScrollView style={styles.pickerScroll} contentContainerStyle={{ paddingBottom: spacing.lg }}>
+              {savedCalcs.map((calc) => {
+                const rate = rates.find((r) => r.slug === calc.fiscalCategory);
+                return (
+                  <TouchableOpacity
+                    key={calc.id}
+                    style={styles.pickerItem}
+                    onPress={() => handleImportCalc(calc)}
+                    activeOpacity={0.7}
+                  >
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.pickerItemName} numberOfLines={1}>{calc.name}</Text>
+                      <Text style={styles.pickerItemMeta}>
+                        {(rate?.label || calc.fiscalCategory)} · {calc.volumeCl} cl
+                        {calc.degree ? ` · ${calc.degree}°` : ''}
+                      </Text>
+                    </View>
+                    <View style={styles.pickerItemPriceWrap}>
+                      <Text style={styles.pickerItemPrice}>{formatPrice(calc.prixHTAvecDroits)}</Text>
+                      <Text style={styles.pickerItemPriceMeta}>HT avec droits</Text>
+                    </View>
+                    <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} style={{ marginLeft: spacing.sm }} />
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </ScreenWrapper>
   );
 }
@@ -742,6 +1019,7 @@ const styles = StyleSheet.create({
     minWidth: 90,
   },
   servingToggleActive: { borderColor: colors.primary, backgroundColor: colors.light },
+  servingToggleRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   servingToggleText: { ...typography.bodySmall, fontWeight: '600', color: colors.textSecondary },
   servingToggleTextActive: { color: colors.primary },
   servingToggleVol: { ...typography.caption, color: colors.grayMedium, marginTop: 2 },
@@ -753,6 +1031,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: spacing.sm,
   },
+  servingCardNameRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   servingCardName: { ...typography.body, fontWeight: '700', color: colors.text },
   servingCardMeta: { ...typography.caption, color: colors.textSecondary },
   modeTabs: {
@@ -787,4 +1066,154 @@ const styles = StyleSheet.create({
   saveBtn: { marginTop: spacing.md },
   deleteBtn: { marginTop: spacing.sm, borderColor: colors.marginRed },
   bottomSpacer: { height: spacing.xl },
+  importCalcBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.light,
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    borderStyle: 'dashed',
+  },
+  importCalcTextWrap: {
+    flex: 1,
+  },
+  importCalcTitle: {
+    ...typography.bodySmall,
+    fontWeight: '700',
+    color: colors.primary,
+  },
+  importCalcSub: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  pickerOverlay: {
+    flex: 1,
+    backgroundColor: colors.overlay,
+    justifyContent: 'flex-end',
+  },
+  pickerSheet: {
+    backgroundColor: colors.background,
+    borderTopLeftRadius: borderRadius.xl,
+    borderTopRightRadius: borderRadius.xl,
+    maxHeight: '80%',
+    paddingTop: spacing.md,
+  },
+  pickerHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  pickerTitle: {
+    ...typography.h3,
+    color: colors.primary,
+  },
+  pickerScroll: {
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.sm,
+  },
+  pickerItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.cardBackground,
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  pickerItemName: {
+    ...typography.body,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  pickerItemMeta: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  pickerItemPriceWrap: {
+    alignItems: 'flex-end',
+    marginLeft: spacing.sm,
+  },
+  pickerItemPrice: {
+    ...typography.bodySmall,
+    fontWeight: '700',
+    color: colors.primary,
+  },
+  pickerItemPriceMeta: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    fontSize: 10,
+    marginTop: 2,
+  },
+  priceModeTabs: {
+    flexDirection: 'row',
+    backgroundColor: colors.inputBackground,
+    borderRadius: borderRadius.md,
+    padding: 3,
+    marginBottom: spacing.md,
+  },
+  priceModeTab: {
+    flex: 1,
+    paddingVertical: spacing.sm + 2,
+    alignItems: 'center',
+    borderRadius: borderRadius.md - 3,
+  },
+  priceModeTabActive: {
+    backgroundColor: colors.primary,
+  },
+  priceModeTabText: {
+    ...typography.caption,
+    fontWeight: '600',
+    color: colors.textSecondary,
+  },
+  priceModeTabTextActive: {
+    color: colors.textLight,
+  },
+  taxInfoCard: {
+    backgroundColor: colors.inputBackground,
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+  },
+  taxInfoRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.xs,
+  },
+  taxInfoLabel: {
+    ...typography.caption,
+    color: colors.textSecondary,
+  },
+  taxInfoValue: {
+    ...typography.bodySmall,
+    color: colors.text,
+  },
+  taxInfoTotal: {
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    paddingTop: spacing.sm,
+    marginTop: spacing.xs,
+    marginBottom: 0,
+  },
+  taxInfoTotalLabel: {
+    ...typography.bodySmall,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  taxInfoTotalValue: {
+    ...typography.bodySmall,
+    fontWeight: '700',
+    color: colors.primary,
+  },
 });

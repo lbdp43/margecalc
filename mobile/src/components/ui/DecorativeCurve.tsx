@@ -9,7 +9,7 @@ interface DecorativeCurveProps {
   opacity?: number;
 }
 
-export function DecorativeCurve({
+export const DecorativeCurve = React.memo(function DecorativeCurve({
   variant = 'bottom',
   color,
   opacity = 0.07,
@@ -90,7 +90,7 @@ export function DecorativeCurve({
       </Svg>
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   topContainer: {

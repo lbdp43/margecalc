@@ -1,9 +1,15 @@
 import { prisma } from '../config/database';
 
-function formatUser(user: any) {
+export function formatUser(user: {
+  id: string; email: string; role: string; businessName: string | null;
+  isAutoEntrepreneur: boolean; defaultTvaRate: number; defaultContainerVolumeCl: number;
+  subscriptionStatus: string; subscriptionPlan: string | null;
+  subscriptionEndDate: Date | null; createdAt: Date; updatedAt: Date;
+}) {
   return {
     id: user.id,
     email: user.email,
+    role: user.role as 'user' | 'admin',
     businessName: user.businessName,
     isAutoEntrepreneur: user.isAutoEntrepreneur,
     defaultTvaRate: user.defaultTvaRate,
@@ -28,4 +34,19 @@ export async function updateUser(userId: string, data: { businessName?: string; 
     data,
   });
   return formatUser(user);
+}
+
+export async function deleteUserData(userId: string) {
+  await prisma.$transaction(async (tx) => {
+    await tx.recipeConsumable.deleteMany({ where: { recipe: { userId } } });
+    await tx.recipeIngredient.deleteMany({ where: { recipe: { userId } } });
+    await tx.recipe.deleteMany({ where: { userId } });
+    await tx.productServing.deleteMany({ where: { product: { userId } } });
+    await tx.priceHistory.deleteMany({ where: { product: { userId } } });
+    await tx.product.deleteMany({ where: { userId } });
+    await tx.servingType.deleteMany({ where: { userId } });
+    await tx.customContainer.deleteMany({ where: { userId } });
+    await tx.scanUsage.deleteMany({ where: { userId } });
+    await tx.ticket.deleteMany({ where: { userId } });
+  });
 }

@@ -8,14 +8,16 @@ interface InputProps extends TextInputProps {
   suffix?: string;
 }
 
-export function Input({ label, error, suffix, style, ...props }: InputProps) {
+export const Input = React.memo(function Input({
+  label, error, suffix, style, ...props
+}: InputProps) {
   return (
     <View style={styles.container}>
       {label ? <Text style={styles.label}>{label}</Text> : null}
       <View style={styles.inputWrapper}>
         <TextInput
           style={[styles.input, suffix ? styles.inputWithSuffix : null, style]}
-          placeholderTextColor={colors.tabBarInactive}
+          placeholderTextColor={colors.textMuted}
           {...props}
         />
         {suffix && (
@@ -27,16 +29,18 @@ export function Input({ label, error, suffix, style, ...props }: InputProps) {
       {error && <Text style={styles.error}>{error}</Text>}
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   container: {
     marginBottom: spacing.md,
   },
   label: {
-    ...typography.bodySmall,
-    fontWeight: '600',
-    color: colors.text,
+    fontSize: 9.5,
+    fontWeight: '700',
+    letterSpacing: 1.6,
+    textTransform: 'uppercase',
+    color: colors.textMuted,
     marginBottom: spacing.xs + 2,
   },
   inputWrapper: {
@@ -47,7 +51,7 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.inputBackground,
     borderRadius: borderRadius.md,
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: colors.border,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm + 4,
@@ -65,14 +69,14 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm + 4,
     borderTopRightRadius: borderRadius.md,
     borderBottomRightRadius: borderRadius.md,
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderLeftWidth: 0,
     borderColor: colors.border,
   },
   suffix: {
     ...typography.body,
-    fontWeight: '600',
-    color: colors.textSecondary,
+    fontWeight: '700',
+    color: colors.primary,
   },
   error: {
     ...typography.caption,

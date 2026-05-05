@@ -1,7 +1,10 @@
 import { MarginInput, MarginMode, MarginResult, ServingType, ServingMarginResult } from '../types/product';
+import { RecipeIngredient, RecipeConsumable, RecipeMarginResult } from '../types/recipe';
+import { Rate, DroitsResult } from '../types/rate';
 import { getMarginColor } from '../constants/colors';
 
 function round2(n: number): number {
+  if (!isFinite(n)) return 0;
   return Math.round(n * 100) / 100;
 }
 
@@ -22,6 +25,89 @@ export function clToL(cl: number): number {
 
 export function lToCl(l: number): number {
   return l * 100;
+}
+
+/**
+ * Legacy function kept for backward compatibility.
+ * Prefer calculateDroits() for new code.
+ */
+export function calculateAlcoholTax(
+  containerVolumeCl: number,
+  alcoholDegree: number,
+  droitAccise: number,
+  cotisationSecu: number,
+): number {
+  if (alcoholDegree <= 0 || containerVolumeCl <= 0) return 0;
+  const volumeHl = containerVolumeCl / 10000;
+  const pureAlcoholHl = volumeHl * (alcoholDegree / 100);
+  const secu = alcoholDegree >= 18 ? cotisationSecu : 0;
+  return round2(pureAlcoholHl * (droitAccise + secu));
+}
+
+/**
+ * Full calculation of excise duties and social security contribution.
+ *
+ * Supports 3 calculation types:
+ *   A = tariff per hl of product (wines, ciders, intermediary products)
+ *   B = tariff per hl per degree (beers)
+ *   C = tariff per hl of pure alcohol (spirits, rum, liqueurs)
+ *
+ * @param rate - The fiscal category rate from the database
+ * @param volumeCl - Container volume in centiliters
+ * @param degree - Alcohol degree (% vol.)
+ * @param prixHTHorsDroit - Purchase price excl. tax, excl. duties
+ * @param tvaRate - TVA rate (default 0.20)
+ * @param seuilSS - Social security threshold in degrees (default 18)
+ */
+export function calculateDroits(
+  rate: Rate,
+  volumeCl: number,
+  degree: number,
+  prixHTHorsDroit: number,
+  tvaRate = 0.20,
+  seuilSS = 18,
+): DroitsResult {
+  if (volumeCl <= 0 || prixHTHorsDroit < 0) {
+    return { accise: 0, cotisationSS: 0, totalDroits: 0, prixHTAvecDroits: prixHTHorsDroit, prixTTC: round2(prixHTHorsDroit * (1 + tvaRate)), prixAuLitreHT: 0 };
+  }
+
+  const volumeL = volumeCl / 100;
+  const volumeHl = volumeCl / 10000; // cl -> hl
+  const hlap = volumeHl * (degree / 100); // hl of pure alcohol
+
+  // Step 1: Calculate accise based on calc type
+  let accise = 0;
+  switch (rate.calcType) {
+    case 'A': // per hl of product
+      accise = volumeHl * rate.acciseRate;
+      break;
+    case 'B': // per hl per degree (beers)
+      accise = volumeHl * degree * rate.acciseRate;
+      break;
+    case 'C': // per hlap (spirits)
+      accise = hlap * rate.acciseRate;
+      break;
+  }
+  accise = round2(accise);
+
+  // Step 2: Calculate cotisation SS (only if degree > threshold AND rate has cotisation)
+  let cotisationSS = 0;
+  if (degree > seuilSS && rate.cotisationRate > 0 && rate.cotisationCond) {
+    if (rate.cotisationUnit === 'euro/hlap') {
+      cotisationSS = hlap * rate.cotisationRate;
+    } else if (rate.cotisationUnit === 'euro/hl') {
+      cotisationSS = volumeHl * rate.cotisationRate;
+    }
+    cotisationSS = round2(cotisationSS);
+  }
+
+  // Step 3: Totals
+  const totalDroits = round2(accise + cotisationSS);
+  const prixHTAvecDroits = round2(prixHTHorsDroit + totalDroits);
+  const prixTTC = round2(prixHTAvecDroits * (1 + tvaRate));
+  const prixAuLitreHT = volumeL > 0 ? round2(prixHTAvecDroits / volumeL) : 0;
+
+  return { accise, cotisationSS, totalDroits, prixHTAvecDroits, prixTTC, prixAuLitreHT };
 }
 
 export function calculateMargin(input: MarginInput): MarginResult {
@@ -56,8 +142,8 @@ export function calculateMargin(input: MarginInput): MarginResult {
 
     case MarginMode.FIX_TARGET_MARGIN: {
       const targetMargin = input.targetMarginPercent;
-      if (targetMargin === undefined || targetMargin >= 100) {
-        throw new Error('Target margin must be defined and < 100%');
+      if (targetMargin === undefined || targetMargin === null || targetMargin < 0 || targetMargin >= 100) {
+        throw new Error('Target margin must be defined and between 0 and 100%');
       }
       marginPercent = targetMargin;
       sellingPriceHT = doseCost / (1 - targetMargin / 100);
@@ -114,6 +200,11 @@ export function calculateServingMargin(
   servingType: ServingType,
   sellingPriceTTC: number,
 ): ServingMarginResult {
+  if (purchasePriceHT < 0) throw new Error('Purchase price must be >= 0');
+  if (sellingPriceTTC <= 0) throw new Error('Selling price must be > 0');
+  if (servingType.volumeCl <= 0) throw new Error('Serving volume must be > 0');
+  if (containerVolumeCl <= 0) throw new Error('Container volume must be > 0');
+  if (tvaRate < 0 || tvaRate >= 1) throw new Error('TVA rate must be between 0 and 1');
   const servingsPerContainer = containerVolumeCl / servingType.volumeCl;
   const costPerServingHT = purchasePriceHT / servingsPerContainer;
   const sellingPriceHT = sellingPriceTTC / (1 + tvaRate);
@@ -134,6 +225,43 @@ export function calculateServingMargin(
     marginPercent: round2(marginPercent),
     revenuePerContainer: round2(revenuePerContainer),
     marginPerContainer: round2(marginPerContainer),
+    colorCode: getMarginColor(marginPercent),
+  };
+}
+
+/**
+ * Calculate margin for a cocktail/recipe.
+ */
+export function calculateRecipeMargin(
+  ingredients: RecipeIngredient[],
+  consumables: RecipeConsumable[],
+  sellingPriceTTC: number,
+  tvaRate: number,
+): RecipeMarginResult {
+  if (sellingPriceTTC <= 0) throw new Error('Selling price must be > 0');
+  if (tvaRate < 0 || tvaRate >= 1) throw new Error('TVA rate must be between 0 and 1');
+
+  // Sum raw values first, then round the totals (avoids cumulative rounding drift)
+  const totalIngredientCost = round2(ingredients.reduce((sum, ing) => sum + ing.costPerUnit, 0));
+  const totalConsumableCost = round2(consumables.reduce((sum, c) => sum + c.unitCost * c.quantity, 0));
+  const totalCostHT = totalIngredientCost + totalConsumableCost;
+
+  const sellingPriceHT = sellingPriceTTC / (1 + tvaRate);
+  const marginHT = sellingPriceHT - totalCostHT;
+  const marginPercent = sellingPriceHT > 0
+    ? ((sellingPriceHT - totalCostHT) / sellingPriceHT) * 100
+    : 0;
+  const coefficient = totalCostHT > 0 ? sellingPriceHT / totalCostHT : 0;
+
+  return {
+    totalIngredientCost: round2(totalIngredientCost),
+    totalConsumableCost: round2(totalConsumableCost),
+    totalCostHT: round2(totalCostHT),
+    sellingPriceTTC: round2(sellingPriceTTC),
+    sellingPriceHT: round2(sellingPriceHT),
+    marginHT: round2(marginHT),
+    marginPercent: round2(marginPercent),
+    coefficient: round2(coefficient),
     colorCode: getMarginColor(marginPercent),
   };
 }

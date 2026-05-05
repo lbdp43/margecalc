@@ -1,7 +1,5 @@
-import { PrismaClient } from '@prisma/client';
 import { CONTAINER_PRESETS } from '@margebar/shared';
-
-const prisma = new PrismaClient();
+import { prisma } from '../config/database';
 
 export async function getContainers(userId: string) {
   let containers = await prisma.customContainer.findMany({
@@ -56,7 +54,7 @@ export async function updateContainer(
     return null;
   }
 
-  return prisma.customContainer.findUnique({ where: { id } });
+  return prisma.customContainer.findFirst({ where: { id, userId } });
 }
 
 export async function deleteContainer(userId: string, id: string) {

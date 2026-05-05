@@ -6,6 +6,30 @@ import { authenticate } from '../middleware/auth';
 
 const router = Router();
 
+// Client access codes — grant free access for a limited time to specific clients.
+// Keys must be already normalized (see normalizeAccessCode below).
+interface AccessCode {
+  clientName: string;
+  durationDays: number;
+}
+
+const ACCESS_CODES: Record<string, AccessCode> = {
+  'brasserie des plantes': {
+    clientName: 'Brasserie des Plantes',
+    durationDays: 30,
+  },
+};
+
+function normalizeAccessCode(input: string): string {
+  return input
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '') // strip accents
+    .replace(/[^a-z0-9]+/g, ' ') // non-alphanumeric -> space
+    .trim()
+    .replace(/\s+/g, ' '); // collapse multiple spaces
+}
+
 function getStripe() {
   if (!config.stripeSecretKey) {
     throw new Error('Stripe is not configured');
@@ -49,6 +73,58 @@ router.get('/status', authenticate, async (req: Request, res: Response) => {
     res.json(user);
   } catch (err: any) {
     res.status(500).json({ error: 'Impossible de récupérer le statut' });
+  }
+});
+
+// POST /api/subscription/redeem-code — redeem a client access code for free access
+router.post('/redeem-code', authenticate, async (req: Request, res: Response) => {
+  try {
+    const { code } = req.body;
+    if (typeof code !== 'string' || !code.trim()) {
+      return res.status(400).json({ error: 'Code manquant' });
+    }
+
+    const normalized = normalizeAccessCode(code);
+    const access = ACCESS_CODES[normalized];
+
+    if (!access) {
+      return res.status(404).json({ error: 'Code invalide' });
+    }
+
+    const now = new Date();
+    const currentUser = await prisma.user.findUniqueOrThrow({
+      where: { id: req.user!.userId },
+    });
+
+    // If the user already has an active subscription ending in the future,
+    // extend it from that date; otherwise start from now.
+    const baseDate =
+      currentUser.subscriptionEndDate && currentUser.subscriptionEndDate > now
+        ? currentUser.subscriptionEndDate
+        : now;
+    const endDate = new Date(
+      baseDate.getTime() + access.durationDays * 24 * 60 * 60 * 1000,
+    );
+
+    const updated = await prisma.user.update({
+      where: { id: req.user!.userId },
+      data: {
+        subscriptionStatus: 'trialing',
+        subscriptionPlan: 'access_code',
+        subscriptionEndDate: endDate,
+      },
+    });
+
+    res.json({
+      subscriptionStatus: updated.subscriptionStatus,
+      subscriptionPlan: updated.subscriptionPlan,
+      subscriptionEndDate: updated.subscriptionEndDate?.toISOString() ?? null,
+      clientName: access.clientName,
+      durationDays: access.durationDays,
+    });
+  } catch (err: any) {
+    console.error('Access code redemption error:', err.message);
+    res.status(500).json({ error: 'Impossible de valider le code' });
   }
 });
 
@@ -108,7 +184,7 @@ router.post('/webhook', async (req: Request, res: Response) => {
   let event: Stripe.Event;
   try {
     event = stripe.webhooks.constructEvent(
-      (req as any).rawBody || req.body,
+      req.body, // Buffer from express.raw() middleware
       sig,
       config.stripeWebhookSecret,
     );
@@ -142,7 +218,7 @@ router.post('/webhook', async (req: Request, res: Response) => {
       case 'customer.subscription.updated': {
         const updatedSub = event.data.object as Stripe.Subscription;
         const customerId = updatedSub.customer as string;
-        const existingUser = await prisma.user.findFirst({
+        const existingUser = await prisma.user.findUnique({
           where: { stripeCustomerId: customerId },
         });
         if (existingUser) {
@@ -176,6 +252,7 @@ router.post('/webhook', async (req: Request, res: Response) => {
     }
   } catch (err: any) {
     console.error('Webhook processing error:', err.message);
+    return res.status(500).json({ error: 'Webhook processing failed' });
   }
 
   res.json({ received: true });

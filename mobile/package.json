@@ -1,6 +1,6 @@
 {
   "name": "@margebar/mobile",
-  "version": "1.0.0",
+  "version": "3.14.0",
   "main": "./index",
   "scripts": {
     "start": "expo start",
@@ -9,14 +9,15 @@
   },
   "dependencies": {
     "@expo/metro-runtime": "~3.1.0",
-    "@margebar/shared": "1.0.0",
+    "@margebar/shared": "3.14.0",
     "@react-native-async-storage/async-storage": "^1.23.0",
+    "@react-native-community/netinfo": "^11.5.2",
     "@react-navigation/bottom-tabs": "^6.5.0",
     "@react-navigation/native": "^6.1.0",
     "@react-navigation/native-stack": "^6.9.0",
     "@react-navigation/stack": "^6.4.1",
     "@tanstack/react-query": "^5.24.0",
-    "axios": "^1.6.0",
+    "axios": "^1.16.0",
     "expo": "~50.0.0",
     "expo-image-manipulator": "~11.8.0",
     "expo-image-picker": "~15.0.0",

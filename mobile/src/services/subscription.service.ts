@@ -20,3 +20,22 @@ export async function createPortalSession(): Promise<{ url: string }> {
   const res = await api.post<{ url: string }>('/subscription/portal');
   return res.data;
 }
+
+export interface RedeemCodeResponse {
+  subscriptionStatus: string;
+  subscriptionPlan: string | null;
+  subscriptionEndDate: string | null;
+  clientName: string;
+  durationDays: number;
+}
+
+export async function redeemAccessCode(code: string, token?: string): Promise<RedeemCodeResponse> {
+  // Optional explicit token for use before the auth store is updated (e.g. right after register).
+  const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
+  const res = await api.post<RedeemCodeResponse>(
+    '/subscription/redeem-code',
+    { code },
+    headers ? { headers } : undefined,
+  );
+  return res.data;
+}

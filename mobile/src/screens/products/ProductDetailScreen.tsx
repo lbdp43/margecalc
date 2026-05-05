@@ -1,24 +1,26 @@
 import React, { useState, useCallback } from 'react';
-import { View, Text, StyleSheet, TextInput, Alert, ActivityIndicator, Image, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, TextInput, Image, TouchableOpacity } from 'react-native';
+import { alert, confirm } from '../../utils/alert';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
-import { Product, ServingType, ServingMarginResult, calculateServingMargin, MARGIN_COLOR_MAP } from '@margebar/shared';
+import { Product, ProductWithMargin, ServingType, ServingMarginResult, calculateServingMargin, MARGIN_COLOR_MAP } from '@margebar/shared';
 import { ScreenWrapper } from '../../components/ui/ScreenWrapper';
+import { YinYangSpinner } from '../../components/ui/YinYangSpinner';
+import { ServingTypeIcon } from '../../components/ui/ServingTypeIcon';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
 import * as servingService from '../../services/serving.service';
 import * as productService from '../../services/product.service';
 import { PriceHistoryEntry } from '../../services/product.service';
-import { api } from '../../services/api';
-import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
+import { colors, spacing, borderRadius, typography, shadows, fonts } from '../../theme';
 
 type Props = NativeStackScreenProps<any, 'ProductDetail'>;
 
 export function ProductDetailScreen({ route, navigation }: Props) {
-  const { productId } = route.params as { productId: string };
-  const [product, setProduct] = useState<Product | null>(null);
+  const productId = (route.params as any)?.productId as string;
+  const [product, setProduct] = useState<ProductWithMargin | null>(null);
   const [servingTypes, setServingTypes] = useState<ServingType[]>([]);
   const [savedServings, setSavedServings] = useState<ServingMarginResult[]>([]);
   const [prices, setPrices] = useState<Record<string, string>>({});
@@ -33,41 +35,42 @@ export function ProductDetailScreen({ route, navigation }: Props) {
       queryClient.invalidateQueries({ queryKey: ['products'] });
       navigation.navigate('ProductList');
     },
-    onError: () => Alert.alert('Erreur', 'Impossible de supprimer le produit'),
+    onError: () => alert('Erreur', 'Impossible de supprimer le produit'),
   });
 
   useFocusEffect(
     useCallback(() => {
+      let mounted = true;
+      const loadData = async () => {
+        setLoading(true);
+        try {
+          const [productRes, typesRes, servingsRes, historyRes] = await Promise.all([
+            productService.getProduct(productId),
+            servingService.getServingTypes(),
+            servingService.getProductServings(productId),
+            productService.getPriceHistory(productId),
+          ]);
+          if (!mounted) return;
+          setProduct(productRes);
+          setServingTypes(typesRes);
+          setSavedServings(servingsRes);
+          setPriceHistory(historyRes);
+
+          const priceMap: Record<string, string> = {};
+          for (const s of servingsRes) {
+            priceMap[s.servingType.id] = s.sellingPriceTTC.toFixed(2).replace('.', ',');
+          }
+          setPrices(priceMap);
+        } catch {
+          if (mounted) alert('Erreur', 'Impossible de charger le produit');
+        } finally {
+          if (mounted) setLoading(false);
+        }
+      };
       loadData();
+      return () => { mounted = false; };
     }, [productId])
   );
-
-  const loadData = async () => {
-    setLoading(true);
-    try {
-      const [productRes, typesRes, servingsRes] = await Promise.all([
-        api.get<Product>(`/products/${productId}`),
-        servingService.getServingTypes(),
-        servingService.getProductServings(productId),
-      ]);
-      setProduct(productRes.data);
-      setServingTypes(typesRes);
-      setSavedServings(servingsRes);
-
-      const historyRes = await productService.getPriceHistory(productId);
-      setPriceHistory(historyRes);
-
-      const priceMap: Record<string, string> = {};
-      for (const s of servingsRes) {
-        priceMap[s.servingType.id] = s.sellingPriceTTC.toFixed(2).replace('.', ',');
-      }
-      setPrices(priceMap);
-    } catch {
-      Alert.alert('Erreur', 'Impossible de charger le produit');
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const getLocalMargin = (st: ServingType): ServingMarginResult | null => {
     if (!product) return null;
@@ -96,16 +99,16 @@ export function ProductDetailScreen({ route, navigation }: Props) {
         .filter((s) => !isNaN(s.sellingPriceTTC) && s.sellingPriceTTC > 0);
 
       if (servings.length === 0) {
-        Alert.alert('Info', 'Entrez au moins un prix de vente');
+        alert('Info', 'Entrez au moins un prix de vente');
         setSaving(false);
         return;
       }
 
       const results = await servingService.upsertProductServings(productId, servings);
       setSavedServings(results);
-      Alert.alert('Succès', 'Prix de vente enregistrés');
+      alert('Succès', 'Prix de vente enregistrés');
     } catch {
-      Alert.alert('Erreur', 'Impossible de sauvegarder');
+      alert('Erreur', 'Impossible de sauvegarder');
     } finally {
       setSaving(false);
     }
@@ -115,7 +118,7 @@ export function ProductDetailScreen({ route, navigation }: Props) {
     return (
       <ScreenWrapper>
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={colors.primary} />
+          <YinYangSpinner size={80} message="Chargement du produit…" />
         </View>
       </ScreenWrapper>
     );
@@ -177,7 +180,7 @@ export function ProductDetailScreen({ route, navigation }: Props) {
             <View key={st.id} style={styles.servingBlock}>
               <View style={styles.servingHeader}>
                 <View style={styles.servingNameRow}>
-                  <Text style={styles.servingIcon}>{st.icon}</Text>
+                  <ServingTypeIcon name={st.name} icon={st.icon} size={36} />
                   <View>
                     <Text style={styles.servingName}>{st.name}</Text>
                     <Text style={styles.servingMeta}>{st.volumeCl} cl · {nbServings.toFixed(1)} / bouteille</Text>
@@ -270,10 +273,13 @@ export function ProductDetailScreen({ route, navigation }: Props) {
       <Button
         title="Supprimer le produit"
         onPress={() => {
-          Alert.alert('Supprimer', `Supprimer "${product.name}" ?`, [
-            { text: 'Annuler', style: 'cancel' },
-            { text: 'Supprimer', style: 'destructive', onPress: () => deleteMutation.mutate() },
-          ]);
+          confirm(
+            'Supprimer',
+            `Supprimer "${product.name}" ?`,
+            () => deleteMutation.mutate(),
+            'Supprimer',
+            true,
+          );
         }}
         variant="danger"
         style={styles.deleteBtn}
@@ -314,8 +320,12 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   title: {
-    ...typography.h1,
-    color: colors.primary,
+    fontFamily: fonts.serif,
+    fontStyle: 'italic',
+    fontWeight: '500',
+    fontSize: 32,
+    letterSpacing: -0.6,
+    color: colors.text,
     marginBottom: spacing.sm,
   },
   metaRow: {
@@ -359,7 +369,11 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     ...typography.h3,
+    fontFamily: fonts.serif,
+    fontStyle: 'italic',
+    fontWeight: '500',
     color: colors.text,
+    letterSpacing: -0.3,
   },
   sectionDesc: {
     ...typography.caption,
@@ -382,9 +396,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
-  },
-  servingIcon: {
-    fontSize: 24,
   },
   servingName: {
     ...typography.body,

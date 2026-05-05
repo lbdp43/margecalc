@@ -1,18 +1,22 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, Alert, Image } from 'react-native';
+import React, { useState, useEffect, useCallback } from 'react';
+import { View, Text, StyleSheet, Image, FlatList, TouchableOpacity } from 'react-native';
+import { alert, confirm } from '../../utils/alert';
 import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
-import { useQuery } from '@tanstack/react-query';
 import { Category, CONTAINER_PRESETS } from '@margebar/shared';
 import { ScreenWrapper } from '../../components/ui/ScreenWrapper';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
+import { useOfflineQuery } from '../../hooks/useOfflineQuery';
 import * as scanService from '../../services/scan.service';
 import * as categoryService from '../../services/category.service';
+import * as draftService from '../../services/draft.service';
+import { ScanDraft } from '../../services/draft.service';
 import { YinYangSpinner } from '../../components/ui/YinYangSpinner';
-import { colors, spacing, borderRadius, typography } from '../../theme';
+import { colors, spacing, borderRadius, typography, fonts } from '../../theme';
+import { Display, Eyebrow, Script, Scribble } from '../../components/ui/atelier';
 
 type Props = NativeStackScreenProps<any, 'Scan'>;
 
@@ -20,11 +24,18 @@ export function ScanScreen({ navigation }: Props) {
   const [imageUri, setImageUri] = useState<string | null>(null);
   const [scanning, setScanning] = useState(false);
   const [result, setResult] = useState<scanService.ScanResult | null>(null);
+  const [drafts, setDrafts] = useState<ScanDraft[]>([]);
 
-  const { data: categories = [] } = useQuery<Category[]>({
-    queryKey: ['categories'],
-    queryFn: categoryService.getCategories,
-  });
+  const { data: categories = [] } = useOfflineQuery<Category[]>(
+    ['categories'],
+    categoryService.getCategories,
+  );
+
+  const loadDrafts = useCallback(async () => {
+    setDrafts(await draftService.getDrafts());
+  }, []);
+
+  useEffect(() => { loadDrafts(); }, [loadDrafts]);
 
   const pickImage = async (useCamera: boolean) => {
     const permission = useCamera
@@ -32,7 +43,7 @@ export function ScanScreen({ navigation }: Props) {
       : await ImagePicker.requestMediaLibraryPermissionsAsync();
 
     if (!permission.granted) {
-      Alert.alert('Permission requise', 'Autorisez l\'accès à la caméra/galerie');
+      alert('Permission requise', 'Autorisez l\'accès à la caméra/galerie');
       return;
     }
 
@@ -58,7 +69,7 @@ export function ScanScreen({ navigation }: Props) {
       );
 
       if (!compressed.base64) {
-        Alert.alert('Erreur', 'Impossible de lire l\'image');
+        alert('Erreur', 'Impossible de lire l\'image');
         setScanning(false);
         return;
       }
@@ -69,7 +80,7 @@ export function ScanScreen({ navigation }: Props) {
       const message = err.response?.data?.error
         || err.message
         || 'Impossible d\'analyser l\'image';
-      Alert.alert('Erreur de scan', message);
+      alert('Erreur de scan', message);
     } finally {
       setScanning(false);
     }
@@ -77,10 +88,7 @@ export function ScanScreen({ navigation }: Props) {
 
   const handleUseResult = () => {
     if (!result) return;
-
-    // Find matching category
     const matchedCategory = categories.find((c) => c.slug === result.category);
-
     navigation.navigate('Produits', {
       screen: 'ProductForm',
       params: {
@@ -94,6 +102,50 @@ export function ScanScreen({ navigation }: Props) {
     });
   };
 
+  const handleSaveDraft = async () => {
+    if (!result) return;
+    const matchedCategory = categories.find((c) => c.slug === result.category);
+    await draftService.saveDraft({
+      name: result.name,
+      categoryId: matchedCategory?.id || categories[0]?.id,
+      containerVolumeCl: result.containerVolumeCl,
+      estimatedPriceHT: result.estimatedPriceHT,
+    });
+    alert('Brouillon sauvegardé', `"${result.name}" a été sauvegardé. Vous pourrez le reprendre plus tard.`);
+    setResult(null);
+    setImageUri(null);
+    await loadDrafts();
+  };
+
+  const handleUseDraft = (draft: ScanDraft) => {
+    navigation.navigate('Produits', {
+      screen: 'ProductForm',
+      params: {
+        scanData: {
+          name: draft.name,
+          categoryId: draft.categoryId,
+          containerVolumeCl: draft.containerVolumeCl,
+          estimatedPriceHT: draft.estimatedPriceHT,
+        },
+      },
+    });
+    // Remove draft after use
+    draftService.deleteDraft(draft.id).then(loadDrafts).catch(() => {});
+  };
+
+  const handleDeleteDraft = (draft: ScanDraft) => {
+    confirm(
+      'Supprimer',
+      `Supprimer le brouillon "${draft.name}" ?`,
+      async () => {
+        await draftService.deleteDraft(draft.id);
+        await loadDrafts();
+      },
+      'Supprimer',
+      true,
+    );
+  };
+
   const getContainerLabel = (cl: number | null) => {
     if (!cl) return 'Non détecté';
     const preset = CONTAINER_PRESETS.find((p) => p.volumeCl === cl);
@@ -102,9 +154,14 @@ export function ScanScreen({ navigation }: Props) {
 
   return (
     <ScreenWrapper>
-      <Text style={styles.title}>Scanner un produit</Text>
+      <View style={{ marginBottom: spacing.md }}>
+        <Eyebrow color={colors.textMuted}>On vous écoute</Eyebrow>
+        <Display size={30} style={{ marginTop: spacing.xs }}>Scanner un produit</Display>
+        <Scribble width={50} color={colors.primary} style={{ marginTop: spacing.xs }} />
+      </View>
       <Text style={styles.subtitle}>
-        Prenez en photo une bouteille ou une facture pour remplir automatiquement les informations
+        Photographiez une bouteille ou une facture —{' '}
+        <Script size={16} color={colors.primary}>on s'occupe du reste.</Script>
       </Text>
 
       <View style={styles.buttonRow}>
@@ -180,7 +237,44 @@ export function ScanScreen({ navigation }: Props) {
             onPress={handleUseResult}
             style={styles.useBtn}
           />
+          <Button
+            title="Sauvegarder en brouillon"
+            onPress={handleSaveDraft}
+            variant="outline"
+            icon={<Ionicons name="bookmark-outline" size={16} color={colors.primary} />}
+            style={styles.draftBtn}
+          />
         </Card>
+      )}
+
+      {/* Drafts list */}
+      {drafts.length > 0 && !scanning && !result && (
+        <View style={styles.draftsSection}>
+          <Text style={styles.draftsTitle}>Brouillons ({drafts.length})</Text>
+          {drafts.map((draft) => (
+            <Card key={draft.id} style={styles.draftCard}>
+              <TouchableOpacity style={styles.draftContent} onPress={() => handleUseDraft(draft)}>
+                <View style={styles.draftInfo}>
+                  <Text style={styles.draftName} numberOfLines={1}>{draft.name}</Text>
+                  <Text style={styles.draftMeta}>
+                    {draft.containerVolumeCl ? `${draft.containerVolumeCl} cl` : ''}
+                    {draft.estimatedPriceHT ? ` · ${draft.estimatedPriceHT.toFixed(2)} €` : ''}
+                    {' · '}{new Date(draft.savedAt).toLocaleDateString('fr-FR')}
+                  </Text>
+                </View>
+                <View style={styles.draftActions}>
+                  <Ionicons name="arrow-forward" size={18} color={colors.primary} />
+                </View>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.draftDeleteBtn}
+                onPress={() => handleDeleteDraft(draft)}
+              >
+                <Ionicons name="trash-outline" size={16} color={colors.marginRed} />
+              </TouchableOpacity>
+            </Card>
+          ))}
+        </View>
       )}
     </ScreenWrapper>
   );
@@ -251,5 +345,48 @@ const styles = StyleSheet.create({
   },
   useBtn: {
     marginTop: spacing.md,
+  },
+  draftBtn: {
+    marginTop: spacing.sm,
+  },
+  draftsSection: {
+    marginTop: spacing.lg,
+  },
+  draftsTitle: {
+    ...typography.h3,
+    color: colors.text,
+    marginBottom: spacing.sm,
+  },
+  draftCard: {
+    marginBottom: spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+  },
+  draftContent: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  draftInfo: {
+    flex: 1,
+  },
+  draftName: {
+    ...typography.body,
+    fontWeight: '600',
+    color: colors.text,
+  },
+  draftMeta: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  draftActions: {
+    marginLeft: spacing.sm,
+  },
+  draftDeleteBtn: {
+    padding: spacing.sm,
+    marginLeft: spacing.xs,
   },
 });

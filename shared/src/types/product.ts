@@ -26,6 +26,7 @@ export interface Product {
   targetMarginPercent: number | null;
   coefficient: number | null;
   tvaRate: number;
+  alcoholDegree: number;
   supplier: string | null;
   imageUrl: string | null;
   createdAt: string;
@@ -35,6 +36,7 @@ export interface Product {
 export interface ProductWithMargin extends Product {
   computed: MarginResult;
   servings?: ProductServing[];
+  category?: Category;
 }
 
 export interface MarginInput {
@@ -80,6 +82,7 @@ export interface CreateProductInput {
   targetMarginPercent?: number;
   coefficient?: number;
   tvaRate: number;
+  alcoholDegree?: number;
   supplier?: string;
   imageUrl?: string;
 }

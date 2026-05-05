@@ -8,6 +8,11 @@ import servingRoutes from './serving.routes';
 import containerRoutes from './container.routes';
 import productServingRoutes from './productServing.routes';
 import subscriptionRoutes from './subscription.routes';
+import recipeRoutes from './recipe.routes';
+import systemParamRoutes from './systemParam.routes';
+import rateRoutes from './rate.routes';
+import ticketRoutes from './ticket.routes';
+import adminRoutes from './admin.routes';
 
 const router = Router();
 
@@ -20,5 +25,10 @@ router.use('/scan', scanRoutes);
 router.use('/servings', servingRoutes);
 router.use('/containers', containerRoutes);
 router.use('/subscription', subscriptionRoutes);
+router.use('/recipes', recipeRoutes);
+router.use('/system-params', systemParamRoutes);
+router.use('/rates', rateRoutes);
+router.use('/tickets', ticketRoutes);
+router.use('/admin', adminRoutes);
 
 export default router;

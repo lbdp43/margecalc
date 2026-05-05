@@ -8,22 +8,88 @@ generator client {
 }
 
 model User {
-  id                 String    @id @default(uuid())
-  email              String    @unique
-  passwordHash       String
-  businessName       String?
-  isAutoEntrepreneur Boolean   @default(false)
-  defaultTvaRate              Float     @default(0.20)
-  defaultContainerVolumeCl   Float     @default(70)
-  stripeCustomerId           String?
-  subscriptionStatus         String    @default("none") // none | trialing | active | past_due | canceled
-  subscriptionPlan           String?   // e.g. "pro_monthly", "pro_yearly"
-  subscriptionEndDate        DateTime?
-  createdAt                  DateTime  @default(now())
-  updatedAt          DateTime  @updatedAt
-  products           Product[]
-  servingTypes       ServingType[]
-  customContainers   CustomContainer[]
+  id                       String             @id @default(uuid())
+  email                    String             @unique
+  passwordHash             String
+  role                     String             @default("user") // user | admin
+  businessName             String?
+  isAutoEntrepreneur       Boolean            @default(false)
+  defaultTvaRate           Float              @default(0.20)
+  defaultContainerVolumeCl Float              @default(70)
+  stripeCustomerId         String?            @unique
+  subscriptionStatus       String             @default("none") // none | trialing | active | past_due | canceled
+  subscriptionPlan         String? // e.g. "pro_monthly", "pro_yearly"
+  subscriptionEndDate      DateTime?
+  lastSeenAt               DateTime?
+  bannedAt                 DateTime?
+  createdAt                DateTime           @default(now())
+  updatedAt                DateTime           @updatedAt
+  products                 Product[]
+  servingTypes             ServingType[]
+  customContainers         CustomContainer[]
+  recipes                  Recipe[]
+  scanUsages               ScanUsage[]
+  tickets                  Ticket[]
+  monthlyLogins            UserMonthlyLogin[]
+}
+
+model UserMonthlyLogin {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // First day of the calendar month, midnight UTC, e.g. 2026-05-01.
+  // Using a date instead of (year, month) ints keeps range queries trivial.
+  month     DateTime
+  count     Int      @default(0)
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, month])
+  @@index([month])
+}
+
+model Ticket {
+  id               String    @id @default(uuid())
+  userId           String
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type             String // bug | suggestion | question
+  message          String
+  screenName       String?
+  screenshotBase64 String?
+  status           String    @default("open") // open | resolved
+  adminReply       String?
+  repliedAt        DateTime?
+  readByUser       Boolean   @default(true)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model SystemParam {
+  id          String   @id @default(uuid())
+  key         String   @unique
+  value       String
+  label       String
+  unit        String?
+  description String?
+  updatedAt   DateTime @updatedAt
+}
+
+model Rate {
+  id             String   @id @default(uuid())
+  slug           String   @unique
+  label          String
+  examples       String?
+  calcType       String // A = per hl, B = per hl/degree, C = per hlap
+  acciseRate     Float
+  acciseUnit     String // euro/hl, euro/hl_degree, euro/hlap
+  cotisationRate Float    @default(0)
+  cotisationUnit String? // euro/hlap, euro/hl, or null
+  cotisationCond String? // ">18" or null
+  sortOrder      Int      @default(0)
+  updatedAt      DateTime @updatedAt
 }
 
 model CustomContainer {
@@ -48,11 +114,11 @@ model Category {
 }
 
 model Product {
-  id                  String           @id @default(uuid())
+  id                  String             @id @default(uuid())
   userId              String
-  user                User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user                User               @relation(fields: [userId], references: [id], onDelete: Cascade)
   categoryId          String
-  category            Category         @relation(fields: [categoryId], references: [id])
+  category            Category           @relation(fields: [categoryId], references: [id])
   name                String
   purchasePriceHT     Float
   containerVolumeCl   Float
@@ -61,28 +127,30 @@ model Product {
   sellingPriceTTC     Float?
   targetMarginPercent Float?
   coefficient         Float?
-  tvaRate             Float            @default(0.20)
+  tvaRate             Float              @default(0.20)
+  alcoholDegree       Float              @default(0)
   supplier            String?
   imageUrl            String?
-  createdAt           DateTime         @default(now())
-  updatedAt           DateTime         @updatedAt
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
   priceHistory        PriceHistory[]
   servings            ProductServing[]
+  recipeIngredients   RecipeIngredient[]
 
   @@index([userId])
   @@index([categoryId])
 }
 
 model ServingType {
-  id        String   @id @default(uuid())
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  name      String
-  volumeCl  Float
-  icon      String   @default("")
-  sortOrder Int      @default(0)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id              String           @id @default(uuid())
+  userId          String
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name            String
+  volumeCl        Float
+  icon            String           @default("")
+  sortOrder       Int              @default(0)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
   productServings ProductServing[]
 
   @@index([userId])
@@ -100,16 +168,73 @@ model ProductServing {
 
   @@unique([productId, servingTypeId])
   @@index([productId])
+  @@index([servingTypeId])
 }
 
 model PriceHistory {
-  id         String   @id @default(uuid())
-  productId  String
-  product    Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
-  oldPrice   Float
-  newPrice   Float
-  changedAt  DateTime @default(now())
-  source     String   @default("manual")
+  id        String   @id @default(uuid())
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  oldPrice  Float
+  newPrice  Float
+  changedAt DateTime @default(now())
+  source    String   @default("manual")
 
   @@index([productId])
+}
+
+model Recipe {
+  id              String             @id @default(uuid())
+  userId          String
+  user            User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name            String
+  description     String?
+  sellingPriceTTC Float?
+  tvaRate         Float              @default(0.20)
+  imageUrl        String?
+  isPublic        Boolean            @default(false)
+  authorName      String?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+  ingredients     RecipeIngredient[]
+  consumables     RecipeConsumable[]
+
+  @@index([userId])
+  @@index([isPublic])
+}
+
+model RecipeIngredient {
+  id          String   @id @default(uuid())
+  recipeId    String
+  recipe      Recipe   @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  productId   String?
+  product     Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+  name        String
+  quantityCl  Float
+  costPerUnit Float
+  createdAt   DateTime @default(now())
+
+  @@index([recipeId])
+  @@index([productId])
+}
+
+model ScanUsage {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  scannedAt DateTime @default(now())
+
+  @@index([userId, scannedAt])
+}
+
+model RecipeConsumable {
+  id        String   @id @default(uuid())
+  recipeId  String
+  recipe    Recipe   @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  name      String
+  unitCost  Float
+  quantity  Float    @default(1)
+  createdAt DateTime @default(now())
+
+  @@index([recipeId])
 }

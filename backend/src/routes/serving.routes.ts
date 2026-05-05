@@ -1,10 +1,8 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
-import { PrismaClient } from '@prisma/client';
 import { authenticate } from '../middleware/auth';
 import { DEFAULT_SERVING_TYPES } from '@margebar/shared';
-
-const prisma = new PrismaClient();
+import { prisma } from '../config/database';
 const router = Router();
 
 const createSchema = z.object({
@@ -47,7 +45,7 @@ router.get('/', async (req: Request, res: Response) => {
 
     res.json(servingTypes);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Erreur serveur' });
   }
 });
 
@@ -64,7 +62,7 @@ router.post('/', async (req: Request, res: Response) => {
     res.status(201).json(servingType);
   } catch (err: any) {
     const status = err.name === 'ZodError' ? 400 : 500;
-    res.status(status).json({ error: err.message });
+    res.status(status).json({ error: err.name === 'ZodError' ? err.message : 'Erreur serveur' });
   }
 });
 
@@ -80,11 +78,11 @@ router.put('/:id', async (req: Request, res: Response) => {
       res.status(404).json({ error: 'Type de service non trouvé' });
       return;
     }
-    const updated = await prisma.servingType.findUnique({ where: { id: req.params.id } });
+    const updated = await prisma.servingType.findFirst({ where: { id: req.params.id, userId: req.user!.userId } });
     res.json(updated);
   } catch (err: any) {
     const status = err.name === 'ZodError' ? 400 : 500;
-    res.status(status).json({ error: err.message });
+    res.status(status).json({ error: err.name === 'ZodError' ? err.message : 'Erreur serveur' });
   }
 });
 
@@ -100,7 +98,7 @@ router.delete('/:id', async (req: Request, res: Response) => {
     }
     res.status(204).send();
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Erreur serveur' });
   }
 });
 

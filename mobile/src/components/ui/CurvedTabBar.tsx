@@ -4,7 +4,7 @@ import Svg, { Path } from 'react-native-svg';
 import { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { colors, shadows } from '../../theme';
 
-const TAB_HEIGHT = 70;
+const TAB_HEIGHT = 84;
 const WAVE_HEIGHT = 28; // amplitude of the S-curve
 
 export function CurvedTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
@@ -25,7 +25,13 @@ export function CurvedTabBar({ state, descriptors, navigation }: BottomTabBarPro
       {/* SVG wave background */}
       <View style={styles.svgWrap}>
         <Svg width={width} height={totalHeight} style={styles.svg}>
-          <Path d={tabBarPath} fill={colors.primary} />
+          {/* Deep emerald base layer */}
+          <Path d={tabBarPath} fill={colors.secondary} />
+          {/* Lighter emerald top — offset upward, creates a "stamped" double-edge */}
+          <Path
+            d={`M0,${WAVE_HEIGHT - 2} C${width * 0.35},${WAVE_HEIGHT - 2} ${width * 0.65},-2 ${width},-2 L${width},${totalHeight - 2} L0,${totalHeight - 2} Z`}
+            fill={colors.primary}
+          />
         </Svg>
       </View>
 
@@ -52,32 +58,33 @@ export function CurvedTabBar({ state, descriptors, navigation }: BottomTabBarPro
             }
           };
 
-          const iconElement = options.tabBarIcon?.({
-            focused: isFocused,
-            color: isFocused ? colors.white : 'rgba(255,255,255,0.5)',
-            size: 22,
-          });
-
           const label = typeof options.tabBarLabel === 'string'
             ? options.tabBarLabel
             : options.title ?? route.name;
+
+          const isDashboard = route.name === 'Tableau de bord';
 
           return (
             <TouchableOpacity
               key={route.key}
               onPress={onPress}
               activeOpacity={0.7}
-              style={styles.tabItem}
+              style={[styles.tabItem, isDashboard && styles.dashboardTabItem]}
             >
-              {iconElement}
+              {options.tabBarIcon?.({
+                focused: isFocused,
+                color: isFocused ? colors.onAccent : 'rgba(243,248,236,0.55)',
+                size: isDashboard ? 30 : 26,
+              })}
               <Text
                 style={[
-                  styles.tabLabel,
-                  { color: isFocused ? colors.white : 'rgba(255,255,255,0.5)' },
+                  isDashboard ? styles.dashboardTabLabel : styles.tabLabel,
+                  { color: isFocused ? colors.onAccent : 'rgba(243,248,236,0.55)' },
                 ]}
               >
                 {label}
               </Text>
+              {isFocused && <View style={styles.activeDot} />}
             </TouchableOpacity>
           );
         })}
@@ -89,6 +96,7 @@ export function CurvedTabBar({ state, descriptors, navigation }: BottomTabBarPro
 const styles = StyleSheet.create({
   container: {
     position: 'relative',
+    backgroundColor: colors.primary,
   },
   svgWrap: {
     position: 'absolute',
@@ -108,20 +116,42 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-around',
     position: 'absolute',
-    bottom: 0,
+    top: WAVE_HEIGHT,
     left: 0,
     right: 0,
-    paddingBottom: Platform.OS === 'ios' ? 6 : 6,
+    height: TAB_HEIGHT,
+    paddingBottom: 8,
   },
   tabItem: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingTop: 6,
+    paddingHorizontal: 2,
   },
   tabLabel: {
-    fontSize: 11,
-    fontWeight: '600',
-    marginTop: 2,
+    fontSize: 9.5,
+    fontWeight: '700',
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+    marginTop: 4,
+    textAlign: 'center',
+  },
+  dashboardTabItem: {
+    flex: 1.3,
+  },
+  dashboardTabLabel: {
+    fontSize: 9.5,
+    fontWeight: '700',
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+    marginTop: 4,
+    textAlign: 'center',
+  },
+  activeDot: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: colors.onAccent,
+    marginTop: 4,
   },
 });

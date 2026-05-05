@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Image, ActivityIndicator,
-  Alert, ScrollView, Switch,
+  ScrollView, Switch,
 } from 'react-native';
+import { alert } from '../../utils/alert';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useQueryClient } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
@@ -42,7 +43,7 @@ export function InvoiceScanScreen({ navigation }: Props) {
       : await ImagePicker.requestMediaLibraryPermissionsAsync();
 
     if (!permission.granted) {
-      Alert.alert('Permission requise', "Autorisez l'accès à la caméra/galerie");
+      alert('Permission requise', "Autorisez l'accès à la caméra/galerie");
       return;
     }
 
@@ -71,7 +72,7 @@ export function InvoiceScanScreen({ navigation }: Props) {
       );
 
       if (!compressed.base64) {
-        Alert.alert('Erreur', "Impossible de lire l'image");
+        alert('Erreur', "Impossible de lire l'image");
         setScanning(false);
         return;
       }
@@ -83,9 +84,9 @@ export function InvoiceScanScreen({ navigation }: Props) {
         result.products.map((p) => ({ ...p, selected: p.confidence >= 0.5 }))
       );
     } catch (err: any) {
-      Alert.alert(
+      alert(
         'Erreur de scan',
-        err.response?.data?.error || err.message || "Impossible d'analyser la facture"
+        err.response?.data?.error || err.message || "Impossible d'analyser la facture",
       );
     } finally {
       setScanning(false);
@@ -106,7 +107,7 @@ export function InvoiceScanScreen({ navigation }: Props) {
   const handleImport = async () => {
     const selected = products.filter((p) => p.selected);
     if (selected.length === 0) {
-      Alert.alert('Erreur', 'Sélectionnez au moins un produit');
+      alert('Erreur', 'Sélectionnez au moins un produit');
       return;
     }
 
@@ -117,33 +118,42 @@ export function InvoiceScanScreen({ navigation }: Props) {
       const defaultContainer = user?.defaultContainerVolumeCl || 70;
       const tvaRate = user?.isAutoEntrepreneur ? 0 : TVA_RATES.RATE_20;
 
-      for (const p of selected) {
-        const matchedCat = categories.find((c) => c.slug === p.category);
-
-        await productService.createProduct({
-          name: p.name,
-          categoryId: matchedCat?.id || categories[0]?.id || '',
-          purchasePriceHT: p.purchasePriceHT || 0,
-          containerVolumeCl: p.containerVolumeCl || defaultContainer,
-          doseVolumeCl: 5,
-          marginMode: MarginMode.FIX_SELLING_PRICE,
-          sellingPriceTTC: 0,
-          tvaRate,
-          supplier: supplier || undefined,
-        });
-        importCount++;
-      }
+      const results = await Promise.allSettled(
+        selected.map((p) => {
+          const matchedCat = categories.find((c) => c.slug === p.category);
+          return productService.createProduct({
+            name: p.name,
+            categoryId: matchedCat?.id || categories[0]?.id || '',
+            purchasePriceHT: p.purchasePriceHT || 0,
+            containerVolumeCl: p.containerVolumeCl || defaultContainer,
+            doseVolumeCl: 5,
+            marginMode: MarginMode.FIX_SELLING_PRICE,
+            sellingPriceTTC: 0,
+            tvaRate,
+            supplier: supplier || undefined,
+          });
+        })
+      );
+      importCount = results.filter((r) => r.status === 'fulfilled').length;
+      const failCount = results.length - importCount;
 
       queryClient.invalidateQueries({ queryKey: ['products'] });
-      Alert.alert(
-        'Import terminé',
-        `${importCount} produit${importCount > 1 ? 's' : ''} importé${importCount > 1 ? 's' : ''}. Configurez les prix de vente dans chaque fiche produit.`,
-        [{ text: 'OK', onPress: () => navigation.goBack() }]
-      );
+      if (failCount > 0) {
+        alert(
+          'Import partiel',
+          `${importCount} importé(s), ${failCount} échoué(s). Configurez les prix de vente dans chaque fiche produit.`,
+        );
+      } else {
+        alert(
+          'Import terminé',
+          `${importCount} produit${importCount > 1 ? 's' : ''} importé${importCount > 1 ? 's' : ''}. Configurez les prix de vente dans chaque fiche produit.`,
+        );
+      }
+      navigation.goBack();
     } catch (err: any) {
-      Alert.alert(
+      alert(
         'Erreur',
-        `${importCount} importé(s). Erreur : ${err.message || "Impossible d'importer"}`
+        `${importCount} importé(s). Erreur : ${err.message || "Impossible d'importer"}`,
       );
     } finally {
       setImporting(false);

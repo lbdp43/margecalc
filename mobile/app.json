@@ -1,14 +1,14 @@
 {
   "expo": {
-    "name": "MargeBar",
+    "name": "MargeBar Pro",
     "slug": "margebar",
-    "version": "1.0.0",
+    "version": "3.14.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "splash": {
       "image": "./assets/splash.png",
       "resizeMode": "contain",
-      "backgroundColor": "#1B4332"
+      "backgroundColor": "#E8EFDD"
     },
     "ios": {
       "supportsTablet": false,
@@ -17,8 +17,8 @@
     "android": {
       "package": "com.margebar.app",
       "adaptiveIcon": {
-        "foregroundImage": "./assets/icon.png",
-        "backgroundColor": "#1B4332"
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#E8EFDD"
       }
     },
     "web": {
