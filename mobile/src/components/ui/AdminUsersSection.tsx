@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity, Modal, ScrollView } from 'rea
 import { Ionicons } from '@expo/vector-icons';
 import { alert, confirm } from '../../utils/alert';
 import * as adminService from '../../services/admin.service';
-import type { AdminUser, AdminUsersStats, AdminRevenue, AdminProduct } from '../../services/admin.service';
+import type { AdminUser, AdminUsersStats, AdminRevenue, AdminProduct, LoginSeriesResponse } from '../../services/admin.service';
 import { formatPrice, formatPercent } from '@margebar/shared';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 
@@ -47,6 +47,9 @@ export function AdminUsersSection() {
   const [selectedUser, setSelectedUser] = useState<AdminUser | null>(null);
   const [userProducts, setUserProducts] = useState<AdminProduct[]>([]);
   const [loadingProducts, setLoadingProducts] = useState(false);
+  const [logins, setLogins] = useState<LoginSeriesResponse | null>(null);
+  const [loginsLoading, setLoginsLoading] = useState(false);
+  const [loginPeriod, setLoginPeriod] = useState<'1m' | '3m' | '12m' | '24m'>('1m');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -64,10 +67,36 @@ export function AdminUsersSection() {
 
   useEffect(() => { load(); }, [load]);
 
+  const periodMonths: Record<typeof loginPeriod, number> = { '1m': 1, '3m': 3, '12m': 12, '24m': 24 };
+
+  const computeRange = (period: '1m' | '3m' | '12m' | '24m'): { from: string; to: string } => {
+    const now = new Date();
+    const toDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+    const fromDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - (periodMonths[period] - 1), 1));
+    const fmt = (d: Date) => `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+    return { from: fmt(fromDate), to: fmt(toDate) };
+  };
+
+  const loadLogins = useCallback(async (userId: string, period: '1m' | '3m' | '12m' | '24m') => {
+    setLoginsLoading(true);
+    try {
+      const { from, to } = computeRange(period);
+      const data = await adminService.getUserLogins(userId, from, to);
+      setLogins(data);
+    } catch {
+      setLogins(null);
+    } finally {
+      setLoginsLoading(false);
+    }
+  }, []);
+
   const openUserProducts = async (user: AdminUser) => {
     setSelectedUser(user);
     setLoadingProducts(true);
     setUserProducts([]);
+    setLogins(null);
+    setLoginPeriod('1m');
+    loadLogins(user.id, '1m');
     try {
       const products = await adminService.getAdminUserProducts(user.id);
       setUserProducts(products);
@@ -258,6 +287,12 @@ export function AdminUsersSection() {
                       {u.lastSeenAt ? `Actif ${formatRelative(u.lastSeenAt)}` : 'Jamais connecte'}
                     </Text>
                   </View>
+                  <View style={styles.userMetaRow}>
+                    <Ionicons name="log-in-outline" size={11} color={colors.textSecondary} />
+                    <Text style={styles.userMeta}>
+                      {u.loginsThisMonth} ce mois{u.loginsTotal > u.loginsThisMonth ? ` · ${u.loginsTotal} au total` : ''}
+                    </Text>
+                  </View>
                 </View>
                 <View style={[styles.subBadge, { backgroundColor: sub.color }]}>
                   <Text style={styles.subBadgeText}>{sub.label}</Text>
@@ -326,6 +361,54 @@ export function AdminUsersSection() {
             )}
 
             <ScrollView contentContainerStyle={styles.productsContent}>
+              {/* Login stats */}
+              <View style={styles.loginsCard}>
+                <View style={styles.loginsHeader}>
+                  <Ionicons name="log-in-outline" size={16} color={colors.primary} />
+                  <Text style={styles.loginsTitle}>Connexions</Text>
+                  <Text style={styles.loginsTotal}>
+                    {loginsLoading ? '…' : (logins?.total ?? 0)}
+                  </Text>
+                </View>
+                <View style={styles.periodRow}>
+                  {(['1m', '3m', '12m', '24m'] as const).map((p) => {
+                    const labels = { '1m': 'Ce mois', '3m': 'Trimestre', '12m': 'Année', '24m': '2 ans' };
+                    const active = loginPeriod === p;
+                    return (
+                      <TouchableOpacity
+                        key={p}
+                        style={[styles.periodChip, active && styles.periodChipActive]}
+                        onPress={() => {
+                          setLoginPeriod(p);
+                          if (selectedUser) loadLogins(selectedUser.id, p);
+                        }}
+                        activeOpacity={0.75}
+                      >
+                        <Text style={[styles.periodChipText, active && styles.periodChipTextActive]}>
+                          {labels[p]}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+                {logins && logins.series.length > 1 && (
+                  <View style={styles.miniChart}>
+                    {(() => {
+                      const max = Math.max(...logins.series.map((s) => s.count), 1);
+                      return logins.series.map((s, i) => {
+                        const pct = (s.count / max) * 100;
+                        return (
+                          <View key={i} style={styles.miniBarCol}>
+                            <View style={[styles.miniBar, { height: `${Math.max(pct, 2)}%` }]} />
+                            <Text style={styles.miniBarLabel}>{s.month.slice(5)}</Text>
+                          </View>
+                        );
+                      });
+                    })()}
+                  </View>
+                )}
+              </View>
+
               {loadingProducts ? (
                 <Text style={styles.productsEmpty}>Chargement...</Text>
               ) : userProducts.length === 0 ? (
@@ -735,5 +818,83 @@ const styles = StyleSheet.create({
     color: colors.primary,
     fontWeight: '600',
     fontSize: 10,
+  },
+  loginsCard: {
+    backgroundColor: colors.background,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+  },
+  loginsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: spacing.sm,
+  },
+  loginsTitle: {
+    ...typography.bodySmall,
+    fontWeight: '700',
+    color: colors.primary,
+    flex: 1,
+  },
+  loginsTotal: {
+    ...typography.h3,
+    fontWeight: '800',
+    color: colors.text,
+  },
+  periodRow: {
+    flexDirection: 'row',
+    gap: 6,
+    marginBottom: spacing.sm,
+  },
+  periodChip: {
+    flex: 1,
+    paddingVertical: 6,
+    borderRadius: borderRadius.full,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.cardBackground,
+    alignItems: 'center',
+  },
+  periodChipActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  periodChipText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: colors.textSecondary,
+  },
+  periodChipTextActive: {
+    color: colors.textLight,
+    fontWeight: '700',
+  },
+  miniChart: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    height: 80,
+    gap: 4,
+    marginTop: spacing.xs,
+  },
+  miniBarCol: {
+    flex: 1,
+    alignItems: 'center',
+    height: '100%',
+    justifyContent: 'flex-end',
+  },
+  miniBar: {
+    width: '70%',
+    backgroundColor: colors.primary,
+    borderTopLeftRadius: 4,
+    borderTopRightRadius: 4,
+    minHeight: 2,
+  },
+  miniBarLabel: {
+    fontSize: 8,
+    color: colors.textSecondary,
+    marginTop: 2,
+    fontWeight: '600',
   },
 });

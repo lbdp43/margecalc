@@ -56,12 +56,32 @@ export async function login(email: string, password: string) {
     throw new BannedAccountError();
   }
 
+  // Bump the monthly login counter (one row per user per calendar month).
+  // Async fire-and-forget — login response is not blocked by this counter.
+  trackMonthlyLogin(user.id).catch((err) => {
+    console.warn('[AUTH] monthly login bump failed', err?.message ?? err);
+  });
+
   const payload: AuthPayload = { userId: user.id, email: user.email, role: user.role as 'user' | 'admin' };
   return {
     token: signAccessToken(payload),
     refreshToken: signRefreshToken(payload.userId),
     user: formatUser(user),
   };
+}
+
+function startOfCurrentMonthUTC(): Date {
+  const now = new Date();
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+}
+
+async function trackMonthlyLogin(userId: string): Promise<void> {
+  const month = startOfCurrentMonthUTC();
+  await prisma.userMonthlyLogin.upsert({
+    where: { userId_month: { userId, month } },
+    create: { userId, month, count: 1 },
+    update: { count: { increment: 1 } },
+  });
 }
 
 export async function refreshAccessToken(refreshToken: string) {

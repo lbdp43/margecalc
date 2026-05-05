@@ -15,6 +15,14 @@ router.use(authenticate, requireAdmin);
 // GET /api/admin/users — list all users with basic stats (admin only).
 // Returns only account-level metadata (email, business name, subscription,
 // dates) — no products, no recipes, no content.
+function startOfMonthUTC(date: Date): Date {
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1));
+}
+
+function addMonthsUTC(date: Date, months: number): Date {
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + months, 1));
+}
+
 router.get('/users', async (_req: Request, res: Response) => {
   try {
     const users = await prisma.user.findMany({
@@ -35,6 +43,21 @@ router.get('/users', async (_req: Request, res: Response) => {
         { createdAt: 'desc' },
       ],
     });
+
+    // Current-month + total login counts, in two grouped queries (no per-user round-trip).
+    const monthStart = startOfMonthUTC(new Date());
+    const [currentMonthRows, totalRows] = await Promise.all([
+      prisma.userMonthlyLogin.findMany({
+        where: { month: monthStart },
+        select: { userId: true, count: true },
+      }),
+      prisma.userMonthlyLogin.groupBy({
+        by: ['userId'],
+        _sum: { count: true },
+      }),
+    ]);
+    const currentMonthByUser = new Map(currentMonthRows.map((r) => [r.userId, r.count]));
+    const totalByUser = new Map(totalRows.map((r) => [r.userId, r._sum.count ?? 0]));
 
     const stats = {
       total: users.length,
@@ -87,6 +110,8 @@ router.get('/users', async (_req: Request, res: Response) => {
         createdAt: u.createdAt.toISOString(),
         lastSeenAt: u.lastSeenAt?.toISOString() ?? null,
         bannedAt: u.bannedAt?.toISOString() ?? null,
+        loginsThisMonth: currentMonthByUser.get(u.id) ?? 0,
+        loginsTotal: totalByUser.get(u.id) ?? 0,
       })),
     });
   } catch (err: any) {
@@ -197,6 +222,58 @@ router.get('/users/:userId/products', async (req: Request, res: Response) => {
   } catch (err: any) {
     console.error('Admin user products error:', err.message);
     res.status(500).json({ error: 'Impossible de charger les produits' });
+  }
+});
+
+// GET /api/admin/users/:userId/logins?from=YYYY-MM&to=YYYY-MM
+// Returns the monthly login count series for a user.
+// Range capped at 24 months. Defaults to the current month only.
+router.get('/users/:userId/logins', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const parseMonth = (raw: unknown): Date | null => {
+      if (typeof raw !== 'string') return null;
+      const match = raw.match(/^(\d{4})-(\d{2})$/);
+      if (!match) return null;
+      const year = parseInt(match[1], 10);
+      const month = parseInt(match[2], 10);
+      if (month < 1 || month > 12) return null;
+      return new Date(Date.UTC(year, month - 1, 1));
+    };
+
+    const today = startOfMonthUTC(new Date());
+    let from = parseMonth(req.query.from) ?? today;
+    let to = parseMonth(req.query.to) ?? today;
+    if (from.getTime() > to.getTime()) [from, to] = [to, from];
+
+    // Cap range at 24 months
+    const earliest = addMonthsUTC(to, -23);
+    if (from.getTime() < earliest.getTime()) from = earliest;
+
+    const rows = await prisma.userMonthlyLogin.findMany({
+      where: { userId: req.params.userId, month: { gte: from, lte: to } },
+      select: { month: true, count: true },
+      orderBy: { month: 'asc' },
+    });
+
+    // Backfill 0-count months so the series is dense for charting
+    const series: { month: string; count: number }[] = [];
+    const byMonthIso = new Map(rows.map((r) => [r.month.toISOString(), r.count]));
+    for (let cursor = new Date(from); cursor.getTime() <= to.getTime(); cursor = addMonthsUTC(cursor, 1)) {
+      const iso = cursor.toISOString();
+      const ym = iso.slice(0, 7); // YYYY-MM
+      series.push({ month: ym, count: byMonthIso.get(iso) ?? 0 });
+    }
+
+    const total = series.reduce((sum, s) => sum + s.count, 0);
+    res.json({
+      from: from.toISOString().slice(0, 7),
+      to: to.toISOString().slice(0, 7),
+      total,
+      series,
+    });
+  } catch (err: any) {
+    console.error('Admin user logins error:', err.message);
+    res.status(500).json({ error: 'Impossible de charger les connexions' });
   }
 });
 

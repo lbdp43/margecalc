@@ -11,6 +11,8 @@ export interface AdminUser {
   createdAt: string;
   lastSeenAt: string | null;
   bannedAt: string | null;
+  loginsThisMonth: number;
+  loginsTotal: number;
 }
 
 export interface AdminUsersStats {
@@ -90,4 +92,27 @@ export async function unbanUser(userId: string): Promise<BanResponse> {
 
 export async function deleteUser(userId: string): Promise<void> {
   await api.delete(`/admin/users/${userId}`);
+}
+
+export interface LoginSeriesPoint {
+  month: string; // YYYY-MM
+  count: number;
+}
+
+export interface LoginSeriesResponse {
+  from: string;
+  to: string;
+  total: number;
+  series: LoginSeriesPoint[];
+}
+
+export async function getUserLogins(
+  userId: string,
+  from?: string,
+  to?: string,
+): Promise<LoginSeriesResponse> {
+  const res = await api.get<LoginSeriesResponse>(`/admin/users/${userId}/logins`, {
+    params: { from, to },
+  });
+  return res.data;
 }
