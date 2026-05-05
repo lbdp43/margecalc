@@ -227,10 +227,10 @@ export function DashboardScreen() {
           accessibilityRole="button"
           accessibilityLabel="Calculer vos droits d'alcool"
         >
-          <Eyebrow color="rgba(243,248,236,0.85)" size={9} track={1.4}>Droits</Eyebrow>
-          <Script size={20} color={colors.onAccent} style={{ marginTop: 6 }}>d'alcool</Script>
+          <Eyebrow color="rgba(243,248,236,0.85)" size={9} track={1.4}>Calcul</Eyebrow>
+          <Script size={20} color={colors.onAccent} style={{ marginTop: 6 }}>vos droits</Script>
           <View style={styles.calcButtonRow}>
-            <Text style={styles.calcButtonSub}>calculer</Text>
+            <Text style={styles.calcButtonSub}>d'alcool</Text>
             <Ionicons name="add" size={16} color={colors.onAccent} />
           </View>
         </TouchableOpacity>
