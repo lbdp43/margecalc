@@ -4,7 +4,7 @@ import Svg, { Path } from 'react-native-svg';
 import { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { colors, shadows } from '../../theme';
 
-const TAB_HEIGHT = 70;
+const TAB_HEIGHT = 84;
 const WAVE_HEIGHT = 28; // amplitude of the S-curve
 
 export function CurvedTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
@@ -74,7 +74,7 @@ export function CurvedTabBar({ state, descriptors, navigation }: BottomTabBarPro
               {options.tabBarIcon?.({
                 focused: isFocused,
                 color: isFocused ? colors.onAccent : 'rgba(243,248,236,0.55)',
-                size: isDashboard ? 42 : 26,
+                size: isDashboard ? 30 : 26,
               })}
               <Text
                 style={[
@@ -120,35 +120,38 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     height: TAB_HEIGHT,
-    paddingBottom: Platform.OS === 'ios' ? 4 : 4,
+    paddingBottom: 8,
   },
   tabItem: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
+    paddingHorizontal: 2,
   },
   tabLabel: {
-    fontSize: 10,
+    fontSize: 9.5,
     fontWeight: '700',
-    letterSpacing: 1.1,
+    letterSpacing: 0.8,
     textTransform: 'uppercase',
-    marginTop: 2,
+    marginTop: 4,
+    textAlign: 'center',
   },
   dashboardTabItem: {
-    flex: 1.2,
+    flex: 1.3,
   },
   dashboardTabLabel: {
-    fontSize: 10,
+    fontSize: 9.5,
     fontWeight: '700',
-    letterSpacing: 1.1,
+    letterSpacing: 0.8,
     textTransform: 'uppercase',
-    marginTop: 3,
+    marginTop: 4,
+    textAlign: 'center',
   },
   activeDot: {
     width: 4,
     height: 4,
     borderRadius: 2,
     backgroundColor: colors.onAccent,
-    marginTop: 3,
+    marginTop: 4,
   },
 });
