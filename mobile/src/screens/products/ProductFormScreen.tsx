@@ -1082,7 +1082,7 @@ const styles = StyleSheet.create({
   },
   pickerOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(13, 38, 30, 0.5)',
+    backgroundColor: colors.overlay,
     justifyContent: 'flex-end',
   },
   pickerSheet: {

@@ -8,7 +8,8 @@ import * as ImageManipulator from 'expo-image-manipulator';
 import { Ionicons } from '@expo/vector-icons';
 import { alert } from '../../utils/alert';
 import * as ticketService from '../../services/ticket.service';
-import type { MyTicket } from '../../services/ticket.service';
+import { TICKET_TYPE_META } from '../../services/ticket.service';
+import type { TicketType, MyTicket } from '../../services/ticket.service';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 
 interface FeedbackModalProps {
@@ -17,18 +18,13 @@ interface FeedbackModalProps {
   screenName?: string;
 }
 
-type TicketType = 'bug' | 'suggestion' | 'question';
 type Tab = 'new' | 'mine';
 
-const TYPE_OPTIONS: Array<{ value: TicketType; label: string; icon: string; color: string }> = [
-  { value: 'bug', label: 'Bug', icon: 'bug-outline', color: '#C0392B' },
-  { value: 'suggestion', label: 'Suggestion', icon: 'bulb-outline', color: '#E67E22' },
-  { value: 'question', label: 'Question', icon: 'help-circle-outline', color: '#2D6A4F' },
+const TYPE_OPTIONS: Array<{ value: TicketType; label: string; icon: string }> = [
+  { value: 'bug', label: 'Bug', icon: 'bug-outline' },
+  { value: 'suggestion', label: 'Suggestion', icon: 'bulb-outline' },
+  { value: 'question', label: 'Question', icon: 'help-circle-outline' },
 ];
-
-const TYPE_META: Record<string, { label: string; icon: string; color: string }> = Object.fromEntries(
-  TYPE_OPTIONS.map((o) => [o.value, { label: o.label, icon: o.icon, color: o.color }]),
-);
 
 export const FeedbackModal = React.memo(function FeedbackModal({
   visible,
@@ -306,7 +302,7 @@ export const FeedbackModal = React.memo(function FeedbackModal({
                 </Text>
               ) : (
                 myTickets.map((t) => {
-                  const meta = TYPE_META[t.type] || TYPE_META.bug;
+                  const meta = TICKET_TYPE_META[t.type] || TICKET_TYPE_META.bug;
                   const isExpanded = expandedId === t.id;
                   const hasUnreadReply = !!t.adminReply && !t.readByUser;
                   return (
@@ -384,7 +380,7 @@ export const FeedbackModal = React.memo(function FeedbackModal({
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(13, 38, 30, 0.6)',
+    backgroundColor: colors.overlay,
     justifyContent: 'flex-end',
   },
   sheet: {

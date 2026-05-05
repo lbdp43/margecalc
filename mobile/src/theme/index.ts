@@ -12,6 +12,7 @@ export const colors = {
   tabBar: PALETTE.primary,
   tabBarInactive: '#95A8A0',
   shadow: '#0D261E',
+  overlay: 'rgba(13, 38, 30, 0.6)',
   gradientStart: '#1B4332',
   gradientEnd: '#2D6A4F',
   surface: '#E8F0ED',

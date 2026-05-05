@@ -21,17 +21,23 @@ function touchLastSeen(userId: string): void {
   const lastWrite = lastSeenWrites.get(userId) || 0;
   if (now - lastWrite < LAST_SEEN_DEBOUNCE_MS) return;
   lastSeenWrites.set(userId, now);
-  // Fire and forget — do not block the request on this.
   prisma.user
     .update({
       where: { id: userId },
       data: { lastSeenAt: new Date() },
     })
     .catch(() => {
-      // Allow retry on the next request if the write failed.
       lastSeenWrites.delete(userId);
     });
 }
+
+// Evict stale entries every 30 minutes to prevent unbounded growth.
+setInterval(() => {
+  const cutoff = Date.now() - LAST_SEEN_DEBOUNCE_MS * 2;
+  for (const [userId, ts] of lastSeenWrites) {
+    if (ts < cutoff) lastSeenWrites.delete(userId);
+  }
+}, 30 * 60 * 1000).unref();
 
 export function authenticate(req: Request, res: Response, next: NextFunction): void {
   const header = req.headers.authorization;

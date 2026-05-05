@@ -52,23 +52,21 @@ export function FeedbackButton() {
 
   // On the dashboard, force visibility back on so the button is always shown.
   React.useEffect(() => {
-    if (isOnDashboard && dismissedThisSession) {
+    if (isOnDashboard && dismissed) {
       setDismissedGlobal(false);
     }
-  }, [isOnDashboard]);
+  }, [isOnDashboard, dismissed]);
 
-  // Load the unread-reply count for the authenticated user.
   const refreshUnreadCount = useCallback(async () => {
     if (!isAuthenticated) {
       setUnreadCount(0);
       return;
     }
     try {
-      const tickets = await ticketService.getMyTickets();
-      const n = tickets.filter((t) => !!t.adminReply && !t.readByUser).length;
-      setUnreadCount(n);
+      const count = await ticketService.getUnreadCount();
+      setUnreadCount(count);
     } catch {
-      // silent — don't let the button break the whole UI
+      // silent
     }
   }, [isAuthenticated]);
 
@@ -85,13 +83,11 @@ export function FeedbackButton() {
   const visible = isOnDashboard || !dismissed;
   if (!visible || modalVisible) {
     return (
-      <>
-        <FeedbackModal
-          visible={modalVisible}
-          onClose={handleCloseModal}
-          screenName={activeRoute || undefined}
-        />
-      </>
+      <FeedbackModal
+        visible={modalVisible}
+        onClose={handleCloseModal}
+        screenName={activeRoute || undefined}
+      />
     );
   }
 

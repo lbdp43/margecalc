@@ -136,7 +136,7 @@ export const WelcomeModal = React.memo(function WelcomeModal({ visible, onClose 
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(13, 38, 30, 0.6)',
+    backgroundColor: colors.overlay,
     justifyContent: 'center',
     alignItems: 'center',
     padding: spacing.md,

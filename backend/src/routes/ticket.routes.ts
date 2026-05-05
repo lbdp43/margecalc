@@ -10,6 +10,46 @@ const MAX_MESSAGE_LENGTH = 4000;
 const MAX_REPLY_LENGTH = 4000;
 const MAX_SCREEN_NAME_LENGTH = 100;
 
+// Shared select clause — excludes screenshotBase64 from list queries to avoid
+// sending megabytes of base64 data just to render a list or count unread badges.
+const TICKET_LIST_SELECT = {
+  id: true,
+  userId: true,
+  type: true,
+  message: true,
+  screenName: true,
+  screenshotBase64: false,
+  status: true,
+  adminReply: true,
+  repliedAt: true,
+  readByUser: true,
+  createdAt: true,
+  updatedAt: true,
+} as const;
+
+function serializeTicket(t: {
+  id: string; type: string; message: string; screenName: string | null;
+  screenshotBase64?: string | null; status: string; adminReply?: string | null;
+  repliedAt?: Date | null; readByUser?: boolean; createdAt: Date; updatedAt: Date;
+  user?: { id: string; email: string; businessName: string | null };
+}) {
+  return {
+    id: t.id,
+    type: t.type,
+    message: t.message,
+    screenName: t.screenName,
+    hasScreenshot: !!t.screenshotBase64,
+    screenshotBase64: t.screenshotBase64 ?? null,
+    status: t.status,
+    adminReply: t.adminReply ?? null,
+    repliedAt: t.repliedAt?.toISOString?.() || null,
+    readByUser: t.readByUser ?? true,
+    createdAt: t.createdAt.toISOString(),
+    updatedAt: t.updatedAt.toISOString(),
+    ...(t.user ? { user: t.user } : {}),
+  };
+}
+
 // POST /api/tickets — create a feedback ticket (any authenticated user)
 router.post('/', authenticate, async (req: Request, res: Response) => {
   try {
@@ -53,34 +93,54 @@ router.post('/', authenticate, async (req: Request, res: Response) => {
   }
 });
 
-// GET /api/tickets/mine — list the authenticated user's own tickets
-// NOTE: must be declared BEFORE the admin `GET /` route so that "/mine" is
-// not mistaken for a ticket id by later param routes.
+// GET /api/tickets/mine/unread-count — lightweight badge count
+router.get('/mine/unread-count', authenticate, async (req: Request, res: Response) => {
+  try {
+    const count = await prisma.ticket.count({
+      where: {
+        userId: req.user!.userId,
+        adminReply: { not: null },
+        readByUser: false,
+      },
+    });
+    res.json({ count });
+  } catch (err: any) {
+    console.error('Unread count error:', err.message);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// GET /api/tickets/mine — list the authenticated user's own tickets (no screenshots)
 router.get('/mine', authenticate, async (req: Request, res: Response) => {
   try {
     const tickets = await prisma.ticket.findMany({
       where: { userId: req.user!.userId },
       orderBy: { createdAt: 'desc' },
+      select: TICKET_LIST_SELECT,
     });
 
-    res.json(
-      tickets.map((t) => ({
-        id: t.id,
-        type: t.type,
-        message: t.message,
-        screenName: t.screenName,
-        screenshotBase64: t.screenshotBase64,
-        status: t.status,
-        adminReply: t.adminReply,
-        repliedAt: t.repliedAt?.toISOString() || null,
-        readByUser: t.readByUser,
-        createdAt: t.createdAt.toISOString(),
-        updatedAt: t.updatedAt.toISOString(),
-      })),
-    );
+    res.json(tickets.map((t) => serializeTicket(t as any)));
   } catch (err: any) {
     console.error('List own tickets error:', err.message);
     res.status(500).json({ error: 'Impossible de lister vos tickets' });
+  }
+});
+
+// GET /api/tickets/:id/screenshot — load screenshot on demand
+router.get('/:id/screenshot', authenticate, async (req: Request, res: Response) => {
+  try {
+    const ticket = await prisma.ticket.findUnique({
+      where: { id: req.params.id },
+      select: { userId: true, screenshotBase64: true },
+    });
+    if (!ticket) return res.status(404).json({ error: 'Ticket introuvable' });
+    const isOwner = ticket.userId === req.user!.userId;
+    const isAdmin = req.user!.role === 'admin';
+    if (!isOwner && !isAdmin) return res.status(403).json({ error: 'Acces refuse' });
+    res.json({ screenshotBase64: ticket.screenshotBase64 });
+  } catch (err: any) {
+    console.error('Load screenshot error:', err.message);
+    res.status(500).json({ error: 'Erreur serveur' });
   }
 });
 
@@ -134,34 +194,20 @@ router.patch('/:id/reply', authenticate, requireAdmin, async (req: Request, res:
   }
 });
 
-// GET /api/tickets — list all tickets (admin only)
+// GET /api/tickets — list all tickets (admin only, no screenshots)
 router.get('/', authenticate, requireAdmin, async (_req: Request, res: Response) => {
   try {
     const tickets = await prisma.ticket.findMany({
       orderBy: { createdAt: 'desc' },
-      include: {
+      select: {
+        ...TICKET_LIST_SELECT,
         user: {
           select: { id: true, email: true, businessName: true },
         },
       },
     });
 
-    res.json(
-      tickets.map((t) => ({
-        id: t.id,
-        type: t.type,
-        message: t.message,
-        screenName: t.screenName,
-        screenshotBase64: t.screenshotBase64,
-        status: t.status,
-        adminReply: t.adminReply,
-        repliedAt: t.repliedAt?.toISOString() || null,
-        readByUser: t.readByUser,
-        createdAt: t.createdAt.toISOString(),
-        updatedAt: t.updatedAt.toISOString(),
-        user: t.user,
-      })),
-    );
+    res.json(tickets.map((t) => serializeTicket(t as any)));
   } catch (err: any) {
     console.error('List tickets error:', err.message);
     res.status(500).json({ error: 'Impossible de lister les tickets' });

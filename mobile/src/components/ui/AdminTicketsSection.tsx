@@ -1,16 +1,11 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Image, Modal, ScrollView, TextInput, KeyboardAvoidingView, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { alert, confirm } from '../../utils/alert';
 import * as ticketService from '../../services/ticket.service';
+import { TICKET_TYPE_META } from '../../services/ticket.service';
 import type { Ticket, TicketStatus } from '../../services/ticket.service';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
-
-const TYPE_META: Record<string, { label: string; icon: string; color: string }> = {
-  bug: { label: 'Bug', icon: 'bug-outline', color: '#C0392B' },
-  suggestion: { label: 'Suggestion', icon: 'bulb-outline', color: '#E67E22' },
-  question: { label: 'Question', icon: 'help-circle-outline', color: '#2D6A4F' },
-};
 
 interface Props {
   refreshKey?: number;
@@ -104,8 +99,14 @@ export function AdminTicketsSection({ refreshKey }: Props) {
     }
   };
 
-  const filtered = filter === 'all' ? tickets : tickets.filter((t) => t.status === filter);
-  const openCount = tickets.filter((t) => t.status === 'open').length;
+  const filtered = useMemo(
+    () => filter === 'all' ? tickets : tickets.filter((t) => t.status === filter),
+    [tickets, filter],
+  );
+  const openCount = useMemo(
+    () => tickets.filter((t) => t.status === 'open').length,
+    [tickets],
+  );
 
   return (
     <View style={styles.card}>
@@ -151,7 +152,7 @@ export function AdminTicketsSection({ refreshKey }: Props) {
           </Text>
         ) : (
           filtered.map((t) => {
-            const meta = TYPE_META[t.type] || TYPE_META.bug;
+            const meta = TICKET_TYPE_META[t.type] || TICKET_TYPE_META.bug;
             return (
               <TouchableOpacity
                 key={t.id}
@@ -219,14 +220,14 @@ export function AdminTicketsSection({ refreshKey }: Props) {
                 <>
                   <View style={styles.previewTopRow}>
                     <Ionicons
-                      name={(TYPE_META[previewTicket.type] || TYPE_META.bug).icon as any}
+                      name={(TICKET_TYPE_META[previewTicket.type] || TICKET_TYPE_META.bug).icon as any}
                       size={18}
-                      color={(TYPE_META[previewTicket.type] || TYPE_META.bug).color}
+                      color={(TICKET_TYPE_META[previewTicket.type] || TICKET_TYPE_META.bug).color}
                     />
                     <Text
-                      style={[styles.previewTypeLabel, { color: (TYPE_META[previewTicket.type] || TYPE_META.bug).color }]}
+                      style={[styles.previewTypeLabel, { color: (TICKET_TYPE_META[previewTicket.type] || TICKET_TYPE_META.bug).color }]}
                     >
-                      {(TYPE_META[previewTicket.type] || TYPE_META.bug).label}
+                      {(TICKET_TYPE_META[previewTicket.type] || TICKET_TYPE_META.bug).label}
                     </Text>
                     <View style={[styles.statusBadge, previewTicket.status === 'open' ? styles.statusOpen : styles.statusResolved]}>
                       <Text style={styles.statusText}>{previewTicket.status === 'open' ? 'Ouvert' : 'Resolu'}</Text>
@@ -472,7 +473,7 @@ const styles = StyleSheet.create({
   },
   previewOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(13, 38, 30, 0.6)',
+    backgroundColor: colors.overlay,
     justifyContent: 'flex-end',
   },
   previewSheet: {
