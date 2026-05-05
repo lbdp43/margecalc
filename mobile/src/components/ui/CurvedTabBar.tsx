@@ -84,7 +84,7 @@ export function CurvedTabBar({ state, descriptors, navigation }: BottomTabBarPro
               >
                 {label}
               </Text>
-              {isFocused && !isDashboard && <View style={styles.activeDot} />}
+              {isFocused && <View style={styles.activeDot} />}
             </TouchableOpacity>
           );
         })}
