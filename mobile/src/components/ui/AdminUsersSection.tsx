@@ -1,10 +1,10 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Modal, ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { alert } from '../../utils/alert';
 import * as adminService from '../../services/admin.service';
-import type { AdminUser, AdminUsersStats, AdminRevenue } from '../../services/admin.service';
-import { formatPrice } from '@margebar/shared';
+import type { AdminUser, AdminUsersStats, AdminRevenue, AdminProduct } from '../../services/admin.service';
+import { formatPrice, formatPercent } from '@margebar/shared';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 
 const SUB_BADGE: Record<string, { label: string; color: string }> = {
@@ -44,6 +44,9 @@ export function AdminUsersSection() {
   const [stats, setStats] = useState<AdminUsersStats | null>(null);
   const [revenue, setRevenue] = useState<AdminRevenue | null>(null);
   const [loading, setLoading] = useState(false);
+  const [selectedUser, setSelectedUser] = useState<AdminUser | null>(null);
+  const [userProducts, setUserProducts] = useState<AdminProduct[]>([]);
+  const [loadingProducts, setLoadingProducts] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -60,6 +63,20 @@ export function AdminUsersSection() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  const openUserProducts = async (user: AdminUser) => {
+    setSelectedUser(user);
+    setLoadingProducts(true);
+    setUserProducts([]);
+    try {
+      const products = await adminService.getAdminUserProducts(user.id);
+      setUserProducts(products);
+    } catch {
+      alert('Erreur', 'Impossible de charger les produits de cet utilisateur.');
+    } finally {
+      setLoadingProducts(false);
+    }
+  };
 
   return (
     <View style={styles.card}>
@@ -151,7 +168,7 @@ export function AdminUsersSection() {
             const sub = SUB_BADGE[u.subscriptionStatus] || SUB_BADGE.none;
             const isAdmin = u.role === 'admin';
             return (
-              <View key={u.id} style={styles.userRow}>
+              <TouchableOpacity key={u.id} style={styles.userRow} onPress={() => openUserProducts(u)} activeOpacity={0.7}>
                 <View style={styles.userMain}>
                   <View style={styles.userNameRow}>
                     <Text style={styles.userName} numberOfLines={1}>
@@ -185,11 +202,100 @@ export function AdminUsersSection() {
                 <View style={[styles.subBadge, { backgroundColor: sub.color }]}>
                   <Text style={styles.subBadgeText}>{sub.label}</Text>
                 </View>
-              </View>
+              </TouchableOpacity>
             );
           })
         )}
       </View>
+
+      {/* User products modal */}
+      <Modal
+        visible={!!selectedUser}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setSelectedUser(null)}
+      >
+        <View style={styles.productsOverlay}>
+          <View style={styles.productsSheet}>
+            <View style={styles.productsHeader}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.productsTitle}>
+                  {selectedUser?.businessName || selectedUser?.email}
+                </Text>
+                <Text style={styles.productsSubtitle}>
+                  {userProducts.length} produit{userProducts.length > 1 ? 's' : ''}
+                </Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => setSelectedUser(null)}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <Ionicons name="close" size={24} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+            <ScrollView contentContainerStyle={styles.productsContent}>
+              {loadingProducts ? (
+                <Text style={styles.productsEmpty}>Chargement...</Text>
+              ) : userProducts.length === 0 ? (
+                <Text style={styles.productsEmpty}>Aucun produit enregistre.</Text>
+              ) : (
+                userProducts.map((p) => {
+                  const marginColor = p.marginPercent >= 70
+                    ? colors.marginGreen
+                    : p.marginPercent >= 50
+                      ? colors.marginOrange
+                      : colors.marginRed;
+                  return (
+                    <View key={p.id} style={styles.productCard}>
+                      <View style={styles.productHeader}>
+                        <Text style={styles.productName} numberOfLines={1}>{p.name}</Text>
+                        <Text style={[styles.productMargin, { color: marginColor }]}>
+                          {formatPercent(p.marginPercent)}
+                        </Text>
+                      </View>
+                      <View style={styles.productMeta}>
+                        <Text style={styles.productMetaText}>{p.category}</Text>
+                        <Text style={styles.productMetaText}>·</Text>
+                        <Text style={styles.productMetaText}>Achat : {formatPrice(p.purchasePriceHT)} HT</Text>
+                        <Text style={styles.productMetaText}>·</Text>
+                        <Text style={styles.productMetaText}>Vente : {formatPrice(p.sellingPriceTTC)} TTC</Text>
+                      </View>
+                      <View style={styles.productMeta}>
+                        <Text style={styles.productMetaText}>{p.containerVolumeCl} cl</Text>
+                        {p.alcoholDegree > 0 && (
+                          <>
+                            <Text style={styles.productMetaText}>·</Text>
+                            <Text style={styles.productMetaText}>{p.alcoholDegree}°</Text>
+                          </>
+                        )}
+                        {p.supplier && (
+                          <>
+                            <Text style={styles.productMetaText}>·</Text>
+                            <Text style={styles.productMetaText}>{p.supplier}</Text>
+                          </>
+                        )}
+                        <Text style={styles.productMetaText}>·</Text>
+                        <Text style={styles.productMetaText}>x{p.coefficient.toFixed(1)}</Text>
+                      </View>
+                      {p.servings.length > 0 && (
+                        <View style={styles.servingsRow}>
+                          {p.servings.map((s, i) => (
+                            <View key={i} style={styles.servingChip}>
+                              <Text style={styles.servingChipText}>
+                                {s.name} ({s.volumeCl} cl) : {formatPrice(s.sellingPriceTTC)}
+                              </Text>
+                            </View>
+                          ))}
+                        </View>
+                      )}
+                    </View>
+                  );
+                })
+              )}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -391,6 +497,98 @@ const styles = StyleSheet.create({
     ...typography.caption,
     fontWeight: '700',
     color: colors.white,
+    fontSize: 10,
+  },
+  productsOverlay: {
+    flex: 1,
+    backgroundColor: colors.overlay,
+    justifyContent: 'flex-end',
+  },
+  productsSheet: {
+    backgroundColor: colors.background,
+    borderTopLeftRadius: borderRadius.xl,
+    borderTopRightRadius: borderRadius.xl,
+    maxHeight: '85%',
+    ...shadows.lg,
+  },
+  productsHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    padding: spacing.lg,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  productsTitle: {
+    ...typography.h3,
+    color: colors.primary,
+  },
+  productsSubtitle: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  productsContent: {
+    padding: spacing.md,
+    paddingBottom: spacing.xl,
+  },
+  productsEmpty: {
+    ...typography.bodySmall,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    paddingVertical: spacing.lg,
+  },
+  productCard: {
+    backgroundColor: colors.cardBackground,
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+    borderLeftWidth: 3,
+    borderLeftColor: colors.primary,
+  },
+  productHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.xs,
+  },
+  productName: {
+    ...typography.bodySmall,
+    fontWeight: '700',
+    color: colors.text,
+    flex: 1,
+    marginRight: spacing.sm,
+  },
+  productMargin: {
+    ...typography.h3,
+    fontWeight: '800',
+  },
+  productMeta: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 4,
+    marginBottom: 2,
+  },
+  productMetaText: {
+    ...typography.caption,
+    color: colors.textSecondary,
+  },
+  servingsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.xs,
+    marginTop: spacing.sm,
+  },
+  servingChip: {
+    backgroundColor: colors.light,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 3,
+    borderRadius: borderRadius.full,
+  },
+  servingChipText: {
+    ...typography.caption,
+    color: colors.primary,
+    fontWeight: '600',
     fontSize: 10,
   },
 });

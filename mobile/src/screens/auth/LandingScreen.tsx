@@ -55,14 +55,14 @@ export function LandingScreen({ navigation }: Props) {
       <View style={styles.supportCard}>
         <View style={styles.supportHeader}>
           <Ionicons name="sparkles-outline" size={22} color={colors.primary} />
-          <Text style={styles.supportTitle}>Application gratuite et open source</Text>
+          <Text style={styles.supportTitle}>Application gratuite</Text>
         </View>
         <Text style={styles.supportDesc}>
-          MargeBar Pro est gratuit. Creez un compte pour sauvegarder vos produits et acceder a toutes les fonctionnalites.
+          Creez un compte gratuit pour profiter de toutes les fonctionnalites. Vos donnees sont protegees : vous seul pouvez y acceder.
         </Text>
         <View style={styles.featuresRow}>
           {[
-            { icon: 'save-outline', text: 'Sauvegarde de vos donnees' },
+            { icon: 'lock-closed-outline', text: 'Donnees protegees et privees' },
             { icon: 'scan-outline', text: 'Scan produits & factures' },
             { icon: 'trending-up-outline', text: 'Tableau de bord complet' },
           ].map((f, i) => (

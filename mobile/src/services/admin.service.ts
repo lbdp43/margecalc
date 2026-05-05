@@ -39,7 +39,28 @@ export interface AdminUsersResponse {
   users: AdminUser[];
 }
 
+export interface AdminProduct {
+  id: string;
+  name: string;
+  category: string;
+  purchasePriceHT: number;
+  containerVolumeCl: number;
+  tvaRate: number;
+  alcoholDegree: number;
+  supplier: string | null;
+  marginPercent: number;
+  sellingPriceTTC: number;
+  coefficient: number;
+  servings: Array<{ name: string; volumeCl: number; sellingPriceTTC: number }>;
+  updatedAt: string;
+}
+
 export async function getAdminUsers(): Promise<AdminUsersResponse> {
   const res = await api.get<AdminUsersResponse>('/admin/users', { timeout: 30000 });
+  return res.data;
+}
+
+export async function getAdminUserProducts(userId: string): Promise<AdminProduct[]> {
+  const res = await api.get<AdminProduct[]>(`/admin/users/${userId}/products`, { timeout: 30000 });
   return res.data;
 }

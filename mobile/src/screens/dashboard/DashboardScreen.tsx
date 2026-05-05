@@ -171,7 +171,7 @@ export function DashboardScreen() {
               Ajoutez vos produits, choisissez votre méthode de calcul et visualisez votre rentabilité.
             </Text>
             <Text style={styles.welcomePrivacy}>
-              Vos données sont privées et vous appartiennent. Aucun accès administrateur à vos produits ou résultats.
+              Vos donnees sont protegees. Vous seul pouvez voir vos produits et vos resultats.
             </Text>
           </View>
         )}

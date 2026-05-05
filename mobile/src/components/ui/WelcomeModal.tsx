@@ -39,11 +39,11 @@ const FEATURES: Array<{ icon: string; title: string; desc: string }> = [
 const DATA_POINTS: Array<{ icon: string; text: string }> = [
   {
     icon: 'lock-closed-outline',
-    text: 'Vos donnees sont stockees de maniere securisee sur nos serveurs, avec mot de passe hashe (bcrypt).',
+    text: 'Vos donnees sont protegees et stockees de maniere securisee. Seul vous pouvez voir vos produits et vos resultats.',
   },
   {
-    icon: 'shield-checkmark-outline',
-    text: 'Aucune donnee n\'est vendue ni partagee avec des tiers. Elles servent uniquement a faire fonctionner l\'application.',
+    icon: 'eye-off-outline',
+    text: 'Vos donnees sont privees. Aucun autre utilisateur n\'y a acces — elles ne servent qu\'a faire fonctionner votre espace.',
   },
   {
     icon: 'trash-outline',
@@ -69,24 +69,9 @@ export const WelcomeModal = React.memo(function WelcomeModal({ visible, onClose 
           >
             {/* Header */}
             <View style={styles.header}>
-              <View style={styles.betaBadge}>
-                <Ionicons name="flask-outline" size={14} color={colors.white} />
-                <Text style={styles.betaBadgeText}>BETA</Text>
-              </View>
               <Text style={styles.title}>Bienvenue dans MargeBar Pro</Text>
               <Text style={styles.subtitle}>
                 Calculateur de marges pour bars, restaurants et hotels
-              </Text>
-            </View>
-
-            {/* Beta notice */}
-            <View style={styles.noticeCard}>
-              <View style={styles.noticeHeader}>
-                <Ionicons name="information-circle" size={20} color={colors.primary} />
-                <Text style={styles.noticeTitle}>Version beta jusqu'a fin avril 2026</Text>
-              </View>
-              <Text style={styles.noticeText}>
-                L'application est actuellement en phase de test. La mise en production officielle est prevue pour debut mai 2026. Vos retours sont precieux pour nous aider a l'ameliorer avant la sortie.
               </Text>
             </View>
 
@@ -108,9 +93,9 @@ export const WelcomeModal = React.memo(function WelcomeModal({ visible, onClose 
             ))}
 
             {/* Data handling */}
-            <Text style={styles.sectionTitle}>Vos donnees</Text>
+            <Text style={styles.sectionTitle}>Vos donnees sont protegees</Text>
             <Text style={styles.sectionIntro}>
-              Nous prenons la confidentialite au serieux.
+              Vous seul pouvez consulter vos produits et vos resultats.
             </Text>
             {DATA_POINTS.map((d, i) => (
               <View key={i} style={styles.dataRow}>

@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { prisma } from '../config/database';
 import { authenticate, requireAdmin } from '../middleware/auth';
+import { calculateMargin, MarginMode } from '@margebar/shared';
 
 const router = Router();
 
@@ -89,6 +90,58 @@ router.get('/users', async (_req: Request, res: Response) => {
   } catch (err: any) {
     console.error('Admin users list error:', err.message);
     res.status(500).json({ error: 'Impossible de lister les utilisateurs' });
+  }
+});
+
+// GET /api/admin/users/:userId/products — list a user's products with margins
+router.get('/users/:userId/products', async (req: Request, res: Response) => {
+  try {
+    const products = await prisma.product.findMany({
+      where: { userId: req.params.userId },
+      include: {
+        category: true,
+        servings: { include: { servingType: true } },
+      },
+      orderBy: { updatedAt: 'desc' },
+    });
+
+    const enriched = products.map((p) => {
+      const computed = calculateMargin({
+        purchasePriceHT: p.purchasePriceHT,
+        containerVolumeCl: p.containerVolumeCl,
+        doseVolumeCl: p.doseVolumeCl,
+        marginMode: p.marginMode as MarginMode,
+        sellingPriceTTC: p.sellingPriceTTC ?? undefined,
+        targetMarginPercent: p.targetMarginPercent ?? undefined,
+        coefficient: p.coefficient ?? undefined,
+        tvaRate: p.tvaRate,
+      });
+
+      return {
+        id: p.id,
+        name: p.name,
+        category: p.category.name,
+        purchasePriceHT: p.purchasePriceHT,
+        containerVolumeCl: p.containerVolumeCl,
+        tvaRate: p.tvaRate,
+        alcoholDegree: p.alcoholDegree,
+        supplier: p.supplier,
+        marginPercent: computed.marginPercent,
+        sellingPriceTTC: computed.sellingPriceTTC,
+        coefficient: computed.coefficient,
+        servings: p.servings.map((s) => ({
+          name: s.servingType.name,
+          volumeCl: s.servingType.volumeCl,
+          sellingPriceTTC: s.sellingPriceTTC,
+        })),
+        updatedAt: p.updatedAt.toISOString(),
+      };
+    });
+
+    res.json(enriched);
+  } catch (err: any) {
+    console.error('Admin user products error:', err.message);
+    res.status(500).json({ error: 'Impossible de charger les produits' });
   }
 });
 
