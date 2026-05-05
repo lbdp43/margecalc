@@ -1,7 +1,7 @@
 import React, { useState, useCallback } from 'react';
 import { View, Text, StyleSheet, Switch, TouchableOpacity, ScrollView, TextInput, Linking, Platform } from 'react-native';
 import { alert, confirm } from '../../utils/alert';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { TVA_RATES, CONTAINER_PRESETS, ServingType, DEFAULT_MARGIN_THRESHOLDS, Category, CustomContainer } from '@margebar/shared';
@@ -49,6 +49,7 @@ export function SettingsScreen() {
   const { params: systemParams, updateParam } = useSystemParamsStore();
   const { rates, updateRate, resetDefaults } = useRatesStore();
   const isAdmin = user?.role === 'admin';
+  const navigation = useNavigation<any>();
 
   // Local state for admin editing of rates
   const [editRates, setEditRates] = useState<Record<string, { accise: string; cotisation: string }>>({});
@@ -768,6 +769,22 @@ export function SettingsScreen() {
           {/* Utilisateurs */}
           <AdminUsersSection />
 
+          {/* Voir tous les produits */}
+          <TouchableOpacity
+            style={styles.adminNavBtn}
+            onPress={() => navigation.navigate('AdminProducts')}
+            activeOpacity={0.7}
+          >
+            <View style={styles.adminNavBtnLeft}>
+              <Ionicons name="grid-outline" size={20} color={colors.primary} />
+              <View>
+                <Text style={styles.adminNavBtnTitle}>Tous les produits</Text>
+                <Text style={styles.adminNavBtnDesc}>Vue d'ensemble de tous les utilisateurs</Text>
+              </View>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={colors.primary} />
+          </TouchableOpacity>
+
           {/* Tickets / retours beta */}
           <AdminTicketsSection />
 
@@ -920,6 +937,18 @@ export function SettingsScreen() {
         <Ionicons name="log-out-outline" size={20} color={colors.marginRed} style={{ marginRight: spacing.sm }} />
         <Text style={styles.logoutBtnText}>Se déconnecter</Text>
       </TouchableOpacity>
+
+      <View style={styles.aboutSection}>
+        <Text style={styles.aboutTitle}>Application creee par La Brasserie des Plantes</Text>
+        <TouchableOpacity style={styles.aboutRow} onPress={() => Linking.openURL('tel:0684444044')}>
+          <Ionicons name="call-outline" size={14} color={colors.primary} />
+          <Text style={styles.aboutLink}>06 84 44 40 44</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.aboutRow} onPress={() => Linking.openURL('mailto:labrasseriedesplantes@gmail.com')}>
+          <Ionicons name="mail-outline" size={14} color={colors.primary} />
+          <Text style={styles.aboutLink}>labrasseriedesplantes@gmail.com</Text>
+        </TouchableOpacity>
+      </View>
 
       <Text style={styles.version}>MargeBar Pro v1.0.0</Text>
     </ScreenWrapper>
@@ -1409,12 +1438,65 @@ const styles = StyleSheet.create({
     lineHeight: 15,
   },
 
+  adminNavBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: colors.cardBackground,
+    borderRadius: borderRadius.lg,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    ...shadows.sm,
+  },
+  adminNavBtnLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    flex: 1,
+  },
+  adminNavBtnTitle: {
+    ...typography.bodySmall,
+    fontWeight: '700',
+    color: colors.primary,
+  },
+  adminNavBtnDesc: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  aboutSection: {
+    alignItems: 'center',
+    paddingVertical: spacing.lg,
+    marginTop: spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  aboutTitle: {
+    ...typography.bodySmall,
+    fontWeight: '700',
+    color: colors.primary,
+    marginBottom: spacing.sm,
+  },
+  aboutRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginBottom: spacing.xs,
+  },
+  aboutLink: {
+    ...typography.bodySmall,
+    color: colors.primary,
+    fontWeight: '600',
+  },
+
   // Version
   version: {
     ...typography.caption,
     color: colors.textSecondary,
     textAlign: 'center',
-    marginTop: spacing.xl,
+    marginTop: spacing.sm,
     marginBottom: spacing.md,
   },
 });
