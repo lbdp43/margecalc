@@ -28,6 +28,29 @@ export function LandingScreen({ navigation }: Props) {
         </Text>
       </View>
 
+      {/* Auth buttons (top) */}
+      <TouchableOpacity
+        style={styles.primaryBtn}
+        onPress={() => navigation.navigate('Register')}
+        activeOpacity={0.8}
+      >
+        <Ionicons name="person-add-outline" size={20} color={colors.white} style={{ marginRight: spacing.sm }} />
+        <Text style={styles.primaryBtnText}>Créer un compte gratuit</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        style={styles.secondaryBtn}
+        onPress={() => navigation.navigate('Login')}
+        activeOpacity={0.7}
+      >
+        <Ionicons name="log-in-outline" size={20} color={colors.primary} style={{ marginRight: spacing.sm }} />
+        <Text style={styles.secondaryBtnText}>J'ai déjà un compte</Text>
+      </TouchableOpacity>
+
+      <Text style={styles.skipWarningText}>
+        Le calculateur ci-dessous ne nécessite pas de compte mais vous ne pouvez pas sauvegarder.
+      </Text>
+
       {/* Calculator */}
       <DroitsCalculator />
 
@@ -79,29 +102,6 @@ export function LandingScreen({ navigation }: Props) {
           ))}
         </View>
       </View>
-
-      {/* Auth buttons */}
-      <TouchableOpacity
-        style={styles.primaryBtn}
-        onPress={() => navigation.navigate('Register')}
-        activeOpacity={0.8}
-      >
-        <Ionicons name="person-add-outline" size={20} color={colors.white} style={{ marginRight: spacing.sm }} />
-        <Text style={styles.primaryBtnText}>Créer un compte gratuit</Text>
-      </TouchableOpacity>
-
-      <TouchableOpacity
-        style={styles.secondaryBtn}
-        onPress={() => navigation.navigate('Login')}
-        activeOpacity={0.7}
-      >
-        <Ionicons name="log-in-outline" size={20} color={colors.primary} style={{ marginRight: spacing.sm }} />
-        <Text style={styles.secondaryBtnText}>J'ai déjà un compte</Text>
-      </TouchableOpacity>
-
-      <Text style={styles.skipWarningText}>
-        Le calculateur ci-dessus est gratuit et ne nécessite pas de compte.
-      </Text>
 
       <View style={styles.aboutCard}>
         <Text style={styles.aboutTitle}>
