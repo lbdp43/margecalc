@@ -14,7 +14,7 @@ import { Card } from '../../components/ui/Card';
 import * as servingService from '../../services/serving.service';
 import * as productService from '../../services/product.service';
 import { PriceHistoryEntry } from '../../services/product.service';
-import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
+import { colors, spacing, borderRadius, typography, shadows, fonts } from '../../theme';
 
 type Props = NativeStackScreenProps<any, 'ProductDetail'>;
 
@@ -320,8 +320,12 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   title: {
-    ...typography.h1,
-    color: colors.primary,
+    fontFamily: fonts.serif,
+    fontStyle: 'italic',
+    fontWeight: '500',
+    fontSize: 32,
+    letterSpacing: -0.6,
+    color: colors.text,
     marginBottom: spacing.sm,
   },
   metaRow: {
@@ -365,7 +369,11 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     ...typography.h3,
+    fontFamily: fonts.serif,
+    fontStyle: 'italic',
+    fontWeight: '500',
     color: colors.text,
+    letterSpacing: -0.3,
   },
   sectionDesc: {
     ...typography.caption,

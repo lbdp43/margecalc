@@ -21,7 +21,8 @@ import * as servingService from '../../services/serving.service';
 import * as categoryService from '../../services/category.service';
 import * as containerService from '../../services/container.service';
 import * as subscriptionService from '../../services/subscription.service';
-import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
+import { colors, spacing, borderRadius, typography, shadows, fonts } from '../../theme';
+import { Display, Eyebrow, InkStamp, Scribble } from '../../components/ui/atelier';
 
 export function SettingsScreen() {
   const { user, setAuth, logout } = useAuthStore();
@@ -358,7 +359,13 @@ export function SettingsScreen() {
   return (
     <ScreenWrapper>
       <DecorativeCurve variant="top" />
-      <Text style={styles.title}>Paramètres</Text>
+      <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: spacing.lg }}>
+        <InkStamp size={44} color={colors.primary} rotate={-6} />
+        <View style={{ marginLeft: spacing.sm + 2 }}>
+          <Eyebrow color={colors.textMuted}>Atelier</Eyebrow>
+          <Display size={28} style={{ marginTop: 2 }}>Paramètres</Display>
+        </View>
+      </View>
 
       {/* Mon établissement */}
       <View style={styles.sectionCard}>
@@ -931,7 +938,9 @@ const styles = StyleSheet.create({
     backgroundColor: colors.cardBackground,
     borderRadius: borderRadius.lg,
     marginBottom: spacing.lg,
-    ...shadows.sm,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    ...shadows.paper,
     overflow: 'hidden',
   },
   sectionHeader: {
@@ -950,7 +959,11 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     ...typography.h3,
+    fontFamily: fonts.serif,
+    fontStyle: 'italic',
+    fontWeight: '500',
     color: colors.text,
+    letterSpacing: -0.3,
   },
   sectionBody: {
     paddingHorizontal: spacing.lg,

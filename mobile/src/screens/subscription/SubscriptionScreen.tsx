@@ -6,7 +6,8 @@ import { ScreenWrapper } from '../../components/ui/ScreenWrapper';
 import { DroitsCalculator } from '../../components/ui/DroitsCalculator';
 import { useAuthStore } from '../../store/auth.store';
 import * as subscriptionService from '../../services/subscription.service';
-import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
+import { colors, spacing, borderRadius, typography, shadows, fonts } from '../../theme';
+import { Display, Eyebrow, InkStamp, Scribble } from '../../components/ui/atelier';
 
 interface Props {
   onDismiss?: () => void;
@@ -81,10 +82,14 @@ export function SubscriptionScreen({ onDismiss }: Props) {
   return (
     <ScreenWrapper decorations={false}>
       <View style={styles.header}>
-        <View style={styles.logoBadge}>
-          <Ionicons name="bar-chart" size={32} color={colors.white} />
-        </View>
-        <Text style={styles.title}>MargeBar Pro</Text>
+        <InkStamp size={56} color={colors.primary} rotate={-6} />
+        <Eyebrow color={colors.textMuted} style={{ marginTop: spacing.md }}>
+          Soutenir & adhérer
+        </Eyebrow>
+        <Display size={32} style={{ marginTop: spacing.xs, textAlign: 'center' }}>
+          MargeBar Pro
+        </Display>
+        <Scribble width={50} color={colors.primary} style={{ marginTop: spacing.xs }} />
       </View>
 
       {/* Calculator */}

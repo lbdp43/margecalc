@@ -8,6 +8,7 @@ import { Button } from '../../components/ui/Button';
 import { useAuthStore } from '../../store/auth.store';
 import * as authService from '../../services/auth.service';
 import { colors, spacing, typography } from '../../theme';
+import { Eyebrow, Display, Script, InkStamp, Scribble } from '../../components/ui/atelier';
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -48,8 +49,16 @@ export function LoginScreen({ navigation }: Props) {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <View style={styles.header}>
-          <Text style={styles.title}>MargeBar Pro</Text>
-          <Text style={styles.subtitle}>Calculez vos marges.{'\n'}Maîtrisez votre rentabilité.</Text>
+          <InkStamp size={56} color={colors.primary} rotate={-6} />
+          <Eyebrow color={colors.textMuted} style={{ marginTop: spacing.md }}>Le carnet du bistrot</Eyebrow>
+          <Display size={36} color={colors.text} style={{ marginTop: spacing.xs, textAlign: 'center' }}>
+            MargeBar Pro
+          </Display>
+          <Scribble width={60} color={colors.primary} style={{ marginTop: spacing.sm }} />
+          <Text style={styles.subtitle}>
+            Calculez vos marges.{'\n'}
+            <Script size={18} color={colors.primary}>Maîtrisez votre rentabilité.</Script>
+          </Text>
         </View>
 
         <View style={styles.form}>
@@ -96,16 +105,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: spacing.xl + spacing.lg,
   },
-  title: {
-    ...typography.h1,
-    color: colors.primary,
-    fontSize: 36,
-    marginBottom: spacing.sm,
-  },
   subtitle: {
     ...typography.body,
     color: colors.textSecondary,
     textAlign: 'center',
+    marginTop: spacing.md,
+    lineHeight: 24,
   },
   form: {
     gap: spacing.sm,

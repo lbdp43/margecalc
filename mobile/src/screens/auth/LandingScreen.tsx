@@ -4,7 +4,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { DroitsCalculator } from '../../components/ui/DroitsCalculator';
-import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
+import { colors, spacing, borderRadius, typography, shadows, fonts } from '../../theme';
+import { Eyebrow, Display, Script, InkStamp, Scribble } from '../../components/ui/atelier';
 
 type Props = NativeStackScreenProps<any, 'Landing'>;
 
@@ -13,12 +14,17 @@ export function LandingScreen({ navigation }: Props) {
     <View style={styles.inner}>
       {/* Header */}
       <View style={styles.header}>
-        <View style={styles.logoBadge}>
-          <Ionicons name="bar-chart" size={32} color={colors.white} />
-        </View>
-        <Text style={styles.title}>MargeBar Pro</Text>
+        <InkStamp size={64} color={colors.primary} rotate={-6} />
+        <Eyebrow color={colors.textMuted} style={{ marginTop: spacing.md }}>
+          Pour les pros du comptoir
+        </Eyebrow>
+        <Display size={36} style={{ marginTop: spacing.xs, textAlign: 'center' }}>
+          MargeBar Pro
+        </Display>
+        <Scribble width={70} color={colors.primary} style={{ marginTop: spacing.xs }} />
         <Text style={styles.subtitle}>
-          Calculez vos marges, optimisez votre rentabilite
+          Calculez vos marges,{' '}
+          <Script size={18} color={colors.primary}>sans prise de tête.</Script>
         </Text>
       </View>
 
@@ -136,36 +142,28 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: spacing.lg,
   },
-  logoBadge: {
-    width: 56,
-    height: 56,
-    borderRadius: borderRadius.lg,
-    backgroundColor: colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: spacing.sm,
-    ...shadows.md,
-  },
-  title: {
-    ...typography.h1,
-    color: colors.primary,
-    marginBottom: spacing.xs,
-  },
   subtitle: {
-    ...typography.bodySmall,
+    ...typography.body,
     color: colors.textSecondary,
     textAlign: 'center',
+    marginTop: spacing.md,
+    paddingHorizontal: spacing.md,
   },
   featuresCard: {
     backgroundColor: colors.cardBackground,
     borderRadius: borderRadius.lg,
     padding: spacing.lg,
     marginBottom: spacing.lg,
-    ...shadows.sm,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    ...shadows.paper,
   },
   featuresTitle: {
-    ...typography.h3,
-    color: colors.primary,
+    ...typography.h2,
+    fontFamily: fonts.serif,
+    fontStyle: 'italic',
+    fontWeight: '500',
+    color: colors.text,
     marginBottom: spacing.xs,
   },
   featuresIntro: {

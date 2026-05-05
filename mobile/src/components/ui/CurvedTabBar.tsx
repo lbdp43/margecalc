@@ -25,7 +25,13 @@ export function CurvedTabBar({ state, descriptors, navigation }: BottomTabBarPro
       {/* SVG wave background */}
       <View style={styles.svgWrap}>
         <Svg width={width} height={totalHeight} style={styles.svg}>
-          <Path d={tabBarPath} fill={colors.primary} />
+          {/* Deep emerald base layer */}
+          <Path d={tabBarPath} fill={colors.secondary} />
+          {/* Lighter emerald top — offset upward, creates a "stamped" double-edge */}
+          <Path
+            d={`M0,${WAVE_HEIGHT - 2} C${width * 0.35},${WAVE_HEIGHT - 2} ${width * 0.65},-2 ${width},-2 L${width},${totalHeight - 2} L0,${totalHeight - 2} Z`}
+            fill={colors.primary}
+          />
         </Svg>
       </View>
 
@@ -67,17 +73,18 @@ export function CurvedTabBar({ state, descriptors, navigation }: BottomTabBarPro
             >
               {options.tabBarIcon?.({
                 focused: isFocused,
-                color: isFocused ? colors.white : 'rgba(255,255,255,0.5)',
+                color: isFocused ? colors.onAccent : 'rgba(243,248,236,0.55)',
                 size: isDashboard ? 42 : 26,
               })}
               <Text
                 style={[
                   isDashboard ? styles.dashboardTabLabel : styles.tabLabel,
-                  { color: isFocused ? colors.white : 'rgba(255,255,255,0.5)' },
+                  { color: isFocused ? colors.onAccent : 'rgba(243,248,236,0.55)' },
                 ]}
               >
                 {label}
               </Text>
+              {isFocused && !isDashboard && <View style={styles.activeDot} />}
             </TouchableOpacity>
           );
         })}
@@ -122,7 +129,9 @@ const styles = StyleSheet.create({
   },
   tabLabel: {
     fontSize: 10,
-    fontWeight: '600',
+    fontWeight: '700',
+    letterSpacing: 1.1,
+    textTransform: 'uppercase',
     marginTop: 2,
   },
   dashboardTabItem: {
@@ -131,6 +140,15 @@ const styles = StyleSheet.create({
   dashboardTabLabel: {
     fontSize: 10,
     fontWeight: '700',
+    letterSpacing: 1.1,
+    textTransform: 'uppercase',
+    marginTop: 3,
+  },
+  activeDot: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: colors.onAccent,
     marginTop: 3,
   },
 });

@@ -12,7 +12,9 @@ interface ButtonProps {
   icon?: ReactNode;
 }
 
-export const Button = React.memo(function Button({ title, onPress, variant = 'primary', loading, disabled, style, icon }: ButtonProps) {
+export const Button = React.memo(function Button({
+  title, onPress, variant = 'primary', loading, disabled, style, icon,
+}: ButtonProps) {
   const isDisabled = disabled || loading;
 
   return (
@@ -20,14 +22,22 @@ export const Button = React.memo(function Button({ title, onPress, variant = 'pr
       style={[styles.base, styles[variant], isDisabled && styles.disabled, style]}
       onPress={onPress}
       disabled={isDisabled}
-      activeOpacity={0.8}
+      activeOpacity={0.85}
     >
       {loading ? (
-        <ActivityIndicator color={variant === 'outline' ? colors.primary : variant === 'danger' ? colors.marginRed : colors.textLight} />
+        <ActivityIndicator
+          color={variant === 'outline'
+            ? colors.primary
+            : variant === 'danger' ? colors.marginRed : colors.textLight}
+        />
       ) : (
         <View style={styles.content}>
           {icon && <View style={styles.icon}>{icon}</View>}
-          <Text style={[styles.text, variant === 'outline' && styles.textOutline, variant === 'danger' && styles.textDanger]}>
+          <Text style={[
+            styles.text,
+            variant === 'outline' && styles.textOutline,
+            variant === 'danger' && styles.textDanger,
+          ]}>
             {title}
           </Text>
         </View>
@@ -47,16 +57,20 @@ const styles = StyleSheet.create({
   },
   primary: {
     backgroundColor: colors.primary,
-    ...shadows.sm,
+    borderWidth: 1.5,
+    borderColor: colors.secondary,
+    ...shadows.paper,
   },
   secondary: {
     backgroundColor: colors.secondary,
-    ...shadows.sm,
+    borderWidth: 1.5,
+    borderColor: colors.secondary,
+    ...shadows.paper,
   },
   outline: {
     backgroundColor: 'transparent',
     borderWidth: 1.5,
-    borderColor: colors.border,
+    borderColor: colors.primary,
   },
   danger: {
     backgroundColor: colors.marginRed + '10',
@@ -79,7 +93,7 @@ const styles = StyleSheet.create({
     color: colors.textLight,
   },
   textOutline: {
-    color: colors.text,
+    color: colors.primary,
   },
   textDanger: {
     color: colors.marginRed,

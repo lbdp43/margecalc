@@ -31,7 +31,8 @@ import * as categoryService from '../../services/category.service';
 import * as servingService from '../../services/serving.service';
 import * as scanService from '../../services/scan.service';
 import { YinYangSpinner } from '../../components/ui/YinYangSpinner';
-import { colors, spacing, borderRadius, typography } from '../../theme';
+import { colors, spacing, borderRadius, typography, fonts } from '../../theme';
+import { Display, Eyebrow, Scribble } from '../../components/ui/atelier';
 
 type Props = NativeStackScreenProps<any, 'ProductForm'>;
 type ServingMode = 'price' | 'margin' | 'coefficient';
@@ -412,7 +413,11 @@ export function ProductFormScreen({ route, navigation }: Props) {
   if (step === 'scan') {
     return (
       <ScreenWrapper>
-        <Text style={styles.title}>Nouveau produit</Text>
+        <View style={{ marginBottom: spacing.lg }}>
+          <Eyebrow color={colors.textMuted}>Une bouteille</Eyebrow>
+          <Display size={30} style={{ marginTop: spacing.xs }}>Nouveau produit</Display>
+          <Scribble width={50} color={colors.primary} style={{ marginTop: spacing.xs }} />
+        </View>
 
         {/* Photo preview */}
         {imageUri && (
@@ -461,7 +466,13 @@ export function ProductFormScreen({ route, navigation }: Props) {
   // =====================
   return (
     <ScreenWrapper>
-      <Text style={styles.title}>{isEditing ? 'Modifier le produit' : 'Nouveau produit'}</Text>
+      <View style={{ marginBottom: spacing.lg }}>
+        <Eyebrow color={colors.textMuted}>{isEditing ? 'Atelier' : 'Une bouteille'}</Eyebrow>
+        <Display size={30} style={{ marginTop: spacing.xs }}>
+          {isEditing ? 'Modifier le produit' : 'Nouveau produit'}
+        </Display>
+        <Scribble width={50} color={colors.primary} style={{ marginTop: spacing.xs }} />
+      </View>
 
       {/* Scanned image thumbnail */}
       {imageUri && (
