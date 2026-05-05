@@ -26,8 +26,8 @@ const SettingsStack = createAppStackNavigator();
 function SettingsNavigator() {
   return (
     <SettingsStack.Navigator screenOptions={{ headerShown: false }}>
-      <SettingsStack.Screen name="SettingsMain" component={SettingsScreen} />
-      <SettingsStack.Screen name="AdminProducts" component={AdminProductsScreen} />
+      <SettingsStack.Screen name="SettingsMain" component={SettingsScreen} options={{ title: 'Réglages · MargeBar Pro' }} />
+      <SettingsStack.Screen name="AdminProducts" component={AdminProductsScreen} options={{ title: 'Tous les produits · MargeBar Pro' }} />
     </SettingsStack.Navigator>
   );
 }
@@ -35,10 +35,10 @@ function SettingsNavigator() {
 function ProductsNavigator() {
   return (
     <ProductStack.Navigator screenOptions={{ headerShown: false }}>
-      <ProductStack.Screen name="ProductList" component={ProductListScreen} />
-      <ProductStack.Screen name="ProductDetail" component={ProductDetailScreen} />
-      <ProductStack.Screen name="ProductForm" component={ProductFormScreen} />
-      <ProductStack.Screen name="InvoiceScan" component={InvoiceScanScreen} />
+      <ProductStack.Screen name="ProductList" component={ProductListScreen} options={{ title: 'Mes produits · MargeBar Pro' }} />
+      <ProductStack.Screen name="ProductDetail" component={ProductDetailScreen} options={{ title: 'Produit · MargeBar Pro' }} />
+      <ProductStack.Screen name="ProductForm" component={ProductFormScreen} options={{ title: 'Nouveau produit · MargeBar Pro' }} />
+      <ProductStack.Screen name="InvoiceScan" component={InvoiceScanScreen} options={{ title: 'Scanner une facture · MargeBar Pro' }} />
     </ProductStack.Navigator>
   );
 }
@@ -46,9 +46,9 @@ function ProductsNavigator() {
 function CocktailsNavigator() {
   return (
     <CocktailStack.Navigator screenOptions={{ headerShown: false }}>
-      <CocktailStack.Screen name="CocktailList" component={CocktailListScreen} />
-      <CocktailStack.Screen name="CocktailDetail" component={CocktailDetailScreen} />
-      <CocktailStack.Screen name="CocktailForm" component={CocktailFormScreen} />
+      <CocktailStack.Screen name="CocktailList" component={CocktailListScreen} options={{ title: 'Cocktails · MargeBar Pro' }} />
+      <CocktailStack.Screen name="CocktailDetail" component={CocktailDetailScreen} options={{ title: 'Cocktail · MargeBar Pro' }} />
+      <CocktailStack.Screen name="CocktailForm" component={CocktailFormScreen} options={{ title: 'Nouveau cocktail · MargeBar Pro' }} />
     </CocktailStack.Navigator>
   );
 }

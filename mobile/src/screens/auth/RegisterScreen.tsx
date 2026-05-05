@@ -7,7 +7,6 @@ import { Input } from '../../components/ui/Input';
 import { Button } from '../../components/ui/Button';
 import { useAuthStore } from '../../store/auth.store';
 import * as authService from '../../services/auth.service';
-import * as subscriptionService from '../../services/subscription.service';
 import { colors, spacing, typography } from '../../theme';
 import { Display, Eyebrow, Scribble } from '../../components/ui/atelier';
 
@@ -15,13 +14,11 @@ const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 type Props = NativeStackScreenProps<any, 'Register'>;
 
-export function RegisterScreen({ navigation, route }: Props) {
-  const withPromoCode = (route.params as any)?.withPromoCode === true;
+export function RegisterScreen({ navigation }: Props) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [businessName, setBusinessName] = useState('');
   const [isAutoEntrepreneur, setIsAutoEntrepreneur] = useState(false);
-  const [promoCode, setPromoCode] = useState('');
   const [loading, setLoading] = useState(false);
   const setAuth = useAuthStore((s) => s.setAuth);
 
@@ -48,33 +45,7 @@ export function RegisterScreen({ navigation, route }: Props) {
         businessName: businessName || undefined,
         isAutoEntrepreneur,
       });
-
-      // If a promo code was provided, redeem it BEFORE setAuth so that the user
-      // lands directly on the app with an active trial instead of being flagged
-      // as a non-subscriber (which would trigger the data-wipe flow).
-      let finalUser = result.user;
-      let successMessage: string | null = null;
-      if (promoCode.trim()) {
-        try {
-          const redeem = await subscriptionService.redeemAccessCode(promoCode, result.token);
-          finalUser = {
-            ...result.user,
-            subscriptionStatus: redeem.subscriptionStatus as any,
-            subscriptionPlan: redeem.subscriptionPlan,
-            subscriptionEndDate: redeem.subscriptionEndDate,
-          };
-          successMessage = `Bienvenue ${redeem.clientName} ! Vous beneficiez d'une periode d'essai gratuite de ${redeem.durationDays} jours.`;
-        } catch (err: any) {
-          alert(
-            'Code promo invalide',
-            err?.response?.data?.error || 'Le code n\'a pas ete reconnu. Votre compte a ete cree, vous pourrez reessayer depuis l\'ecran d\'abonnement.',
-          );
-        }
-      }
-      setAuth(result.token, finalUser, result.refreshToken);
-      if (successMessage) {
-        alert('Code valide', successMessage);
-      }
+      setAuth(result.token, result.user, result.refreshToken);
     } catch (err: any) {
       alert('Erreur', err.response?.data?.error || 'Inscription impossible');
     } finally {
@@ -131,16 +102,6 @@ export function RegisterScreen({ navigation, route }: Props) {
             accessibilityLabel="Auto-entrepreneur"
           />
         </View>
-
-        <Input
-          label={withPromoCode ? 'Code promo' : 'Code promo (optionnel)'}
-          value={promoCode}
-          onChangeText={setPromoCode}
-          autoCapitalize="none"
-          autoCorrect={false}
-          placeholder="Votre code d'accès"
-          accessibilityLabel="Code promo"
-        />
 
         <Button title="Créer mon compte" onPress={handleRegister} loading={loading} />
         <Button
