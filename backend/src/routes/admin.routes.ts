@@ -225,6 +225,63 @@ router.get('/users/:userId/products', async (req: Request, res: Response) => {
   }
 });
 
+// GET /api/admin/logins?from=YYYY-MM&to=YYYY-MM
+// Aggregated login series across ALL users. Same shape as the per-user
+// endpoint but summed; capped at 24 months.
+router.get('/logins', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const parseMonth = (raw: unknown): Date | null => {
+      if (typeof raw !== 'string') return null;
+      const match = raw.match(/^(\d{4})-(\d{2})$/);
+      if (!match) return null;
+      const year = parseInt(match[1], 10);
+      const month = parseInt(match[2], 10);
+      if (month < 1 || month > 12) return null;
+      return new Date(Date.UTC(year, month - 1, 1));
+    };
+
+    const today = startOfMonthUTC(new Date());
+    let from = parseMonth(req.query.from) ?? today;
+    let to = parseMonth(req.query.to) ?? today;
+    if (from.getTime() > to.getTime()) [from, to] = [to, from];
+    const earliest = addMonthsUTC(to, -23);
+    if (from.getTime() < earliest.getTime()) from = earliest;
+
+    const rows = await prisma.userMonthlyLogin.groupBy({
+      by: ['month'],
+      where: { month: { gte: from, lte: to } },
+      _sum: { count: true },
+      orderBy: { month: 'asc' },
+    });
+
+    const byMonthIso = new Map(rows.map((r) => [r.month.toISOString(), r._sum.count ?? 0]));
+    const series: { month: string; count: number }[] = [];
+    for (let cursor = new Date(from); cursor.getTime() <= to.getTime(); cursor = addMonthsUTC(cursor, 1)) {
+      const iso = cursor.toISOString();
+      series.push({ month: iso.slice(0, 7), count: byMonthIso.get(iso) ?? 0 });
+    }
+    const total = series.reduce((sum, s) => sum + s.count, 0);
+
+    // Active users count over the period (any login)
+    const activeUsers = await prisma.userMonthlyLogin.findMany({
+      where: { month: { gte: from, lte: to }, count: { gt: 0 } },
+      select: { userId: true },
+      distinct: ['userId'],
+    });
+
+    res.json({
+      from: from.toISOString().slice(0, 7),
+      to: to.toISOString().slice(0, 7),
+      total,
+      activeUsers: activeUsers.length,
+      series,
+    });
+  } catch (err: any) {
+    console.error('Admin global logins error:', err.message);
+    res.status(500).json({ error: 'Impossible de charger les connexions' });
+  }
+});
+
 // GET /api/admin/users/:userId/logins?from=YYYY-MM&to=YYYY-MM
 // Returns the monthly login count series for a user.
 // Range capped at 24 months. Defaults to the current month only.

@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity, Modal, ScrollView } from 'rea
 import { Ionicons } from '@expo/vector-icons';
 import { alert, confirm } from '../../utils/alert';
 import * as adminService from '../../services/admin.service';
-import type { AdminUser, AdminUsersStats, AdminRevenue, AdminProduct, LoginSeriesResponse } from '../../services/admin.service';
+import type { AdminUser, AdminUsersStats, AdminRevenue, AdminProduct, LoginSeriesResponse, GlobalLoginSeriesResponse } from '../../services/admin.service';
 import { formatPrice, formatPercent } from '@margebar/shared';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 
@@ -50,6 +50,9 @@ export function AdminUsersSection() {
   const [logins, setLogins] = useState<LoginSeriesResponse | null>(null);
   const [loginsLoading, setLoginsLoading] = useState(false);
   const [loginPeriod, setLoginPeriod] = useState<'1m' | '3m' | '12m' | '24m'>('1m');
+  const [globalLogins, setGlobalLogins] = useState<GlobalLoginSeriesResponse | null>(null);
+  const [globalLoginsLoading, setGlobalLoginsLoading] = useState(false);
+  const [globalPeriod, setGlobalPeriod] = useState<'1m' | '3m' | '12m' | '24m'>('1m');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -88,6 +91,24 @@ export function AdminUsersSection() {
     } finally {
       setLoginsLoading(false);
     }
+  }, []);
+
+  const loadGlobalLogins = useCallback(async (period: '1m' | '3m' | '12m' | '24m') => {
+    setGlobalLoginsLoading(true);
+    try {
+      const { from, to } = computeRange(period);
+      const data = await adminService.getGlobalLogins(from, to);
+      setGlobalLogins(data);
+    } catch {
+      setGlobalLogins(null);
+    } finally {
+      setGlobalLoginsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadGlobalLogins(globalPeriod);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const openUserProducts = async (user: AdminUser) => {
@@ -234,6 +255,59 @@ export function AdminUsersSection() {
             </Text>
           </View>
         )}
+
+        {/* Global logins (all users) */}
+        <View style={styles.loginsCard}>
+          <View style={styles.loginsHeader}>
+            <Ionicons name="log-in-outline" size={16} color={colors.primary} />
+            <Text style={styles.loginsTitle}>Connexions (tous utilisateurs)</Text>
+            <Text style={styles.loginsTotal}>
+              {globalLoginsLoading ? '…' : (globalLogins?.total ?? 0)}
+            </Text>
+          </View>
+          {globalLogins && (
+            <Text style={styles.globalLoginsSub}>
+              {globalLogins.activeUsers} utilisateur{globalLogins.activeUsers > 1 ? 's' : ''} actif{globalLogins.activeUsers > 1 ? 's' : ''} sur la période
+            </Text>
+          )}
+          <View style={styles.periodRow}>
+            {(['1m', '3m', '12m', '24m'] as const).map((p) => {
+              const labels = { '1m': 'Ce mois', '3m': 'Trimestre', '12m': 'Année', '24m': '2 ans' };
+              const active = globalPeriod === p;
+              return (
+                <TouchableOpacity
+                  key={p}
+                  style={[styles.periodChip, active && styles.periodChipActive]}
+                  onPress={() => {
+                    setGlobalPeriod(p);
+                    loadGlobalLogins(p);
+                  }}
+                  activeOpacity={0.75}
+                >
+                  <Text style={[styles.periodChipText, active && styles.periodChipTextActive]}>
+                    {labels[p]}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+          {globalLogins && globalLogins.series.length > 1 && (
+            <View style={styles.miniChart}>
+              {(() => {
+                const max = Math.max(...globalLogins.series.map((s) => s.count), 1);
+                return globalLogins.series.map((s, i) => {
+                  const pct = (s.count / max) * 100;
+                  return (
+                    <View key={i} style={styles.miniBarCol}>
+                      <View style={[styles.miniBar, { height: `${Math.max(pct, 2)}%` }]} />
+                      <Text style={styles.miniBarLabel}>{s.month.slice(5)}</Text>
+                    </View>
+                  );
+                });
+              })()}
+            </View>
+          )}
+        </View>
 
         {/* Users list */}
         {loading && users.length === 0 ? (
@@ -843,6 +917,11 @@ const styles = StyleSheet.create({
     ...typography.h3,
     fontWeight: '800',
     color: colors.text,
+  },
+  globalLoginsSub: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    marginBottom: spacing.sm,
   },
   periodRow: {
     flexDirection: 'row',

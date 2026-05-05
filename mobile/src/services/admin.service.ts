@@ -116,3 +116,17 @@ export async function getUserLogins(
   });
   return res.data;
 }
+
+export interface GlobalLoginSeriesResponse extends LoginSeriesResponse {
+  activeUsers: number;
+}
+
+export async function getGlobalLogins(
+  from?: string,
+  to?: string,
+): Promise<GlobalLoginSeriesResponse> {
+  const res = await api.get<GlobalLoginSeriesResponse>('/admin/logins', {
+    params: { from, to },
+  });
+  return res.data;
+}
