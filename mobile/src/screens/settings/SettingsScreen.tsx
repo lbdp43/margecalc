@@ -1,7 +1,7 @@
 import React, { useState, useCallback } from 'react';
 import { View, Text, StyleSheet, Switch, TouchableOpacity, ScrollView, TextInput, Linking, Platform } from 'react-native';
 import { alert, confirm } from '../../utils/alert';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { TVA_RATES, CONTAINER_PRESETS, ServingType, DEFAULT_MARGIN_THRESHOLDS, Category, CustomContainer } from '@margebar/shared';
@@ -48,6 +48,7 @@ export function SettingsScreen() {
   const { params: systemParams, updateParam } = useSystemParamsStore();
   const { rates, updateRate, resetDefaults } = useRatesStore();
   const isAdmin = user?.role === 'admin';
+  const navigation = useNavigation<any>();
 
   // Local state for admin editing of rates
   const [editRates, setEditRates] = useState<Record<string, { accise: string; cotisation: string }>>({});
@@ -761,6 +762,22 @@ export function SettingsScreen() {
           {/* Utilisateurs */}
           <AdminUsersSection />
 
+          {/* Voir tous les produits */}
+          <TouchableOpacity
+            style={styles.adminNavBtn}
+            onPress={() => navigation.navigate('AdminProducts')}
+            activeOpacity={0.7}
+          >
+            <View style={styles.adminNavBtnLeft}>
+              <Ionicons name="grid-outline" size={20} color={colors.primary} />
+              <View>
+                <Text style={styles.adminNavBtnTitle}>Tous les produits</Text>
+                <Text style={styles.adminNavBtnDesc}>Vue d'ensemble de tous les utilisateurs</Text>
+              </View>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={colors.primary} />
+          </TouchableOpacity>
+
           {/* Tickets / retours beta */}
           <AdminTicketsSection />
 
@@ -1408,6 +1425,34 @@ const styles = StyleSheet.create({
     lineHeight: 15,
   },
 
+  adminNavBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: colors.cardBackground,
+    borderRadius: borderRadius.lg,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    ...shadows.sm,
+  },
+  adminNavBtnLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    flex: 1,
+  },
+  adminNavBtnTitle: {
+    ...typography.bodySmall,
+    fontWeight: '700',
+    color: colors.primary,
+  },
+  adminNavBtnDesc: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
   aboutSection: {
     alignItems: 'center',
     paddingVertical: spacing.lg,

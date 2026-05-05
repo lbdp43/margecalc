@@ -13,6 +13,7 @@ import { CocktailListScreen } from '../screens/cocktails/CocktailListScreen';
 import { CocktailFormScreen } from '../screens/cocktails/CocktailFormScreen';
 import { CocktailDetailScreen } from '../screens/cocktails/CocktailDetailScreen';
 import { SettingsScreen } from '../screens/settings/SettingsScreen';
+import { AdminProductsScreen } from '../screens/settings/AdminProductsScreen';
 import { colors, shadows } from '../theme';
 import { CurvedTabBar } from '../components/ui/CurvedTabBar';
 import { useAuthStore } from '../store/auth.store';
@@ -20,6 +21,16 @@ import { useAuthStore } from '../store/auth.store';
 const Tab = createBottomTabNavigator();
 const ProductStack = createAppStackNavigator();
 const CocktailStack = createAppStackNavigator();
+const SettingsStack = createAppStackNavigator();
+
+function SettingsNavigator() {
+  return (
+    <SettingsStack.Navigator screenOptions={{ headerShown: false }}>
+      <SettingsStack.Screen name="SettingsMain" component={SettingsScreen} />
+      <SettingsStack.Screen name="AdminProducts" component={AdminProductsScreen} />
+    </SettingsStack.Navigator>
+  );
+}
 
 function ProductsNavigator() {
   return (
@@ -139,7 +150,16 @@ export function AppNavigator() {
         tabBarInactiveTintColor: colors.tabBarInactive,
       })}
     >
-      <Tab.Screen name="Réglages" component={SettingsScreen} />
+      <Tab.Screen
+        name="Réglages"
+        component={SettingsNavigator}
+        listeners={({ navigation }) => ({
+          tabPress: (e) => {
+            e.preventDefault();
+            navigation.navigate('Réglages', { screen: 'SettingsMain' });
+          },
+        })}
+      />
       <Tab.Screen
         name="Produits"
         component={ProductsNavigator}

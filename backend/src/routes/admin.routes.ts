@@ -93,6 +93,59 @@ router.get('/users', async (_req: Request, res: Response) => {
   }
 });
 
+// GET /api/admin/products — list ALL products from ALL users with margins
+router.get('/products', async (_req: Request, res: Response) => {
+  try {
+    const products = await prisma.product.findMany({
+      include: {
+        category: true,
+        user: { select: { id: true, email: true, businessName: true } },
+        servings: { include: { servingType: true } },
+      },
+      orderBy: { updatedAt: 'desc' },
+    });
+
+    const enriched = products.map((p) => {
+      const computed = calculateMargin({
+        purchasePriceHT: p.purchasePriceHT,
+        containerVolumeCl: p.containerVolumeCl,
+        doseVolumeCl: p.doseVolumeCl,
+        marginMode: p.marginMode as MarginMode,
+        sellingPriceTTC: p.sellingPriceTTC ?? undefined,
+        targetMarginPercent: p.targetMarginPercent ?? undefined,
+        coefficient: p.coefficient ?? undefined,
+        tvaRate: p.tvaRate,
+      });
+
+      return {
+        id: p.id,
+        name: p.name,
+        category: p.category.name,
+        user: p.user,
+        purchasePriceHT: p.purchasePriceHT,
+        containerVolumeCl: p.containerVolumeCl,
+        tvaRate: p.tvaRate,
+        alcoholDegree: p.alcoholDegree,
+        supplier: p.supplier,
+        marginPercent: computed.marginPercent,
+        sellingPriceTTC: computed.sellingPriceTTC,
+        coefficient: computed.coefficient,
+        servings: p.servings.map((s) => ({
+          name: s.servingType.name,
+          volumeCl: s.servingType.volumeCl,
+          sellingPriceTTC: s.sellingPriceTTC,
+        })),
+        updatedAt: p.updatedAt.toISOString(),
+      };
+    });
+
+    res.json(enriched);
+  } catch (err: any) {
+    console.error('Admin all products error:', err.message);
+    res.status(500).json({ error: 'Impossible de charger les produits' });
+  }
+});
+
 // GET /api/admin/users/:userId/products — list a user's products with margins
 router.get('/users/:userId/products', async (req: Request, res: Response) => {
   try {

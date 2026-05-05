@@ -43,6 +43,7 @@ export interface AdminProduct {
   id: string;
   name: string;
   category: string;
+  user?: { id: string; email: string; businessName: string | null };
   purchasePriceHT: number;
   containerVolumeCl: number;
   tvaRate: number;
@@ -57,6 +58,11 @@ export interface AdminProduct {
 
 export async function getAdminUsers(): Promise<AdminUsersResponse> {
   const res = await api.get<AdminUsersResponse>('/admin/users', { timeout: 30000 });
+  return res.data;
+}
+
+export async function getAllProducts(): Promise<AdminProduct[]> {
+  const res = await api.get<AdminProduct[]>('/admin/products', { timeout: 30000 });
   return res.data;
 }
 
