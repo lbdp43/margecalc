@@ -939,7 +939,15 @@ export function SettingsScreen() {
       </TouchableOpacity>
 
       <View style={styles.aboutSection}>
-        <Text style={styles.aboutTitle}>Application creee par La Brasserie des Plantes</Text>
+        <Text style={styles.aboutTitle}>
+          Application creee par{' '}
+          <Text
+            style={styles.aboutTitleLink}
+            onPress={() => Linking.openURL('https://labrasseriedesplantes.fr/')}
+          >
+            La Brasserie des Plantes
+          </Text>
+        </Text>
         <TouchableOpacity style={styles.aboutRow} onPress={() => Linking.openURL('tel:0684444044')}>
           <Ionicons name="call-outline" size={14} color={colors.primary} />
           <Text style={styles.aboutLink}>06 84 44 40 44</Text>
@@ -950,7 +958,7 @@ export function SettingsScreen() {
         </TouchableOpacity>
       </View>
 
-      <Text style={styles.version}>MargeBar Pro v1.0.0</Text>
+      <Text style={styles.version}>MargeBar Pro v3.14</Text>
     </ScreenWrapper>
   );
 }
@@ -1478,6 +1486,9 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: colors.primary,
     marginBottom: spacing.sm,
+  },
+  aboutTitleLink: {
+    textDecorationLine: 'underline',
   },
   aboutRow: {
     flexDirection: 'row',

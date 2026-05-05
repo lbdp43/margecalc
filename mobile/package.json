@@ -1,6 +1,6 @@
 {
   "name": "@margebar/mobile",
-  "version": "1.0.0",
+  "version": "3.14.0",
   "main": "./index",
   "scripts": {
     "start": "expo start",

@@ -104,7 +104,15 @@ export function LandingScreen({ navigation }: Props) {
       </Text>
 
       <View style={styles.aboutCard}>
-        <Text style={styles.aboutTitle}>Application creee par La Brasserie des Plantes</Text>
+        <Text style={styles.aboutTitle}>
+          Application creee par{' '}
+          <Text
+            style={styles.aboutTitleLink}
+            onPress={() => Linking.openURL('https://labrasseriedesplantes.fr/')}
+          >
+            La Brasserie des Plantes
+          </Text>
+        </Text>
         <Text style={styles.aboutDesc}>
           Si vous etes interesses par nos produits ou si vous avez des questions, n'hesitez pas a nous contacter.
         </Text>
@@ -378,6 +386,9 @@ const styles = StyleSheet.create({
     color: colors.primary,
     textAlign: 'center',
     marginBottom: spacing.xs,
+  },
+  aboutTitleLink: {
+    textDecorationLine: 'underline',
   },
   aboutDesc: {
     ...typography.caption,
