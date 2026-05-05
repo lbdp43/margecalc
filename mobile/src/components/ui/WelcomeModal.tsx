@@ -12,12 +12,12 @@ const FEATURES: Array<{ icon: string; title: string; desc: string }> = [
   {
     icon: 'calculator-outline',
     title: 'Calcul de marges',
-    desc: 'Prix de vente, marge cible ou coefficient — visualisez votre rentabilite en temps reel pour chaque boisson.',
+    desc: 'Prix de vente, marge cible ou coefficient — visualisez votre rentabilité en temps réel pour chaque boisson.',
   },
   {
     icon: 'wine-outline',
     title: 'Gestion produits & recettes',
-    desc: 'Spiritueux, vins, bieres, softs, ingredients, cocktails... avec historique de prix et fournisseurs.',
+    desc: 'Spiritueux, vins, bières, softs, ingrédients, cocktails… avec historique de prix et fournisseurs.',
   },
   {
     icon: 'scan-outline',
@@ -27,31 +27,31 @@ const FEATURES: Array<{ icon: string; title: string; desc: string }> = [
   {
     icon: 'receipt-outline',
     title: 'Droits d\'accise & TVA',
-    desc: 'Calcul automatique des droits, de la cotisation securite sociale et de la TVA selon la categorie fiscale.',
+    desc: 'Calcul automatique des droits, de la cotisation sécurité sociale et de la TVA selon la catégorie fiscale.',
   },
   {
     icon: 'bar-chart-outline',
     title: 'Tableau de bord',
-    desc: 'Top/flop des marges, repartition par categorie, suivi de la rentabilite globale.',
+    desc: 'Top/flop des marges, répartition par catégorie, suivi de la rentabilité globale.',
   },
 ];
 
 const DATA_POINTS: Array<{ icon: string; text: string }> = [
   {
     icon: 'lock-closed-outline',
-    text: 'Vos donnees sont protegees et stockees de maniere securisee. Seul vous pouvez voir vos produits et vos resultats.',
+    text: 'Vos données sont protégées et stockées de manière sécurisée. Seul vous pouvez voir vos produits et vos résultats.',
   },
   {
     icon: 'eye-off-outline',
-    text: 'Vos donnees sont privees. Aucun autre utilisateur n\'y a acces — elles ne servent qu\'a faire fonctionner votre espace.',
+    text: 'Vos données sont privées. Aucun autre utilisateur n\'y a accès — elles ne servent qu\'à faire fonctionner votre espace.',
   },
   {
     icon: 'trash-outline',
-    text: 'Vous pouvez supprimer vos donnees ou votre compte a tout moment depuis les Reglages.',
+    text: 'Vous pouvez supprimer vos données ou votre compte à tout moment depuis les Réglages.',
   },
   {
     icon: 'sparkles-outline',
-    text: 'Le scan IA utilise Claude (Anthropic) uniquement pour extraire les informations de l\'image — les photos ne sont pas conservees.',
+    text: 'Le scan IA utilise Claude (Anthropic) uniquement pour extraire les informations de l\'image — les photos ne sont pas conservées.',
   },
 ];
 
@@ -71,14 +71,14 @@ export const WelcomeModal = React.memo(function WelcomeModal({ visible, onClose 
             <View style={styles.header}>
               <Text style={styles.title}>Bienvenue dans MargeBar Pro</Text>
               <Text style={styles.subtitle}>
-                Calculateur de marges pour bars, restaurants et hotels
+                Calculateur de marges pour bars, restaurants et hôtels
               </Text>
             </View>
 
             {/* Features */}
-            <Text style={styles.sectionTitle}>A quoi sert l'application ?</Text>
+            <Text style={styles.sectionTitle}>À quoi sert l'application ?</Text>
             <Text style={styles.sectionIntro}>
-              MargeBar Pro vous aide a piloter la rentabilite de votre etablissement, de l'achat au verre servi.
+              MargeBar Pro vous aide à piloter la rentabilité de votre établissement, de l'achat au verre servi.
             </Text>
             {FEATURES.map((f, i) => (
               <View key={i} style={styles.featureRow}>
@@ -93,9 +93,9 @@ export const WelcomeModal = React.memo(function WelcomeModal({ visible, onClose 
             ))}
 
             {/* Data handling */}
-            <Text style={styles.sectionTitle}>Vos donnees sont protegees</Text>
+            <Text style={styles.sectionTitle}>Vos données sont protégées</Text>
             <Text style={styles.sectionIntro}>
-              Vous seul pouvez consulter vos produits et vos resultats.
+              Vous seul pouvez consulter vos produits et vos résultats.
             </Text>
             {DATA_POINTS.map((d, i) => (
               <View key={i} style={styles.dataRow}>
