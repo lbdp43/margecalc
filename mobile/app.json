@@ -8,7 +8,7 @@
     "splash": {
       "image": "./assets/splash.png",
       "resizeMode": "contain",
-      "backgroundColor": "#1B4332"
+      "backgroundColor": "#E8EFDD"
     },
     "ios": {
       "supportsTablet": false,
@@ -17,8 +17,8 @@
     "android": {
       "package": "com.margebar.app",
       "adaptiveIcon": {
-        "foregroundImage": "./assets/icon.png",
-        "backgroundColor": "#1B4332"
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#E8EFDD"
       }
     },
     "web": {

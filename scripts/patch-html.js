@@ -23,7 +23,8 @@ html = html.replace(
 const extraHead = `
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-    <meta name="theme-color" content="#1B4332" />
+    <meta name="theme-color" content="#1B7A55" />
+    <link rel="apple-touch-icon" href="./favicon.png" />
     <style id="layout-fix">
       html, body, #root {
         height: 100%;
