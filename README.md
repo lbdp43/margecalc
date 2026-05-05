@@ -242,7 +242,6 @@ Toutes les routes (sauf `/api/auth/*` et `/api/health`) requièrent un header `A
 **La Brasserie des Plantes** — L'art des assemblages de plantes
 Saint-Didier-en-Velay, Haute-Loire
 
-- 📞 06 84 44 40 44 / 07 43 69 26 19
 - ✉️ labrasseriedesplantes@gmail.com
 - 🌐 [labrasseriedesplantes.fr](https://labrasseriedesplantes.fr/)
 

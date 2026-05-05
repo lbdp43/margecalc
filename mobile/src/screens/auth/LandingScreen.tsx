@@ -116,10 +116,6 @@ export function LandingScreen({ navigation }: Props) {
         <Text style={styles.aboutDesc}>
           Si vous êtes intéressés par nos produits ou si vous avez des questions, n'hésitez pas à nous contacter.
         </Text>
-        <TouchableOpacity style={styles.aboutRow} onPress={() => Linking.openURL('tel:0684444044')}>
-          <Ionicons name="call-outline" size={16} color={colors.primary} />
-          <Text style={styles.aboutLink}>06 84 44 40 44</Text>
-        </TouchableOpacity>
         <TouchableOpacity style={styles.aboutRow} onPress={() => Linking.openURL('mailto:labrasseriedesplantes@gmail.com')}>
           <Ionicons name="mail-outline" size={16} color={colors.primary} />
           <Text style={styles.aboutLink}>labrasseriedesplantes@gmail.com</Text>

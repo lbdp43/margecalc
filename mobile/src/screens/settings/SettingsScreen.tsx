@@ -948,10 +948,6 @@ export function SettingsScreen() {
             La Brasserie des Plantes
           </Text>
         </Text>
-        <TouchableOpacity style={styles.aboutRow} onPress={() => Linking.openURL('tel:0684444044')}>
-          <Ionicons name="call-outline" size={14} color={colors.primary} />
-          <Text style={styles.aboutLink}>06 84 44 40 44</Text>
-        </TouchableOpacity>
         <TouchableOpacity style={styles.aboutRow} onPress={() => Linking.openURL('mailto:labrasseriedesplantes@gmail.com')}>
           <Ionicons name="mail-outline" size={14} color={colors.primary} />
           <Text style={styles.aboutLink}>labrasseriedesplantes@gmail.com</Text>
