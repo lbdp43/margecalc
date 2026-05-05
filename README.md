@@ -1,51 +1,98 @@
-# MargeBar
+# MargeBar Pro
 
-Calculateur de marges pour bars et restaurants. Application mobile et web permettant de piloter la rentabilité de chaque boisson, du spiritueux au cocktail.
+> **Le calculateur de marges fait pour vous, sans prise de tête.**
+> Application mobile et web pour piloter la rentabilité de chaque boisson —
+> du shot de spiritueux à la pinte de bière, en passant par les droits d'accise.
+
+[![Version](https://img.shields.io/badge/version-3.14-1B7A55)](https://github.com/lbdp43/margecalc)
+[![Stack](https://img.shields.io/badge/stack-Expo%20%7C%20React%20Native%20%7C%20Node.js%20%7C%20Postgres-1B7A55)](#stack-technique)
+[![Production](https://img.shields.io/badge/production-margecalc--production.up.railway.app-0E4D34)](https://margecalc-production.up.railway.app/Landing)
+
+Application créée par **[La Brasserie des Plantes](https://labrasseriedesplantes.fr/)** — artisans-producteurs de spiritueux à Saint-Didier-en-Velay (Haute-Loire).
+
+---
+
+## Démo
+
+→ **[https://margecalc-production.up.railway.app/Landing](https://margecalc-production.up.railway.app/Landing)**
+
+Le calculateur de droits d'alcool est utilisable sans compte. Pour le tableau de bord, le scan de factures et la gestion de produits, créez un compte gratuit.
+
+---
 
 ## Fonctionnalités
 
-- **Calcul de marge** sur 3 modes : prix de vente fixe, marge cible, ou coefficient
-- **Gestion des produits** avec catégories (Spiritueux, Vins, Bières, Softs, Ingrédients, Consommables), historique de prix et fournisseurs
-- **Recettes cocktails** avec calcul de marge sur la composition complète
-- **Scan de bouteilles** via Claude Vision — extraction automatique du nom, volume, catégorie et prix estimé
-- **Scan de factures** — import multi-produits depuis une photo de facture
-- **Dashboard** avec répartition par catégorie, top/flop marges
-- **Taxes** : TVA multi-taux, droit d'accise et cotisation sécu sur l'alcool
-- **Mode hors-ligne** avec synchronisation automatique
-- **Abonnements** Stripe (gratuit / pro mensuel / pro annuel)
+### Pour les pros du comptoir
+
+- **Calcul des droits d'alcool** — prix HT avec et sans droits d'accise pour les 13 catégories fiscales françaises (vins tranquilles & mousseux, cidres, porto/VDN, bières légères/standard/artisanales, spiritueux, rhum DOM/hors DOM, liqueurs, vermouths). Tarifs 2026 à jour.
+- **Prix de revient précis** — droits d'accise + cotisation sécurité sociale + TVA intégrés en un seul calcul.
+- **Calcul de marges** sur 3 modes : prix de vente fixe, marge cible, ou coefficient — par shot, verre, demi, pinte ou bouteille.
+- **Scan IA** (Claude Vision) :
+  - **Bouteille** — photo → nom, volume, catégorie, prix estimé pré-remplis.
+  - **Facture fournisseur** — import multi-produits depuis une photo.
+- **Tableau de bord** avec marge par catégorie, top/flop rentabilité, fiches produit complètes par service.
+- **Recettes cocktails** avec calcul de marge sur la composition complète.
+- **Mode hors-ligne** avec synchronisation automatique au retour de connexion.
+
+### Pour l'admin
+
+- Vue d'ensemble de tous les utilisateurs avec MRR/ARR.
+- Vue **Tous les produits** — tableau filtré par utilisateur.
+- Bannir / débannir un compte (les données restent conservées, l'accès est bloqué).
+- Suppression définitive d'un compte (transactionnelle, cascade complète).
+- Gestion des tarifs d'accise / cotisations / TVA paramétrables.
+- Gestion des tickets utilisateurs (bug, suggestions, questions).
+
+---
 
 ## Stack technique
 
-| Couche | Technologies |
-|--------|-------------|
-| Mobile / Web | Expo 50, React Native 0.73, TypeScript |
-| Navigation | React Navigation v6 |
-| State | Zustand (auth) + TanStack React Query (serveur) |
-| Backend | Node.js, Express, TypeScript |
-| Base de données | PostgreSQL + Prisma 5 |
-| Paiement | Stripe |
-| IA / Scan | Anthropic Claude (Vision) |
+| Couche             | Technologies                                                   |
+|--------------------|---------------------------------------------------------------|
+| Mobile / Web       | Expo 50, React Native 0.73, TypeScript, react-native-svg       |
+| Navigation         | React Navigation v6 (bottom tabs + native stack)               |
+| State              | Zustand (auth, system params, rates) + TanStack React Query    |
+| Backend            | Node.js 22, Express, TypeScript, Zod                           |
+| Base de données    | PostgreSQL + Prisma 5                                          |
+| Auth               | JWT (access 1h + refresh 30j), bcrypt                          |
+| Paiement           | Stripe (Checkout + Customer Portal + webhooks) — dormant       |
+| IA / Scan          | Anthropic Claude Vision                                        |
+| Déploiement        | Railway (railpack auto-detect)                                 |
+
+### Direction esthétique
+
+L'interface adopte une esthétique **« Atelier »** — papier kraft crème (`#E8EFDD`), accent vert émeraude (`#1B7A55`), typographie italique sérif pour les chiffres et titres, accents manuscrits cursifs sur les éléments décoratifs. Inspirée du carnet de bistrot, conçue pour rester lisible et chaleureuse.
+
+---
 
 ## Structure du monorepo
 
 ```
 margebar/
-├── shared/    # Types, constantes et utilitaires partagés
-├── backend/   # API Express + Prisma
+├── shared/    # Types, constantes (PALETTE, DEFAULT_MARGIN_THRESHOLDS), utils (calculateMargin, calculateServingMargin)
+├── backend/   # API Express + Prisma + routes (auth, products, recipes, scan, admin, subscription, tickets)
 ├── mobile/    # Application Expo (iOS, Android, Web)
-└── scripts/   # Utilitaires de build (patch HTML pour PWA)
+│   └── src/
+│       ├── components/ui/atelier.tsx  # Display, Eyebrow, Script, Num, InkStamp, Scribble, HangTag
+│       ├── theme/index.ts             # Palette + tokens atelier
+│       ├── navigation/                # Auth + App navigators (titres FR pour l'onglet web)
+│       ├── screens/                   # dashboard, products, cocktails, scan, settings, auth, subscription
+│       └── services/                  # API clients (axios)
+└── scripts/   # generate-icons.py (logo M atelier), patch-html.js (PWA meta)
 ```
 
 Le monorepo utilise les **npm workspaces**.
+
+---
 
 ## Installation
 
 ### Prérequis
 
-- Node.js 18+
-- PostgreSQL
-- (Optionnel) Clé API Anthropic pour le scan
-- (Optionnel) Compte Stripe pour les abonnements
+- Node.js 22+
+- PostgreSQL 14+
+- (optionnel) Clé API Anthropic pour le scan
+- (optionnel) Compte Stripe pour les abonnements
 
 ### 1. Cloner et installer
 
@@ -57,31 +104,29 @@ npm install
 
 ### 2. Configurer l'environnement
 
-Copier le fichier d'exemple et renseigner les variables :
-
 ```bash
 cp backend/.env.example backend/.env
 ```
 
 Variables requises :
 
-| Variable | Description |
-|----------|-------------|
-| `DATABASE_URL` | URL de connexion PostgreSQL |
-| `JWT_SECRET` | Clé secrète JWT (32 caractères min en production) |
-| `PORT` | Port du serveur (défaut : 3000) |
+| Variable       | Description                                       |
+|----------------|---------------------------------------------------|
+| `DATABASE_URL` | URL PostgreSQL (`postgres://user:pass@host/db`)   |
+| `JWT_SECRET`   | Clé secrète JWT (32+ caractères en production)    |
+| `PORT`         | Port HTTP (défaut : 3000)                         |
 
 Variables optionnelles :
 
-| Variable | Description |
-|----------|-------------|
-| `ANTHROPIC_API_KEY` | Clé API Claude pour le scan de bouteilles/factures |
-| `STRIPE_SECRET_KEY` | Clé secrète Stripe |
-| `STRIPE_WEBHOOK_SECRET` | Secret pour les webhooks Stripe |
-| `STRIPE_PRICE_MONTHLY` | ID prix Stripe mensuel |
-| `STRIPE_PRICE_YEARLY` | ID prix Stripe annuel |
-| `ALLOWED_ORIGINS` | Origines CORS autorisées (séparées par des virgules) |
-| `APP_URL` | URL publique de l'application |
+| Variable                | Description                                          |
+|-------------------------|------------------------------------------------------|
+| `ANTHROPIC_API_KEY`     | Clé Claude pour le scan bouteille / facture         |
+| `STRIPE_SECRET_KEY`     | Clé secrète Stripe                                   |
+| `STRIPE_WEBHOOK_SECRET` | Secret webhooks Stripe                               |
+| `STRIPE_PRICE_MONTHLY`  | ID du prix Stripe mensuel (3 €)                      |
+| `STRIPE_PRICE_YEARLY`   | ID du prix Stripe annuel (30 €)                      |
+| `ALLOWED_ORIGINS`       | Origines CORS séparées par virgules                  |
+| `APP_URL`               | URL publique de l'app (pour les redirects Stripe)    |
 
 ### 3. Initialiser la base de données
 
@@ -89,60 +134,117 @@ Variables optionnelles :
 npm run db:push
 ```
 
+ou pour appliquer les migrations Prisma versionnées :
+
+```bash
+cd backend && npx prisma migrate deploy && cd ..
+```
+
 ### 4. Lancer en développement
 
-Backend :
+Trois processus en parallèle :
 
 ```bash
-cd backend
-npm run dev
+# Terminal 1 — shared (mode watch, pour propager les changements de types)
+cd shared && npm run watch
+
+# Terminal 2 — backend
+cd backend && npm run dev
+
+# Terminal 3 — mobile / web
+cd mobile && npm start
 ```
 
-Mobile :
-
-```bash
-cd mobile
-npm start
-```
-
-Shared (mode watch) :
-
-```bash
-cd shared
-npm run watch
-```
+---
 
 ## Build production
 
 ```bash
 npm run build
+```
+
+Cette commande :
+
+1. Compile `@margebar/shared` (TypeScript → `dist/`)
+2. Génère le client Prisma
+3. Compile le backend
+4. Exporte l'app Expo en bundle web → `backend/dist/public`
+5. Patche le HTML pour le support PWA (viewport, apple-touch-icon, theme-color émeraude)
+
+Pour démarrer en production :
+
+```bash
 npm start
 ```
 
-Cette commande compile shared → backend → exporte le web Expo → patche le HTML pour le support PWA, puis lance le serveur avec migration Prisma et seeding.
+Cela exécute les migrations Prisma, le seed initial (catégories + types de service par défaut), puis démarre le serveur Express qui sert l'API + le bundle web statique.
+
+---
 
 ## Déploiement
 
-Le projet inclut une configuration `railway.json` pour un déploiement sur [Railway](https://railway.app). Le déploiement exécute automatiquement les migrations Prisma et le seed avant de démarrer le serveur.
+Le projet inclut une configuration `railway.json` pour [Railway](https://railway.app). Au push :
+
+1. Railway détecte le monorepo Node 22 (`railpack`)
+2. `npm ci` installe les workspaces
+3. `npm run build` compile tout
+4. La commande de démarrage exécute les migrations + seed + serveur
+
+Le déploiement actuel est accessible à [margecalc-production.up.railway.app](https://margecalc-production.up.railway.app/Landing).
+
+---
 
 ## API
 
-Principales routes :
+Toutes les routes (sauf `/api/auth/*` et `/api/health`) requièrent un header `Authorization: Bearer <token>`.
 
-| Endpoint | Description |
-|----------|-------------|
-| `POST /api/auth/register` | Inscription |
-| `POST /api/auth/login` | Connexion |
-| `GET/POST /api/products` | CRUD produits |
-| `GET/POST /api/recipes` | CRUD recettes cocktails |
-| `POST /api/scan` | Scan d'image (bouteille ou facture) |
-| `GET /api/categories` | Liste des catégories |
-| `GET/POST /api/servings` | Types de service personnalisés |
-| `GET/POST /api/containers` | Contenants personnalisés |
-| `POST /api/subscription` | Gestion abonnement Stripe |
+### Auth
 
-Toutes les routes (sauf auth) nécessitent un token JWT dans le header `Authorization: Bearer <token>`.
+| Méthode | Endpoint                | Description                                  |
+|---------|-------------------------|----------------------------------------------|
+| POST    | `/api/auth/register`    | Créer un compte                              |
+| POST    | `/api/auth/login`       | Connexion (refuse 403 si compte banni)       |
+| POST    | `/api/auth/refresh`     | Renouveler l'access token                    |
+
+### Données utilisateur
+
+| Méthode    | Endpoint                          | Description                                   |
+|------------|-----------------------------------|-----------------------------------------------|
+| GET / POST / PATCH / DELETE | `/api/products`     | CRUD produits                                 |
+| GET / POST / PATCH / DELETE | `/api/recipes`      | CRUD recettes cocktails                       |
+| POST       | `/api/scan`                       | Scan IA (bouteille ou facture)                |
+| GET        | `/api/categories`                 | Catégories produits                           |
+| GET / POST | `/api/servings`                   | Types de service personnalisés                |
+| GET / POST | `/api/containers`                 | Contenants personnalisés                      |
+| GET        | `/api/rates`                      | Tarifs d'accise / cotisations / TVA           |
+| GET / PATCH| `/api/system-params`              | Paramètres système (lien réf., TVA non-alc.)  |
+| POST       | `/api/subscription`               | Stripe Checkout / Portal / redeem code        |
+| POST / GET | `/api/tickets`                    | Bug reports / suggestions / questions         |
+
+### Admin (`role: 'admin'` requis)
+
+| Méthode | Endpoint                                  | Description                                          |
+|---------|-------------------------------------------|------------------------------------------------------|
+| GET     | `/api/admin/users`                        | Liste des utilisateurs + stats + revenu MRR/ARR      |
+| GET     | `/api/admin/users/:userId/products`       | Produits d'un utilisateur avec marges                |
+| GET     | `/api/admin/products`                     | Tous les produits de tous les utilisateurs           |
+| PATCH   | `/api/admin/users/:userId/ban`            | Bannir un compte                                     |
+| PATCH   | `/api/admin/users/:userId/unban`          | Débannir un compte                                   |
+| DELETE  | `/api/admin/users/:userId`                | Supprimer définitivement (cascade)                   |
+
+---
+
+## Contact
+
+**La Brasserie des Plantes** — L'art des assemblages de plantes
+Saint-Didier-en-Velay, Haute-Loire
+
+- 📞 06 84 44 40 44 / 07 43 69 26 19
+- ✉️ labrasseriedesplantes@gmail.com
+- 🌐 [labrasseriedesplantes.fr](https://labrasseriedesplantes.fr/)
+
+---
 
 ## Licence
 
-Projet privé.
+Projet privé. Application gratuite pour les professionnels CHR.
