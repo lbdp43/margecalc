@@ -300,7 +300,9 @@ export function AdminUsersSection() {
                   return (
                     <View key={i} style={styles.miniBarCol}>
                       <Text style={styles.miniBarValue}>{s.count > 0 ? s.count : ''}</Text>
-                      <View style={[styles.miniBar, { height: `${Math.max(pct, 2)}%` }]} />
+                      <View style={styles.miniBarTrack}>
+                        <View style={[styles.miniBar, { height: `${Math.max(pct, 2)}%` }]} />
+                      </View>
                       <Text style={styles.miniBarLabel}>{s.month.slice(5)}</Text>
                     </View>
                   );
@@ -953,15 +955,28 @@ const styles = StyleSheet.create({
   },
   miniChart: {
     flexDirection: 'row',
-    alignItems: 'flex-end',
-    height: 100,
+    alignItems: 'stretch',
+    height: 110,
     gap: 4,
     marginTop: spacing.sm,
   },
   miniBarCol: {
     flex: 1,
     alignItems: 'center',
-    height: '100%',
+  },
+  miniBarValue: {
+    fontSize: 10,
+    color: colors.text,
+    fontWeight: '700',
+    height: 14,
+    lineHeight: 14,
+    textAlign: 'center',
+    width: '100%',
+  },
+  miniBarTrack: {
+    flex: 1,
+    width: '100%',
+    alignItems: 'center',
     justifyContent: 'flex-end',
   },
   miniBar: {
@@ -971,17 +986,12 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 4,
     minHeight: 2,
   },
-  miniBarValue: {
-    fontSize: 10,
-    color: colors.text,
-    fontWeight: '700',
-    marginBottom: 2,
-    minHeight: 12,
-  },
   miniBarLabel: {
     fontSize: 9,
     color: colors.textSecondary,
     marginTop: 2,
     fontWeight: '600',
+    textAlign: 'center',
+    width: '100%',
   },
 });
