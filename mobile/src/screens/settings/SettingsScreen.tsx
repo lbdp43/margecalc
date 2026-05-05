@@ -914,6 +914,18 @@ export function SettingsScreen() {
         <Text style={styles.logoutBtnText}>Se déconnecter</Text>
       </TouchableOpacity>
 
+      <View style={styles.aboutSection}>
+        <Text style={styles.aboutTitle}>Application creee par La Brasserie des Plantes</Text>
+        <TouchableOpacity style={styles.aboutRow} onPress={() => Linking.openURL('tel:0684444044')}>
+          <Ionicons name="call-outline" size={14} color={colors.primary} />
+          <Text style={styles.aboutLink}>06 84 44 40 44</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.aboutRow} onPress={() => Linking.openURL('mailto:labrasseriedesplantes@gmail.com')}>
+          <Ionicons name="mail-outline" size={14} color={colors.primary} />
+          <Text style={styles.aboutLink}>labrasseriedesplantes@gmail.com</Text>
+        </TouchableOpacity>
+      </View>
+
       <Text style={styles.version}>MargeBar Pro v1.0.0</Text>
     </ScreenWrapper>
   );
@@ -1396,12 +1408,37 @@ const styles = StyleSheet.create({
     lineHeight: 15,
   },
 
+  aboutSection: {
+    alignItems: 'center',
+    paddingVertical: spacing.lg,
+    marginTop: spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  aboutTitle: {
+    ...typography.bodySmall,
+    fontWeight: '700',
+    color: colors.primary,
+    marginBottom: spacing.sm,
+  },
+  aboutRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginBottom: spacing.xs,
+  },
+  aboutLink: {
+    ...typography.bodySmall,
+    color: colors.primary,
+    fontWeight: '600',
+  },
+
   // Version
   version: {
     ...typography.caption,
     color: colors.textSecondary,
     textAlign: 'center',
-    marginTop: spacing.xl,
+    marginTop: spacing.sm,
     marginBottom: spacing.md,
   },
 });

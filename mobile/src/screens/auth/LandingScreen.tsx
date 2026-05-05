@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Platform, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Platform, ScrollView, Linking } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -96,6 +96,21 @@ export function LandingScreen({ navigation }: Props) {
       <Text style={styles.skipWarningText}>
         Le calculateur ci-dessus est gratuit et ne necessite pas de compte.
       </Text>
+
+      <View style={styles.aboutCard}>
+        <Text style={styles.aboutTitle}>Application creee par La Brasserie des Plantes</Text>
+        <Text style={styles.aboutDesc}>
+          Si vous etes interesses par nos produits ou si vous avez des questions, n'hesitez pas a nous contacter.
+        </Text>
+        <TouchableOpacity style={styles.aboutRow} onPress={() => Linking.openURL('tel:0684444044')}>
+          <Ionicons name="call-outline" size={16} color={colors.primary} />
+          <Text style={styles.aboutLink}>06 84 44 40 44</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.aboutRow} onPress={() => Linking.openURL('mailto:labrasseriedesplantes@gmail.com')}>
+          <Ionicons name="mail-outline" size={16} color={colors.primary} />
+          <Text style={styles.aboutLink}>labrasseriedesplantes@gmail.com</Text>
+        </TouchableOpacity>
+      </View>
     </View>
   );
 
@@ -349,5 +364,39 @@ const styles = StyleSheet.create({
     color: colors.tabBarInactive,
     textAlign: 'center',
     marginTop: spacing.md,
+  },
+  aboutCard: {
+    backgroundColor: colors.cardBackground,
+    borderRadius: borderRadius.lg,
+    padding: spacing.lg,
+    marginTop: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+  },
+  aboutTitle: {
+    ...typography.bodySmall,
+    fontWeight: '700',
+    color: colors.primary,
+    textAlign: 'center',
+    marginBottom: spacing.xs,
+  },
+  aboutDesc: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 17,
+    marginBottom: spacing.md,
+  },
+  aboutRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginBottom: spacing.xs,
+  },
+  aboutLink: {
+    ...typography.bodySmall,
+    color: colors.primary,
+    fontWeight: '600',
   },
 });
