@@ -37,6 +37,7 @@ Le calculateur de droits d'alcool est utilisable sans compte. Pour le tableau de
 ### Pour l'admin
 
 - Vue d'ensemble de tous les utilisateurs avec MRR/ARR.
+- **Suivi des connexions** : compteurs mensuels par utilisateur + agrégat global, avec filtre période (Ce mois / Trimestre / Année / 2 ans) et graphique en barres mensuelles.
 - Vue **Tous les produits** — tableau filtré par utilisateur.
 - Bannir / débannir un compte (les données restent conservées, l'accès est bloqué).
 - Suppression définitive d'un compte (transactionnelle, cascade complète).
@@ -231,6 +232,8 @@ Toutes les routes (sauf `/api/auth/*` et `/api/health`) requièrent un header `A
 | PATCH   | `/api/admin/users/:userId/ban`            | Bannir un compte                                     |
 | PATCH   | `/api/admin/users/:userId/unban`          | Débannir un compte                                   |
 | DELETE  | `/api/admin/users/:userId`                | Supprimer définitivement (cascade)                   |
+| GET     | `/api/admin/logins`                       | Connexions agrégées tous utilisateurs (série + total)|
+| GET     | `/api/admin/users/:userId/logins`         | Série mensuelle des connexions d'un utilisateur      |
 
 ---
 
