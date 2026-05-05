@@ -9,9 +9,6 @@ import { ProductListScreen } from '../screens/products/ProductListScreen';
 import { ProductDetailScreen } from '../screens/products/ProductDetailScreen';
 import { ProductFormScreen } from '../screens/products/ProductFormScreen';
 import { InvoiceScanScreen } from '../screens/products/InvoiceScanScreen';
-import { CocktailListScreen } from '../screens/cocktails/CocktailListScreen';
-import { CocktailFormScreen } from '../screens/cocktails/CocktailFormScreen';
-import { CocktailDetailScreen } from '../screens/cocktails/CocktailDetailScreen';
 import { SettingsScreen } from '../screens/settings/SettingsScreen';
 import { AdminProductsScreen } from '../screens/settings/AdminProductsScreen';
 import { colors, shadows } from '../theme';
@@ -20,7 +17,6 @@ import { useAuthStore } from '../store/auth.store';
 
 const Tab = createBottomTabNavigator();
 const ProductStack = createAppStackNavigator();
-const CocktailStack = createAppStackNavigator();
 const SettingsStack = createAppStackNavigator();
 
 function SettingsNavigator() {
@@ -40,16 +36,6 @@ function ProductsNavigator() {
       <ProductStack.Screen name="ProductForm" component={ProductFormScreen} options={{ title: 'Nouveau produit · MargeBar Pro' }} />
       <ProductStack.Screen name="InvoiceScan" component={InvoiceScanScreen} options={{ title: 'Scanner une facture · MargeBar Pro' }} />
     </ProductStack.Navigator>
-  );
-}
-
-function CocktailsNavigator() {
-  return (
-    <CocktailStack.Navigator screenOptions={{ headerShown: false }}>
-      <CocktailStack.Screen name="CocktailList" component={CocktailListScreen} options={{ title: 'Cocktails · MargeBar Pro' }} />
-      <CocktailStack.Screen name="CocktailDetail" component={CocktailDetailScreen} options={{ title: 'Cocktail · MargeBar Pro' }} />
-      <CocktailStack.Screen name="CocktailForm" component={CocktailFormScreen} options={{ title: 'Nouveau cocktail · MargeBar Pro' }} />
-    </CocktailStack.Navigator>
   );
 }
 
@@ -127,13 +113,10 @@ function EmptyScreen() {
 const TAB_ICONS: Record<string, { focused: string; default: string }> = {
   'Réglages': { focused: 'settings', default: 'settings-outline' },
   'Produits': { focused: 'grid', default: 'grid-outline' },
-  'Cocktails': { focused: 'wine', default: 'wine-outline' },
   'Tableau de bord': { focused: 'stats-chart', default: 'stats-chart-outline' },
 };
 
 export function AppNavigator() {
-  const isAdmin = useAuthStore((s) => s.user?.role === 'admin');
-
   return (
     <Tab.Navigator
       initialRouteName="Tableau de bord"
@@ -178,18 +161,6 @@ export function AppNavigator() {
           tabBarButton: () => <ScanTabButton />,
         }}
       />
-      {isAdmin && (
-        <Tab.Screen
-          name="Cocktails"
-          component={CocktailsNavigator}
-          listeners={({ navigation }) => ({
-            tabPress: (e) => {
-              e.preventDefault();
-              navigation.navigate('Cocktails', { screen: 'CocktailList' });
-            },
-          })}
-        />
-      )}
       <Tab.Screen name="Tableau de bord" component={DashboardScreen} />
     </Tab.Navigator>
   );
