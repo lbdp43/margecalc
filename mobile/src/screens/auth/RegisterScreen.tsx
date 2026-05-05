@@ -70,7 +70,7 @@ export function RegisterScreen({ navigation, route }: Props) {
           );
         }
       }
-      setAuth(result.token, finalUser);
+      setAuth(result.token, finalUser, result.refreshToken);
       if (successMessage) {
         alert('Code valide', successMessage);
       }

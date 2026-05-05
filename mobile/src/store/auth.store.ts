@@ -7,15 +7,17 @@ import { clearAllOfflineData } from '../services/offline';
 
 interface AuthState {
   token: string | null;
+  refreshToken: string | null;
   user: User | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  setAuth: (token: string, user: User) => void;
+  setAuth: (token: string, user: User, refreshToken?: string) => void;
   logout: () => void;
   loadStoredAuth: () => Promise<void>;
 }
 
 const TOKEN_KEY = 'margebar_token';
+const REFRESH_TOKEN_KEY = 'margebar_refresh_token';
 const USER_KEY = 'margebar_user';
 
 // SecureStore is not available on web
@@ -46,38 +48,51 @@ async function deleteToken(): Promise<void> {
 
 export const useAuthStore = create<AuthState>((set) => ({
   token: null,
+  refreshToken: null,
   user: null,
   isAuthenticated: false,
   isLoading: true,
 
-  setAuth: (token, user) => {
-    Promise.all([
+  setAuth: (token, user, refreshToken) => {
+    const writes: Promise<void>[] = [
       saveToken(token),
       AsyncStorage.setItem(USER_KEY, JSON.stringify(user)),
-    ]).catch((err) => {
+    ];
+    if (refreshToken) {
+      writes.push(AsyncStorage.setItem(REFRESH_TOKEN_KEY, refreshToken));
+    }
+    Promise.all(writes).catch((err) => {
       console.warn('Failed to persist auth:', err);
     });
-    set({ token, user, isAuthenticated: true });
+    set((prev) => ({
+      token,
+      user,
+      isAuthenticated: true,
+      refreshToken: refreshToken ?? prev.refreshToken,
+    }));
   },
 
   logout: async () => {
-    set({ token: null, user: null, isAuthenticated: false });
+    set({ token: null, refreshToken: null, user: null, isAuthenticated: false });
     await Promise.all([
       deleteToken(),
       AsyncStorage.removeItem(USER_KEY),
+      AsyncStorage.removeItem(REFRESH_TOKEN_KEY),
       clearAllOfflineData(),
     ]);
   },
 
   loadStoredAuth: async () => {
     try {
-      const [token, userJson] = await Promise.all([
+      const [token, userJson, refreshToken] = await Promise.all([
         getToken(),
         AsyncStorage.getItem(USER_KEY),
+        AsyncStorage.getItem(REFRESH_TOKEN_KEY),
       ]);
       if (token && userJson) {
         set({
           token,
+          refreshToken,
           user: JSON.parse(userJson),
           isAuthenticated: true,
           isLoading: false,

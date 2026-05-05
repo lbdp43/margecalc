@@ -33,7 +33,7 @@ export function LoginScreen({ navigation }: Props) {
     setLoading(true);
     try {
       const result = await authService.login({ email, password });
-      setAuth(result.token, result.user);
+      setAuth(result.token, result.user, result.refreshToken);
     } catch (err: any) {
       alert('Erreur', err.response?.data?.error || 'Connexion impossible');
     } finally {

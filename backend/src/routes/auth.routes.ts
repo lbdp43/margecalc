@@ -45,4 +45,17 @@ router.post('/login', async (req: Request, res: Response) => {
   }
 });
 
+router.post('/refresh', async (req: Request, res: Response) => {
+  try {
+    const { refreshToken } = req.body;
+    if (typeof refreshToken !== 'string' || !refreshToken) {
+      return res.status(400).json({ error: 'Refresh token manquant' });
+    }
+    const result = await authService.refreshAccessToken(refreshToken);
+    res.json(result);
+  } catch {
+    res.status(401).json({ error: 'Session expiree, veuillez vous reconnecter' });
+  }
+});
+
 export default router;

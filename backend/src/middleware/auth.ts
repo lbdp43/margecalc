@@ -49,7 +49,11 @@ export function authenticate(req: Request, res: Response, next: NextFunction): v
 
   const token = header.slice(7);
   try {
-    const payload = jwt.verify(token, config.jwtSecret) as AuthPayload;
+    const payload = jwt.verify(token, config.jwtSecret) as AuthPayload & { type?: string };
+    if (payload.type && payload.type !== 'access') {
+      res.status(401).json({ error: 'Token invalide' });
+      return;
+    }
     req.user = payload;
     touchLastSeen(payload.userId);
     next();
