@@ -940,7 +940,7 @@ export function SettingsScreen() {
 
       <View style={styles.aboutSection}>
         <Text style={styles.aboutTitle}>
-          Application creee par{' '}
+          Application crée par{' '}
           <Text
             style={styles.aboutTitleLink}
             onPress={() => Linking.openURL('https://labrasseriedesplantes.fr/')}

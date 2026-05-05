@@ -35,15 +35,15 @@ export function LandingScreen({ navigation }: Props) {
       <View style={styles.featuresCard}>
         <Text style={styles.featuresTitle}>Ce que MargeBar Pro vous permet</Text>
         <Text style={styles.featuresIntro}>
-          L'outil de calcul de marges concu pour les professionnels CHR (bars, restaurants, hotels).
+          L'outil de calcul de marges conçu pour les professionnels CHR (bars, restaurants, hôtels).
         </Text>
         {[
-          { icon: 'calculator-outline', title: 'Calcul des droits d\'accise', desc: 'Calculez instantanement le prix HT avec droits pour les 13 categories fiscales francaises (vins, bieres, spiritueux, cidres...)' },
-          { icon: 'receipt-outline', title: 'Prix de revient precis', desc: 'Integrez les droits d\'accise, la cotisation securite sociale et la TVA pour connaitre votre vrai cout d\'achat' },
-          { icon: 'trending-up-outline', title: 'Calcul de marges', desc: 'Definissez vos prix de vente par type de service (shot, demi, pinte, bouteille) et visualisez vos marges en temps reel' },
-          { icon: 'scan-outline', title: 'Scan de produits', desc: 'Photographiez une bouteille ou une facture fournisseur — l\'app reconnait le produit et pre-remplit les informations' },
-          { icon: 'bar-chart-outline', title: 'Tableau de bord', desc: 'Suivez la rentabilite de vos produits, identifiez les meilleurs et les moins performants, comparez par categorie' },
-          { icon: 'cloud-done-outline', title: 'Donnees sauvegardees', desc: 'Vos produits, recettes et calculs sont synchronises sur le cloud. Accessible depuis n\'importe quel appareil' },
+          { icon: 'calculator-outline', title: 'Calcul des droits d\'accise', desc: 'Calculez instantanément le prix HT avec droits pour les 13 catégories fiscales françaises (vins, bières, spiritueux, cidres…)' },
+          { icon: 'receipt-outline', title: 'Prix de revient précis', desc: 'Intégrez les droits d\'accise, la cotisation sécurité sociale et la TVA pour connaître votre vrai coût d\'achat' },
+          { icon: 'trending-up-outline', title: 'Calcul de marges', desc: 'Définissez vos prix de vente par type de service (shot, demi, pinte, bouteille) et visualisez vos marges en temps réel' },
+          { icon: 'scan-outline', title: 'Scan de produits', desc: 'Photographiez une bouteille ou une facture fournisseur — l\'app reconnaît le produit et pré-remplit les informations' },
+          { icon: 'bar-chart-outline', title: 'Tableau de bord', desc: 'Suivez la rentabilité de vos produits, identifiez les meilleurs et les moins performants, comparez par catégorie' },
+          { icon: 'cloud-done-outline', title: 'Données sauvegardées', desc: 'Vos produits, recettes et calculs sont synchronisés sur le cloud. Accessible depuis n\'importe quel appareil' },
         ].map((f, i) => (
           <View key={i} style={styles.featureItem}>
             <View style={styles.featureIconBox}>
@@ -64,11 +64,11 @@ export function LandingScreen({ navigation }: Props) {
           <Text style={styles.supportTitle}>Application gratuite</Text>
         </View>
         <Text style={styles.supportDesc}>
-          Creez un compte gratuit pour profiter de toutes les fonctionnalites. Vos donnees sont protegees : vous seul pouvez y acceder.
+          Créez un compte gratuit pour profiter de toutes les fonctionnalités. Vos données sont protégées : vous seul pouvez y accéder.
         </Text>
         <View style={styles.featuresRow}>
           {[
-            { icon: 'lock-closed-outline', text: 'Donnees protegees et privees' },
+            { icon: 'lock-closed-outline', text: 'Données protégées et privées' },
             { icon: 'scan-outline', text: 'Scan produits & factures' },
             { icon: 'trending-up-outline', text: 'Tableau de bord complet' },
           ].map((f, i) => (
@@ -87,7 +87,7 @@ export function LandingScreen({ navigation }: Props) {
         activeOpacity={0.8}
       >
         <Ionicons name="person-add-outline" size={20} color={colors.white} style={{ marginRight: spacing.sm }} />
-        <Text style={styles.primaryBtnText}>Creer un compte gratuit</Text>
+        <Text style={styles.primaryBtnText}>Créer un compte gratuit</Text>
       </TouchableOpacity>
 
       <TouchableOpacity
@@ -96,16 +96,16 @@ export function LandingScreen({ navigation }: Props) {
         activeOpacity={0.7}
       >
         <Ionicons name="log-in-outline" size={20} color={colors.primary} style={{ marginRight: spacing.sm }} />
-        <Text style={styles.secondaryBtnText}>J'ai deja un compte</Text>
+        <Text style={styles.secondaryBtnText}>J'ai déjà un compte</Text>
       </TouchableOpacity>
 
       <Text style={styles.skipWarningText}>
-        Le calculateur ci-dessus est gratuit et ne necessite pas de compte.
+        Le calculateur ci-dessus est gratuit et ne nécessite pas de compte.
       </Text>
 
       <View style={styles.aboutCard}>
         <Text style={styles.aboutTitle}>
-          Application creee par{' '}
+          Application crée par{' '}
           <Text
             style={styles.aboutTitleLink}
             onPress={() => Linking.openURL('https://labrasseriedesplantes.fr/')}
@@ -114,7 +114,7 @@ export function LandingScreen({ navigation }: Props) {
           </Text>
         </Text>
         <Text style={styles.aboutDesc}>
-          Si vous etes interesses par nos produits ou si vous avez des questions, n'hesitez pas a nous contacter.
+          Si vous êtes intéressés par nos produits ou si vous avez des questions, n'hésitez pas à nous contacter.
         </Text>
         <TouchableOpacity style={styles.aboutRow} onPress={() => Linking.openURL('tel:0684444044')}>
           <Ionicons name="call-outline" size={16} color={colors.primary} />
