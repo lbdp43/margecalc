@@ -9,6 +9,7 @@ const ALLOWED_STATUSES = new Set(['open', 'resolved']);
 const MAX_MESSAGE_LENGTH = 4000;
 const MAX_REPLY_LENGTH = 4000;
 const MAX_SCREEN_NAME_LENGTH = 100;
+const MAX_SCREENSHOT_BYTES = 2 * 1024 * 1024;
 
 // Shared select clause — excludes screenshotBase64 from list queries to avoid
 // sending megabytes of base64 data just to render a list or count unread badges.
@@ -67,8 +68,13 @@ router.post('/', authenticate, async (req: Request, res: Response) => {
     if (screenName != null && (typeof screenName !== 'string' || screenName.length > MAX_SCREEN_NAME_LENGTH)) {
       return res.status(400).json({ error: "Nom d'ecran invalide" });
     }
-    if (screenshotBase64 != null && typeof screenshotBase64 !== 'string') {
-      return res.status(400).json({ error: 'Capture invalide' });
+    if (screenshotBase64 != null) {
+      if (typeof screenshotBase64 !== 'string') {
+        return res.status(400).json({ error: 'Capture invalide' });
+      }
+      if (screenshotBase64.length > MAX_SCREENSHOT_BYTES) {
+        return res.status(400).json({ error: 'Capture trop volumineuse (2 Mo max)' });
+      }
     }
 
     const ticket = await prisma.ticket.create({

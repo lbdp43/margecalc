@@ -152,6 +152,7 @@ model ProductServing {
 
   @@unique([productId, servingTypeId])
   @@index([productId])
+  @@index([servingTypeId])
 }
 
 model PriceHistory {
@@ -183,6 +184,7 @@ model Recipe {
   consumables     RecipeConsumable[]
 
   @@index([userId])
+  @@index([isPublic])
 }
 
 model RecipeIngredient {
@@ -197,6 +199,7 @@ model RecipeIngredient {
   createdAt   DateTime @default(now())
 
   @@index([recipeId])
+  @@index([productId])
 }
 
 model ScanUsage {
