@@ -138,12 +138,6 @@ export function ProductFormScreen({ route, navigation }: Props) {
     }
   }, []);  // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => {
-    if (categories.length > 0 && !categoryId) {
-      setCategoryId(categories[0].id);
-    }
-  }, [categories, categoryId]);
-
   // === PHOTO + OCR ===
   const pickImage = async (useCamera: boolean) => {
     const permission = useCamera
