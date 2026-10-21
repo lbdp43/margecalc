@@ -130,7 +130,10 @@ model Product {
   tvaRate             Float              @default(0.20)
   alcoholDegree       Float              @default(0)
   supplier            String?
+  /// Full photo as a data URI (~640 px JPEG, <= 300 000 chars). Never sent in product lists.
   imageUrl            String?
+  /// Small photo as a data URI (~160 px, <= 40 000 chars). Sent in product lists.
+  thumbnailUrl        String?
   createdAt           DateTime           @default(now())
   updatedAt           DateTime           @updatedAt
   priceHistory        PriceHistory[]

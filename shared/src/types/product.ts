@@ -28,7 +28,16 @@ export interface Product {
   tvaRate: number;
   alcoholDegree: number;
   supplier: string | null;
-  imageUrl: string | null;
+  /**
+   * Full product photo (data URI `data:image/(jpeg|png|webp);base64,…`, ≤ 300 000 chars, ~640 px).
+   * Only returned by `GET /api/products/:id` (and create/update responses).
+   * NOT returned by the list `GET /api/products` (use `thumbnailUrl` / `hasImage` there).
+   */
+  imageUrl?: string | null;
+  /** Small photo (data URI, ≤ 40 000 chars, ~160 px). Returned by the list and the detail. */
+  thumbnailUrl: string | null;
+  /** True when the product has a full photo (list responses only). */
+  hasImage?: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -83,8 +92,76 @@ export interface CreateProductInput {
   coefficient?: number;
   tvaRate: number;
   alcoholDegree?: number;
-  supplier?: string;
-  imageUrl?: string;
+  supplier?: string | null;
+  /** Data URI (≤ 300 000 chars). On update: omitted = unchanged, null = remove the photo. */
+  imageUrl?: string | null;
+  /** Data URI (≤ 40 000 chars). On update: omitted = unchanged, null = remove. */
+  thumbnailUrl?: string | null;
+}
+
+/** Limits enforced by the API for product photos (string length of the data URI). */
+export const PRODUCT_IMAGE_MAX_CHARS = 300_000;
+export const PRODUCT_THUMBNAIL_MAX_CHARS = 40_000;
+
+/** Coefficient used to derive a selling price when an imported line has none. */
+export const IMPORT_DEFAULT_COEFFICIENT = 4;
+
+// --- Invoice import (POST /api/products/import) ---
+
+export interface ImportProductLine {
+  name: string;
+  /** Category id (uuid) — or use `category` with a slug. Defaults to « spiritueux ». */
+  categoryId?: string;
+  /** Category slug: spiritueux | vins | bieres | softs | ingredients_cocktails | consommables */
+  category?: string;
+  /** Unit purchase price HT of one container (bottle, can, keg…). */
+  purchasePriceHT?: number | null;
+  /** Defaults to the user's default container (70 cl). */
+  containerVolumeCl?: number | null;
+  /** Defaults by category: vins 12, bieres 25, softs 25, others 5 cl (capped at the container). */
+  doseVolumeCl?: number | null;
+  /** If missing or ≤ 0: derived with coefficient 4, rounded to 0,10 €. */
+  sellingPriceTTC?: number | null;
+  tvaRate?: number | null;
+  alcoholDegree?: number | null;
+  supplier?: string | null;
+  quantity?: number | null;
+}
+
+export interface ImportProductsInput {
+  supplier?: string | null;
+  lines: ImportProductLine[];
+}
+
+export type ImportLineResult =
+  | { index: number; ok: true; name: string; productId: string; sellingPriceTTC: number; priceDerived: boolean }
+  | { index: number; ok: false; name: string; error: string };
+
+export interface ImportProductsResult {
+  createdCount: number;
+  failedCount: number;
+  results: ImportLineResult[];
+}
+
+// --- API errors ---
+
+export interface ApiValidationIssue {
+  /** Dotted path of the field, e.g. "alcoholDegree" or "servings.0.sellingPriceTTC" */
+  field: string;
+  /** French label of the field, e.g. « Degré d'alcool » */
+  label: string;
+  /** Readable French message for this field */
+  message: string;
+  code: string;
+}
+
+/** Every API error body. `error` is always a readable French sentence (show it as is). */
+export interface ApiErrorBody {
+  error: string;
+  details?: ApiValidationIssue[];
+  /** Machine-readable reason, when useful (e.g. scan failures: 'empty' | 'bad_image' | 'busy' | 'timeout' | 'engine'). */
+  code?: string;
+  retryable?: boolean;
 }
 
 // --- Custom Containers (contenants) ---

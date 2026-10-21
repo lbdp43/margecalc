@@ -188,6 +188,29 @@ export function calculateMargin(input: MarginInput): MarginResult {
   };
 }
 
+/** Round a price to the nearest 0,10 € (never below 0,10 € when the input is > 0). */
+export function roundPriceToTenth(price: number): number {
+  if (!isFinite(price) || price <= 0) return 0;
+  return Math.max(0.1, Math.round(price * 10) / 10);
+}
+
+/**
+ * Selling price TTC per dose derived from the purchase price with a coefficient
+ * (default 4, used for invoice import when no selling price is known), rounded to 0,10 €.
+ * Returns 0 when it cannot be computed (purchase price 0 or invalid volumes).
+ */
+export function deriveSellingPriceTTC(
+  purchasePriceHT: number,
+  containerVolumeCl: number,
+  doseVolumeCl: number,
+  tvaRate: number,
+  coefficient = 4,
+): number {
+  if (!(purchasePriceHT > 0) || !(containerVolumeCl > 0) || !(doseVolumeCl > 0) || !(coefficient > 0)) return 0;
+  const costPerDoseHT = purchasePriceHT / (containerVolumeCl / doseVolumeCl);
+  return roundPriceToTenth(costPerDoseHT * coefficient * (1 + (tvaRate > 0 ? tvaRate : 0)));
+}
+
 /**
  * Calculate margin for a specific serving type.
  * Given a product's purchase price and container volume,

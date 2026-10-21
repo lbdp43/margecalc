@@ -1,7 +1,9 @@
-import express from 'express';
+import './utils/validation'; // installs the French Zod error messages before any schema is used
+import express, { Request } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
+import jwt from 'jsonwebtoken';
 import path from 'path';
 import { config } from './config/env';
 import { prisma } from './config/database';
@@ -10,7 +12,13 @@ import { errorHandler } from './middleware/errorHandler';
 
 const app = express();
 
-// Security headers with basic CSP
+// Railway (and most PaaS) put exactly one reverse proxy in front of the app: trust it so that
+// req.ip is the real client IP (rate limits per user/IP instead of one shared proxy bucket).
+app.set('trust proxy', 1);
+
+// Security headers with basic CSP.
+// Product photos are data: URIs rendered in <img> (img-src data:), fonts are self-hosted
+// under /assets (font-src 'self').
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
@@ -21,6 +29,9 @@ app.use(helmet({
       connectSrc: ["'self'", 'https://margecalc-production.up.railway.app', 'https://api.stripe.com'],
       fontSrc: ["'self'", 'data:'],
       frameSrc: ["'self'", 'https://js.stripe.com'],
+      workerSrc: ["'self'", 'blob:'],
+      // Only meaningful behind HTTPS; on a plain-http local instance it would break assets.
+      upgradeInsecureRequests: config.isProd ? [] : null,
     },
   },
   crossOriginEmbedderPolicy: false,
@@ -30,32 +41,64 @@ app.use(helmet({
 const corsOrigin = config.allowedOrigins.includes('*') ? '*' : config.allowedOrigins;
 app.use(cors({
   origin: corsOrigin,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
 }));
 
-// Global rate limiter
-app.use(rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 min
-  max: 300,
+/** userId of a valid access token (no DB hit), used to key the API rate limit per user. */
+function tokenUserId(req: Request): string | null {
+  const header = req.headers.authorization;
+  if (!header?.startsWith('Bearer ')) return null;
+  try {
+    const payload = jwt.verify(header.slice(7), config.jwtSecret) as { userId?: string; type?: string };
+    if (payload.type && payload.type !== 'access') return null;
+    return payload.userId ?? null;
+  } catch {
+    return null;
+  }
+}
+
+// API rate limiter — /api only: static files, fonts and the SPA shell never count.
+// Authenticated requests are keyed per user (staff of one bar often share one IP).
+const API_WINDOW_MS = 15 * 60 * 1000;
+app.use('/api', rateLimit({
+  windowMs: API_WINDOW_MS,
+  limit: (req) => (tokenUserId(req) ? 1500 : 600),
+  keyGenerator: (req) => {
+    const uid = tokenUserId(req);
+    return uid ? `user:${uid}` : `ip:${ipKeyGenerator(req.ip || '0.0.0.0')}`;
+  },
   standardHeaders: true,
   legacyHeaders: false,
-  message: { error: 'Trop de requêtes, réessayez plus tard' },
+  message: { error: 'Trop de requêtes, réessayez dans quelques minutes.' },
 }));
 
-// Stricter rate limiter for auth endpoints
-const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 10,
-  message: { error: 'Trop de tentatives, réessayez dans 15 minutes' },
+// Brute-force protection on credentials: only FAILED login/register attempts count.
+const credentialsLimiter = rateLimit({
+  windowMs: API_WINDOW_MS,
+  limit: 20,
+  skipSuccessfulRequests: true,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Trop de tentatives, réessayez dans 15 minutes.' },
 });
-app.use('/api/auth', authLimiter);
+app.use('/api/auth/login', credentialsLimiter);
+app.use('/api/auth/register', credentialsLimiter);
+app.use('/api/auth/refresh', rateLimit({
+  windowMs: API_WINDOW_MS,
+  limit: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Trop de tentatives, réessayez dans 15 minutes.' },
+}));
 
-// Smaller JSON limit for general requests; scan + tickets (with screenshots) get bigger limits below
+// JSON body limits. Product photos are ~640 px JPEG data URIs (≤ 300 000 chars), so 2 MB is
+// plenty; a bigger body gets 413 { error: 'Photo trop volumineuse' } (see errorHandler).
+// Scan (one OCR image, 1280–1600 px) and tickets (screenshot) get bigger limits.
 app.use('/api/subscription/webhook', express.raw({ type: 'application/json' }));
-app.use('/api/scan', express.json({ limit: '10mb' }));
+app.use('/api/scan', express.json({ limit: '8mb' }));
 app.use('/api/tickets', express.json({ limit: '5mb' }));
-app.use(express.json({ limit: '1mb' }));
+app.use(express.json({ limit: '2mb' }));
 
 // HTTPS enforcement in production — validate Host header to prevent injection
 if (config.isProd) {
@@ -83,6 +126,11 @@ app.get('/health', async (_req, res) => {
 });
 
 app.use('/api', routes);
+
+// Unknown API route: JSON 404 (never the SPA's index.html)
+app.use('/api', (_req, res) => {
+  res.status(404).json({ error: 'Route introuvable' });
+});
 
 // Serve Expo web build (static files)
 const publicDir = path.join(__dirname, 'public');
