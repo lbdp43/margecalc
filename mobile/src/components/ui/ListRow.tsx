@@ -47,7 +47,7 @@ export function ValueRow({ label, qualifier, value, strong, last, valueColor, st
         {label}
         {qualifier ? <Text style={styles.qualifier}>{`  ${qualifier}`}</Text> : null}
       </Text>
-      <Text style={[styles.value, strong && styles.valueStrong, valueColor ? { color: valueColor } : null]} maxFontSizeMultiplier={1.3}>
+      <Text style={[styles.valueText, strong && styles.valueStrong, valueColor ? { color: valueColor } : null]} maxFontSizeMultiplier={1.3}>
         {value}
       </Text>
     </View>
@@ -288,7 +288,7 @@ const styles = StyleSheet.create({
   valueLabel: { ...type.callout, color: palette.text2, flexShrink: 1 },
   valueLabelStrong: { fontFamily: fontFamily.bold, color: palette.ink },
   qualifier: { ...type.footnote, color: palette.text3 },
-  value: { ...type.valueRow, color: palette.ink },
+  valueText: { ...type.valueRow, color: palette.ink },
   valueStrong: { fontFamily: fontFamily.extrabold, fontSize: 17, letterSpacing: -0.2 },
 
   row: {
