@@ -7,11 +7,11 @@ import { useRatesStore } from '../store/rates.store';
 import { AuthNavigator } from './AuthNavigator';
 import { AppNavigator } from './AppNavigator';
 import { YinYangSpinner } from '../components/ui/YinYangSpinner';
-import { OfflineBanner } from '../components/ui/OfflineBanner';
+import { OfflineBannerInsets } from '../components/ui/OfflineBanner';
 import { WelcomeModal } from '../components/ui/WelcomeModal';
-import { FeedbackButton } from '../components/ui/FeedbackButton';
 import { initOfflineMode, cleanupOfflineMode } from '../services/offline';
-import { colors } from '../theme';
+import { loadMarginThresholds } from '../utils/marginThresholds';
+import { palette } from '../theme';
 
 const WELCOME_SEEN_KEY = 'margebar_welcome_seen';
 
@@ -22,6 +22,7 @@ export function RootNavigator() {
   useEffect(() => {
     loadStoredAuth();
     initOfflineMode();
+    loadMarginThresholds();
     return () => { cleanupOfflineMode(); };
   }, []);
 
@@ -58,7 +59,7 @@ export function RootNavigator() {
 
   if (isLoading) {
     return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background }}>
+      <View style={[rootStyles.fullScreen, rootStyles.center]}>
         <YinYangSpinner size={80} />
       </View>
     );
@@ -74,11 +75,13 @@ export function RootNavigator() {
 
   // App is free — all authenticated users get full access, no paywall,
   // no data wipe. Subscription infrastructure is kept dormant for later.
+  // Feedback moved to Réglages (« Aide & retours ») and the dashboard header:
+  // no floating « Signaler un bug » pill any more.
   return (
     <View style={rootStyles.fullScreen}>
-      <OfflineBanner />
-      <AppNavigator />
-      <FeedbackButton />
+      <OfflineBannerInsets>
+        <AppNavigator />
+      </OfflineBannerInsets>
       <WelcomeModal visible={welcomeVisible} onClose={handleCloseWelcome} />
     </View>
   );
@@ -87,6 +90,8 @@ export function RootNavigator() {
 const rootStyles = StyleSheet.create({
   fullScreen: {
     flex: 1,
-    ...(Platform.OS === 'web' ? { height: '100vh' as any } : {}),
+    backgroundColor: palette.bg,
+    ...(Platform.OS === 'web' ? { height: '100%' as any } : {}),
   },
+  center: { justifyContent: 'center', alignItems: 'center' },
 });

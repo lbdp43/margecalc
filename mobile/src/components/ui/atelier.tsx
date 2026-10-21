@@ -1,13 +1,28 @@
-// Atelier — small set of artisanal display primitives.
-// Hand-drawn warmth: ink stamps, eyebrow labels, italic display, script accents,
-// and scribbled rules. Used across the redesigned screens.
-
+/**
+ * DEPRECATED — the « Atelier » display primitives, neutralised app-wide.
+ * The exports are kept so not-yet-redesigned screens compile, but they now
+ * render the D1 « Émeraude Signature » equivalents (no serif, no italics, no
+ * script, no scribbles). Do NOT use them in new code: use `type.*`,
+ * SectionHeader, BrandMark and Badge from components/ui.
+ *
+ *   Eyebrow      → small label in text3 (caps style kept only for its size)
+ *   Display      → Jakarta 800 title
+ *   Script       → Jakarta 600 in em700 (upright)
+ *   Num          → Jakarta 800 tabular
+ *   Scribble     → renders nothing
+ *   InkStamp     → BrandMark
+ *   HangTag      → brand Badge
+ *   DashedRule   → 1 px line divider
+ *   SectionLabel → SectionHeader style
+ */
 import React from 'react';
-import { View, Text, StyleSheet, ViewStyle, TextStyle, StyleProp } from 'react-native';
-import Svg, { Circle, Path, Text as SvgText } from 'react-native-svg';
-import { colors, fonts, typography, spacing } from '../../theme';
+import { StyleProp, StyleSheet, Text, TextStyle, View, ViewStyle } from 'react-native';
+import { fontFamily, palette, type } from '../../theme';
+import { BrandMark } from './Brand';
 
-// ─── Eyebrow — uppercase tracked label ──────────────────────────
+// Old screens pass Atelier colours explicitly (e.g. colors.textMuted on a
+// light background, or "rgba(243,248,236,0.78)" on emerald) — keep them.
+
 interface EyebrowProps {
   children: React.ReactNode;
   color?: string;
@@ -16,20 +31,10 @@ interface EyebrowProps {
   style?: StyleProp<TextStyle>;
 }
 
-export const Eyebrow = React.memo(function Eyebrow({
-  children, color = colors.textSecondary, size = 10.5, track = 1.6, style,
-}: EyebrowProps) {
-  return (
-    <Text style={[
-      { fontSize: size, fontWeight: '700', letterSpacing: track, color, textTransform: 'uppercase' },
-      style,
-    ]}>
-      {children}
-    </Text>
-  );
+export const Eyebrow = React.memo(function Eyebrow({ children, color = palette.text3, style }: EyebrowProps) {
+  return <Text style={[type.footnoteStrong, { color }, style]}>{children}</Text>;
 });
 
-// ─── Display — italic serif headline ────────────────────────────
 interface DisplayProps {
   children: React.ReactNode;
   size?: number;
@@ -39,27 +44,21 @@ interface DisplayProps {
   numberOfLines?: number;
 }
 
-export const Display = React.memo(function Display({
-  children, size = 24, color = colors.text, italic = true, style, numberOfLines,
-}: DisplayProps) {
+export const Display = React.memo(function Display({ children, size = 24, color = palette.ink, style, numberOfLines }: DisplayProps) {
   return (
     <Text
       numberOfLines={numberOfLines}
-      style={[{
-        fontFamily: fonts.serif,
-        fontSize: size,
-        fontStyle: italic ? 'italic' : 'normal',
-        fontWeight: '400',
-        letterSpacing: -0.3,
-        color,
-      }, style]}
+      style={[
+        { fontFamily: fontFamily.extrabold, fontSize: Math.min(size, 30), lineHeight: Math.round(Math.min(size, 30) * 1.2), letterSpacing: -0.6, color },
+        style,
+        styles.upright,
+      ]}
     >
       {children}
     </Text>
   );
 });
 
-// ─── Script — handwritten accent text ───────────────────────────
 interface ScriptProps {
   children: React.ReactNode;
   size?: number;
@@ -67,21 +66,22 @@ interface ScriptProps {
   style?: StyleProp<TextStyle>;
 }
 
-export const Script = React.memo(function Script({
-  children, size = 18, color = colors.accent, style,
-}: ScriptProps) {
+export const Script = React.memo(function Script({ children, size = 16, color, style }: ScriptProps) {
+  // Light colours were used on emerald headers — keep them readable; dark ones become em700.
+  const isLight = typeof color === 'string' && /^(rgba\(2[0-9]{2}|#F|#f|white)/.test(color);
   return (
-    <Text style={[
-      typography.script,
-      { fontSize: size, color },
-      style,
-    ]}>
+    <Text
+      style={[
+        { fontFamily: fontFamily.semibold, fontSize: Math.min(Math.max(size, 13), 18), lineHeight: Math.round(Math.min(Math.max(size, 13), 18) * 1.35), color: isLight ? color : palette.em700 },
+        style,
+        styles.upright,
+      ]}
+    >
       {children}
     </Text>
   );
 });
 
-// ─── Number — italic serif tabular number ───────────────────────
 interface NumProps {
   children: React.ReactNode;
   size?: number;
@@ -90,49 +90,24 @@ interface NumProps {
   style?: StyleProp<TextStyle>;
 }
 
-export const Num = React.memo(function Num({
-  children, size = 16, color = colors.text, weight = '400', style,
-}: NumProps) {
+export const Num = React.memo(function Num({ children, size = 16, color = palette.ink, style }: NumProps) {
   return (
-    <Text style={[{
-      fontFamily: fonts.serif,
-      fontSize: size,
-      fontWeight: weight,
-      fontStyle: 'italic',
-      color,
-    }, style]}>
+    <Text style={[{ fontFamily: fontFamily.extrabold, fontSize: size, letterSpacing: -0.5, color, fontVariant: ['tabular-nums'] }, style, styles.upright]}>
       {children}
     </Text>
   );
 });
 
-// ─── Scribble — hand-drawn underline ────────────────────────────
 interface ScribbleProps {
   width?: number;
   color?: string;
   style?: StyleProp<ViewStyle>;
 }
 
-export const Scribble = React.memo(function Scribble({
-  width = 40, color = colors.accent, style,
-}: ScribbleProps) {
-  return (
-    <View style={style}>
-      <Svg width={width} height={10} viewBox={`0 0 ${width} 10`}>
-        <Path
-          d={`M 2 6 Q ${width * 0.25} 2, ${width * 0.5} 5 T ${width - 2} 4`}
-          stroke={color}
-          strokeWidth={2}
-          fill="none"
-          strokeLinecap="round"
-          opacity={0.85}
-        />
-      </Svg>
-    </View>
-  );
+export const Scribble = React.memo(function Scribble(_props: ScribbleProps) {
+  return null;
 });
 
-// ─── InkStamp — circular monogram stamp ─────────────────────────
 interface InkStampProps {
   size?: number;
   color?: string;
@@ -141,45 +116,11 @@ interface InkStampProps {
   label?: string;
 }
 
-export const InkStamp = React.memo(function InkStamp({
-  size = 40, color = colors.accent, letter = 'M', rotate = -5, label,
-}: InkStampProps) {
-  return (
-    <View style={{ width: size, height: size, transform: [{ rotate: `${rotate}deg` }] }}>
-      <Svg width={size} height={size} viewBox="0 0 60 60">
-        <Circle cx={30} cy={30} r={26} stroke={color} strokeWidth={1.6} fill="none" opacity={0.9} />
-        <Circle cx={30} cy={30} r={22} stroke={color} strokeWidth={0.8} fill="none" opacity={0.55} />
-        <SvgText
-          x={30}
-          y={36.5}
-          textAnchor="middle"
-          fill={color}
-          fontFamily={fonts.serif}
-          fontSize={22}
-          fontWeight="400"
-        >
-          {letter}
-        </SvgText>
-        {label ? (
-          <SvgText
-            x={30}
-            y={50}
-            textAnchor="middle"
-            fill={color}
-            fontFamily={fonts.body}
-            fontSize={3.6}
-            letterSpacing={1}
-            fontWeight="700"
-          >
-            {label}
-          </SvgText>
-        ) : null}
-      </Svg>
-    </View>
-  );
+export const InkStamp = React.memo(function InkStamp({ size = 40, color }: InkStampProps) {
+  const onEmerald = typeof color === 'string' && /^(#F|#f|rgba\(2[0-9]{2}|white)/.test(color);
+  return <BrandMark size={size} variant={onEmerald ? 'onEmerald' : 'brand'} />;
 });
 
-// ─── HangTag — string-tag chip ──────────────────────────────────
 interface HangTagProps {
   children: React.ReactNode;
   color?: string;
@@ -189,72 +130,25 @@ interface HangTagProps {
   style?: StyleProp<ViewStyle>;
 }
 
-export const HangTag = React.memo(function HangTag({
-  children, color = colors.accent, background = colors.cardBackground,
-  rotate = -3, size = 'md', style,
-}: HangTagProps) {
-  const padV = size === 'sm' ? 4 : 6;
-  const padH = size === 'sm' ? 10 : 14;
-  const fs = size === 'sm' ? 11 : 12;
+export const HangTag = React.memo(function HangTag({ children, size = 'md', style }: HangTagProps) {
   return (
-    <View style={[
-      {
-        flexDirection: 'row',
-        alignItems: 'center',
-        alignSelf: 'flex-start',
-        backgroundColor: background,
-        borderWidth: 1.2,
-        borderColor: color,
-        borderRadius: 4,
-        paddingVertical: padV,
-        paddingLeft: padH + 12,
-        paddingRight: padH,
-        transform: [{ rotate: `${rotate}deg` }],
-      },
-      style,
-    ]}>
-      <View style={{
-        position: 'absolute',
-        left: 6,
-        top: '50%',
-        marginTop: -4,
-        width: 7,
-        height: 7,
-        borderRadius: 999,
-        backgroundColor: colors.background,
-        borderWidth: 1,
-        borderColor: color,
-      }} />
-      <Text style={{
-        fontSize: fs,
-        fontWeight: '600',
-        letterSpacing: 0.3,
-        color,
-      }}>
+    <View style={[styles.tag, size === 'sm' && styles.tagSm, style]}>
+      <Text style={[styles.tagText, size === 'sm' && { fontSize: 12 }]} numberOfLines={1}>
         {children}
       </Text>
     </View>
   );
 });
 
-// ─── DashedRule — horizontal dashed divider ─────────────────────
 interface DashedRuleProps {
   color?: string;
   style?: StyleProp<ViewStyle>;
 }
 
-export const DashedRule = React.memo(function DashedRule({
-  color = colors.border, style,
-}: DashedRuleProps) {
-  return (
-    <View style={[
-      { height: 1, borderBottomWidth: 1, borderStyle: 'dashed', borderColor: color, opacity: 0.85 },
-      style,
-    ]} />
-  );
+export const DashedRule = React.memo(function DashedRule({ style }: DashedRuleProps) {
+  return <View style={[{ height: 1, backgroundColor: palette.line }, style]} />;
 });
 
-// ─── Section — eyebrow + scribble pairing ───────────────────────
 interface SectionLabelProps {
   children: React.ReactNode;
   color?: string;
@@ -264,30 +158,32 @@ interface SectionLabelProps {
   right?: React.ReactNode;
 }
 
-export const SectionLabel = React.memo(function SectionLabel({
-  children, color = colors.textSecondary, scribbleColor = colors.accent,
-  scribbleWidth = 28, style, right,
-}: SectionLabelProps) {
+export const SectionLabel = React.memo(function SectionLabel({ children, style, right }: SectionLabelProps) {
   return (
     <View style={[styles.sectionRow, style]}>
-      <View style={styles.sectionLeft}>
-        <Scribble width={scribbleWidth} color={scribbleColor} style={{ marginRight: 8 }} />
-        <Eyebrow color={color}>{children}</Eyebrow>
-      </View>
+      <Text style={[type.title3, { color: palette.ink, flexShrink: 1 }]}>{children}</Text>
       {right}
     </View>
   );
 });
 
 const styles = StyleSheet.create({
+  upright: { fontStyle: 'normal', fontWeight: 'normal' },
+  tag: {
+    alignSelf: 'flex-start',
+    height: 26,
+    paddingHorizontal: 10,
+    borderRadius: 13,
+    backgroundColor: palette.em50,
+    justifyContent: 'center',
+  },
+  tagSm: { height: 22, paddingHorizontal: 8, borderRadius: 11 },
+  tagText: { fontFamily: fontFamily.bold, fontSize: 13, color: palette.em700 },
   sectionRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: spacing.sm,
-  },
-  sectionLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    marginBottom: 8,
+    minHeight: 32,
   },
 });

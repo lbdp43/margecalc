@@ -1,16 +1,40 @@
-import { Alert, Platform } from 'react-native';
+/**
+ * Legacy alert/confirm API — now rendered by the in-app Dialog and Toast
+ * hosts (never window.alert / window.confirm, which browsers can block).
+ *
+ *   alert('Succès', 'Paramètres mis à jour')   → success toast « Paramètres mis à jour »
+ *   alert('Erreur', 'Impossible de sauvegarder') → dialog with an OK button
+ *   confirm('Supprimer', 'Supprimer ce produit ?', onConfirm, 'Supprimer', true)
+ *
+ * New code should call `toast.*` / `dialog.*` from components/ui directly
+ * (or the promise helpers below).
+ */
+import { dialog } from '../components/ui/Dialog';
+import { toast } from '../components/ui/Toast';
+
+const SUCCESS_TITLE = /^(succ[eè]s|success|merci|enregistr|ajout[ée]|supprim[ée]|mis(e)? à jour|copi[ée]|envoy[ée]|r[ée]ponse envoy|compte supprim|brouillon sauvegard|c['’]est fait|parfait|bravo)/i;
 
 /**
- * Cross-platform alert that works on both native (Alert.alert) and web (window.alert/confirm).
+ * Show an informational message. Success messages become a toast; anything
+ * else (errors, warnings, permissions) a dialog the user acknowledges.
  */
 export function alert(title: string, message?: string): void {
-  if (Platform.OS === 'web') {
-    window.alert(message ? `${title}\n${message}` : title);
-  } else {
-    Alert.alert(title, message);
+  const t = (title || '').trim();
+  if (SUCCESS_TITLE.test(t)) {
+    const isGeneric = /^(succ[eè]s|success|merci !?|enregistr[ée]?|parfait|bravo)$/i.test(t);
+    toast.success(message && (isGeneric || message.length < 90) ? (isGeneric ? message : `${t} · ${message}`) : t);
+    return;
   }
+  const isError = /^(erreur|error|oups|impossible|[ée]chec|lecture impossible)/i.test(t);
+  dialog.alert({
+    title: t || 'Information',
+    message,
+    icon: isError ? 'alert-circle-outline' : /permission/i.test(t) ? 'lock-closed-outline' : undefined,
+    tone: isError ? 'bad' : 'brand',
+  });
 }
 
+/** Ask for confirmation; `onConfirm` runs only if the user confirms. */
 export function confirm(
   title: string,
   message: string,
@@ -18,14 +42,21 @@ export function confirm(
   confirmText = 'OK',
   destructive = false,
 ): void {
-  if (Platform.OS === 'web') {
-    if (window.confirm(`${title}\n${message}`)) {
-      onConfirm();
-    }
-  } else {
-    Alert.alert(title, message, [
-      { text: 'Annuler', style: 'cancel' },
-      { text: confirmText, style: destructive ? 'destructive' : 'default', onPress: onConfirm },
-    ]);
-  }
+  dialog
+    .confirm({ title, message, confirmLabel: confirmText === 'OK' ? 'Confirmer' : confirmText, destructive })
+    .then((ok) => {
+      if (ok) onConfirm();
+    });
 }
+
+/** Promise version: `if (await confirmAsync('Supprimer ?', '…', 'Supprimer', true)) …` */
+export function confirmAsync(title: string, message?: string, confirmText = 'Confirmer', destructive = false): Promise<boolean> {
+  return dialog.confirm({ title, message, confirmLabel: confirmText, destructive });
+}
+
+/** Promise version of alert as a dialog. */
+export function alertAsync(title: string, message?: string): Promise<void> {
+  return dialog.alert({ title, message });
+}
+
+export { toast, dialog };

@@ -66,7 +66,7 @@ router.post('/', authenticate, async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Message trop long' });
     }
     if (screenName != null && (typeof screenName !== 'string' || screenName.length > MAX_SCREEN_NAME_LENGTH)) {
-      return res.status(400).json({ error: "Nom d'ecran invalide" });
+      return res.status(400).json({ error: "Nom d'écran invalide" });
     }
     if (screenshotBase64 != null) {
       if (typeof screenshotBase64 !== 'string') {
@@ -95,7 +95,7 @@ router.post('/', authenticate, async (req: Request, res: Response) => {
     });
   } catch (err: any) {
     console.error('Create ticket error:', err.message);
-    res.status(500).json({ error: 'Impossible de creer le ticket' });
+    res.status(500).json({ error: 'Impossible de créer le ticket' });
   }
 });
 
@@ -142,7 +142,7 @@ router.get('/:id/screenshot', authenticate, async (req: Request, res: Response) 
     if (!ticket) return res.status(404).json({ error: 'Ticket introuvable' });
     const isOwner = ticket.userId === req.user!.userId;
     const isAdmin = req.user!.role === 'admin';
-    if (!isOwner && !isAdmin) return res.status(403).json({ error: 'Acces refuse' });
+    if (!isOwner && !isAdmin) return res.status(403).json({ error: 'Accès refusé' });
     res.json({ screenshotBase64: ticket.screenshotBase64 });
   } catch (err: any) {
     console.error('Load screenshot error:', err.message);
@@ -173,10 +173,10 @@ router.patch('/:id/reply', authenticate, requireAdmin, async (req: Request, res:
   try {
     const { reply } = req.body;
     if (typeof reply !== 'string' || !reply.trim()) {
-      return res.status(400).json({ error: 'Reponse requise' });
+      return res.status(400).json({ error: 'Réponse requise' });
     }
     if (reply.length > MAX_REPLY_LENGTH) {
-      return res.status(400).json({ error: 'Reponse trop longue' });
+      return res.status(400).json({ error: 'Réponse trop longue' });
     }
 
     const updated = await prisma.ticket.update({
@@ -196,7 +196,7 @@ router.patch('/:id/reply', authenticate, requireAdmin, async (req: Request, res:
     });
   } catch (err: any) {
     console.error('Reply ticket error:', err.message);
-    res.status(500).json({ error: 'Impossible de publier la reponse' });
+    res.status(500).json({ error: 'Impossible de publier la réponse' });
   }
 });
 
@@ -236,7 +236,7 @@ router.patch('/:id', authenticate, requireAdmin, async (req: Request, res: Respo
     res.json({ id: updated.id, status: updated.status });
   } catch (err: any) {
     console.error('Update ticket error:', err.message);
-    res.status(500).json({ error: 'Impossible de mettre a jour le ticket' });
+    res.status(500).json({ error: 'Impossible de mettre à jour le ticket' });
   }
 });
 

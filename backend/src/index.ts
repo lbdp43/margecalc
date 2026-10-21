@@ -45,17 +45,23 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization'],
 }));
 
-/** userId of a valid access token (no DB hit), used to key the API rate limit per user. */
+/** userId of a valid access token (no DB hit, cached per request), used to key the API rate limit per user. */
+const RL_USER = Symbol('rateLimitUserId');
 function tokenUserId(req: Request): string | null {
+  const cached = (req as any)[RL_USER];
+  if (cached !== undefined) return cached;
+  let uid: string | null = null;
   const header = req.headers.authorization;
-  if (!header?.startsWith('Bearer ')) return null;
-  try {
-    const payload = jwt.verify(header.slice(7), config.jwtSecret) as { userId?: string; type?: string };
-    if (payload.type && payload.type !== 'access') return null;
-    return payload.userId ?? null;
-  } catch {
-    return null;
+  if (header?.startsWith('Bearer ')) {
+    try {
+      const payload = jwt.verify(header.slice(7), config.jwtSecret) as { userId?: string; type?: string };
+      if (!payload.type || payload.type === 'access') uid = payload.userId ?? null;
+    } catch {
+      uid = null;
+    }
   }
+  (req as any)[RL_USER] = uid;
+  return uid;
 }
 
 // API rate limiter — /api only: static files, fonts and the SPA shell never count.

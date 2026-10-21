@@ -1,7 +1,17 @@
 import { Router, Request, Response } from 'express';
 import { prisma } from '../config/database';
 import { authenticate, requireAdmin } from '../middleware/auth';
-import { calculateMargin, MarginMode } from '@margebar/shared';
+import { Prisma } from '@prisma/client';
+import { computeMarginSafe } from '../services/product.service';
+
+/** Admin product lists never load the heavy imageUrl column. */
+const ADMIN_PRODUCT_FIELDS = {
+  id: true, name: true, purchasePriceHT: true, containerVolumeCl: true, doseVolumeCl: true,
+  marginMode: true, sellingPriceTTC: true, targetMarginPercent: true, coefficient: true,
+  tvaRate: true, alcoholDegree: true, supplier: true, thumbnailUrl: true, updatedAt: true,
+  category: true,
+  servings: { include: { servingType: true } },
+} satisfies Prisma.ProductSelect;
 
 const router = Router();
 
@@ -124,25 +134,15 @@ router.get('/users', async (_req: Request, res: Response) => {
 router.get('/products', async (_req: Request, res: Response) => {
   try {
     const products = await prisma.product.findMany({
-      include: {
-        category: true,
+      select: {
+        ...ADMIN_PRODUCT_FIELDS,
         user: { select: { id: true, email: true, businessName: true } },
-        servings: { include: { servingType: true } },
       },
       orderBy: { updatedAt: 'desc' },
     });
 
     const enriched = products.map((p) => {
-      const computed = calculateMargin({
-        purchasePriceHT: p.purchasePriceHT,
-        containerVolumeCl: p.containerVolumeCl,
-        doseVolumeCl: p.doseVolumeCl,
-        marginMode: p.marginMode as MarginMode,
-        sellingPriceTTC: p.sellingPriceTTC ?? undefined,
-        targetMarginPercent: p.targetMarginPercent ?? undefined,
-        coefficient: p.coefficient ?? undefined,
-        tvaRate: p.tvaRate,
-      });
+      const computed = computeMarginSafe(p);
 
       return {
         id: p.id,
@@ -178,24 +178,12 @@ router.get('/users/:userId/products', async (req: Request, res: Response) => {
   try {
     const products = await prisma.product.findMany({
       where: { userId: req.params.userId },
-      include: {
-        category: true,
-        servings: { include: { servingType: true } },
-      },
+      select: ADMIN_PRODUCT_FIELDS,
       orderBy: { updatedAt: 'desc' },
     });
 
     const enriched = products.map((p) => {
-      const computed = calculateMargin({
-        purchasePriceHT: p.purchasePriceHT,
-        containerVolumeCl: p.containerVolumeCl,
-        doseVolumeCl: p.doseVolumeCl,
-        marginMode: p.marginMode as MarginMode,
-        sellingPriceTTC: p.sellingPriceTTC ?? undefined,
-        targetMarginPercent: p.targetMarginPercent ?? undefined,
-        coefficient: p.coefficient ?? undefined,
-        tvaRate: p.tvaRate,
-      });
+      const computed = computeMarginSafe(p);
 
       return {
         id: p.id,

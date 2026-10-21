@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { authenticate } from '../middleware/auth';
 import { userWriteLimiter } from '../middleware/userRateLimit';
 import * as recipeService from '../services/recipe.service';
+import { sendKnownError } from '../utils/validation';
 
 const router = Router();
 
@@ -70,8 +71,8 @@ router.post('/', userWriteLimiter, async (req: Request, res: Response) => {
     const recipe = await recipeService.createRecipe(req.user!.userId, data);
     res.status(201).json(recipe);
   } catch (err: any) {
-    const status = err.name === 'ZodError' ? 400 : 500;
-    res.status(status).json({ error: err.name === 'ZodError' ? err.message : 'Erreur serveur' });
+    if (sendKnownError(res, err)) return;
+    res.status(500).json({ error: 'Erreur serveur' });
   }
 });
 
@@ -82,7 +83,8 @@ router.put('/:id', userWriteLimiter, async (req: Request, res: Response) => {
     const recipe = await recipeService.updateRecipe(req.params.id, req.user!.userId, data);
     res.json(recipe);
   } catch (err: any) {
-    const status = err.message === 'Recette non trouvée' ? 404 : err.name === 'ZodError' ? 400 : 500;
+    if (sendKnownError(res, err)) return;
+    const status = err.message === 'Recette non trouvée' ? 404 : 500;
     res.status(status).json({ error: err.message === 'Recette non trouvée' ? err.message : 'Erreur serveur' });
   }
 });

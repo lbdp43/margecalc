@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { authenticate } from '../middleware/auth';
 import * as categoryService from '../services/category.service';
+import { sendKnownError } from '../utils/validation';
 
 const router = Router();
 
@@ -27,8 +28,8 @@ router.post('/', async (req: Request, res: Response) => {
     const category = await categoryService.createCategory({ name: data.name.trim(), slug, icon: '', sortOrder: 99 });
     res.status(201).json(category);
   } catch (err: any) {
-    const status = err.name === 'ZodError' ? 400 : 500;
-    res.status(status).json({ error: err.name === 'ZodError' ? err.message : 'Erreur serveur' });
+    if (sendKnownError(res, err)) return;
+    res.status(500).json({ error: 'Erreur serveur' });
   }
 });
 

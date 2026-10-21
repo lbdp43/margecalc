@@ -35,7 +35,8 @@ const WEIGHT_FILE: Record<number, keyof typeof fontAssets> = {
 let installed = false;
 
 export function installWebFontAliases(): void {
-  if (installed || Platform.OS !== 'web' || typeof document === 'undefined') return;
+  const document: any = (globalThis as any).document;
+  if (installed || Platform.OS !== 'web' || !document) return;
   installed = true;
   try {
     // eslint-disable-next-line @typescript-eslint/no-var-requires

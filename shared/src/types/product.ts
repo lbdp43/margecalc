@@ -134,11 +134,22 @@ export interface ImportProductsInput {
 }
 
 export type ImportLineResult =
-  | { index: number; ok: true; name: string; productId: string; sellingPriceTTC: number; priceDerived: boolean }
+  | {
+      index: number;
+      ok: true;
+      name: string;
+      productId: string;
+      /** 'updated' = same name + container already existed: only its purchase price was updated. */
+      action: 'created' | 'updated';
+      sellingPriceTTC: number;
+      /** True when the selling price was derived (coefficient 4, rounded to 0,10 €). */
+      priceDerived: boolean;
+    }
   | { index: number; ok: false; name: string; error: string };
 
 export interface ImportProductsResult {
   createdCount: number;
+  updatedCount: number;
   failedCount: number;
   results: ImportLineResult[];
 }

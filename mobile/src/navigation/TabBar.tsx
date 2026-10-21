@@ -1,0 +1,453 @@
+/**
+ * Floating pill TabBar (spec §3.11 + grafts 10): Réglages · Produits ·
+ * (Scanner, geometrically centred, raised and labelled) · Tableau de bord
+ * (wider right slot). Sliding em50 indicator (snappy spring, stretches mid
+ * flight), outline→filled icon pop, fadeBottom gradient behind, safe-area aware.
+ * The Scanner opens the staggered spring menu (spec §5.7) for admins, and goes
+ * straight to the bottle scan for everyone else (existing logic).
+ */
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { LayoutChangeEvent, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { BottomTabBarProps } from '@react-navigation/bottom-tabs';
+import { getFocusedRouteNameFromRoute, useIsFocused } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
+import Animated, {
+  interpolate,
+  interpolateColor,
+  useAnimatedStyle,
+  useReducedMotion,
+  useSharedValue,
+  withDelay,
+  withSequence,
+  withSpring,
+  withTiming,
+  Extrapolation,
+} from 'react-native-reanimated';
+import { elevation, gradients, layout, motion, palette, type } from '../theme';
+import { haptics } from '../theme/haptics';
+import { useAuthStore } from '../store/auth.store';
+import { useChromeStore, useKeyboardHeight } from '../components/ui/chrome';
+import { PressableScale } from '../components/ui/PressableScale';
+import type { IconName } from '../components/ui/Icon';
+import { ROUTES, TAB_BAR_HIDDEN_ROUTES } from './routes';
+
+const SCAN = 58;
+const SCAN_SLOT = 66;
+const ITEM_W = 68;
+const WIDE_W = 112;
+const PILL_W = 56;
+const PILL_H = 30;
+const RAISE = 18; // the scan circle rises above the bar
+
+const TABS: Record<string, { label: string; icon: IconName; iconActive: IconName; wide?: boolean }> = {
+  [ROUTES.settingsTab]: { label: 'Réglages', icon: 'settings-outline', iconActive: 'settings' },
+  [ROUTES.productsTab]: { label: 'Produits', icon: 'grid-outline', iconActive: 'grid' },
+  [ROUTES.dashboardTab]: { label: 'Tableau de bord', icon: 'stats-chart-outline', iconActive: 'stats-chart', wide: true },
+};
+const LEFT = [ROUTES.settingsTab, ROUTES.productsTab];
+
+export function TabBar({ state, descriptors, navigation }: BottomTabBarProps) {
+  const insets = useSafeAreaInsets();
+  const reduce = useReducedMotion();
+  const rootFocused = useIsFocused();
+  const kb = useKeyboardHeight();
+  const isAdmin = useAuthStore((s) => s.user?.role === 'admin');
+  const setTabBarVisible = useChromeStore((s) => s.setTabBarVisible);
+  const [rowW, setRowW] = useState(0);
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  const focusedRoute = state.routes[state.index];
+  const focusedOptions = descriptors[focusedRoute.key]?.options;
+  const nestedName = getFocusedRouteNameFromRoute(focusedRoute);
+  const hiddenByRoute =
+    (focusedOptions?.tabBarStyle as any)?.display === 'none' || (nestedName ? TAB_BAR_HIDDEN_ROUTES.has(nestedName) : false);
+  const hidden = hiddenByRoute || kb > 0;
+
+  useEffect(() => {
+    setTabBarVisible(rootFocused && !hidden);
+  }, [rootFocused, hidden, setTabBarVisible]);
+  useEffect(() => () => setTabBarVisible(false), [setTabBarVisible]);
+
+  const barBottom = layout.tabBarBottom(insets.bottom);
+
+  // ── indicator geometry (computed, no per-item measuring) ──
+  const centers = useMemo(() => {
+    const inner = rowW - 8;
+    const half = (inner - SCAN_SLOT) / 2;
+    const free = half - ITEM_W * 2;
+    return {
+      [ROUTES.settingsTab]: 4 + free / 4 + ITEM_W / 2,
+      [ROUTES.productsTab]: 4 + (free * 3) / 4 + ITEM_W * 1.5,
+      [ROUTES.dashboardTab]: 4 + half + SCAN_SLOT + half / 2,
+    } as Record<string, number>;
+  }, [rowW]);
+
+  const activeName = focusedRoute.name;
+  const x = useSharedValue(0);
+  const from = useSharedValue(0);
+  const to = useSharedValue(0);
+  const t = useSharedValue(1);
+  const ready = useRef(false);
+
+  useEffect(() => {
+    if (!rowW) return;
+    const target = centers[activeName] ?? 0;
+    if (!ready.current || reduce) {
+      ready.current = true;
+      from.value = target;
+      to.value = target;
+      t.value = 1;
+      return;
+    }
+    from.value = interpolate(t.value, [0, 1], [from.value, to.value]);
+    to.value = target;
+    t.value = 0;
+    t.value = withSpring(1, motion.spring.snappy);
+  }, [activeName, rowW, centers, reduce, from, to, t]);
+
+  const pill = useAnimatedStyle(() => {
+    const cx = from.value + (to.value - from.value) * t.value;
+    const stretch = 8 * 4 * Math.max(0, Math.min(1, t.value)) * (1 - Math.max(0, Math.min(1, t.value)));
+    const w = PILL_W + stretch;
+    return { width: w, transform: [{ translateX: cx - w / 2 }] };
+  });
+
+  // ── hide / show ──
+  const shown = useSharedValue(hidden ? 0 : 1);
+  useEffect(() => {
+    shown.value = withTiming(hidden ? 0 : 1, { duration: motion.duration.fast });
+  }, [hidden, shown]);
+  const barShown = useAnimatedStyle(() => ({
+    opacity: shown.value,
+    transform: [{ translateY: (1 - shown.value) * 24 }],
+  }));
+
+  const onTabPress = (routeName: string, routeKey: string, focused: boolean) => {
+    const event = navigation.emit({ type: 'tabPress', target: routeKey, canPreventDefault: true });
+    if (!focused) haptics.select();
+    if (!focused && !event.defaultPrevented) navigation.navigate(routeName);
+  };
+
+  // ── Scanner ──
+  const openScan = (screen: string) => {
+    setMenuOpen(false);
+    (navigation as any).navigate(screen, {});
+  };
+  const onScanPress = () => {
+    haptics.tap();
+    if (!isAdmin) {
+      (navigation as any).navigate(ROUTES.productForm, {});
+      return;
+    }
+    setMenuOpen((o) => !o);
+  };
+
+  const renderTab = (name: string) => {
+    const route = state.routes.find((r) => r.name === name);
+    const conf = TABS[name];
+    if (!route || !conf) return null;
+    const focused = route.key === focusedRoute.key;
+    const options = descriptors[route.key]?.options;
+    return (
+      <TabItem
+        key={route.key}
+        label={conf.label}
+        icon={conf.icon}
+        iconActive={conf.iconActive}
+        wide={!!conf.wide}
+        focused={focused}
+        onPress={() => onTabPress(route.name, route.key, focused)}
+        onLongPress={() => navigation.emit({ type: 'tabLongPress', target: route.key })}
+        accessibilityLabel={options?.tabBarAccessibilityLabel ?? conf.label}
+      />
+    );
+  };
+
+  const leftTabs = LEFT.map(renderTab);
+  const rightTab = renderTab(ROUTES.dashboardTab);
+
+  return (
+    <View pointerEvents="box-none" style={StyleSheet.absoluteFill}>
+      <Animated.View pointerEvents="none" style={[styles.fade, { height: layout.fadeBottomHeight(insets.bottom) }, barShown]}>
+        <LinearGradient {...gradients.fadeBottom} style={StyleSheet.absoluteFill} />
+      </Animated.View>
+
+      <Animated.View
+        pointerEvents={hidden ? 'none' : 'box-none'}
+        style={[styles.bar, { bottom: barBottom }, barShown]}
+        accessibilityRole="tablist"
+      >
+        <View style={styles.row} onLayout={(e: LayoutChangeEvent) => setRowW(e.nativeEvent.layout.width)}>
+          {rowW ? <Animated.View pointerEvents="none" style={[styles.pill, pill]} /> : null}
+          <View style={styles.half}>{leftTabs}</View>
+          <View style={styles.scanSlot}>
+            <Text style={[styles.label, { color: menuOpen ? palette.em700 : palette.text3 }]} numberOfLines={1}>
+              Scanner
+            </Text>
+          </View>
+          <View style={[styles.half, { justifyContent: 'center' }]}>{rightTab}</View>
+        </View>
+      </Animated.View>
+
+      {isAdmin ? (
+        <ScannerMenu
+          open={menuOpen}
+          bottom={barBottom + layout.tabBarHeight + RAISE + 14}
+          onClose={() => setMenuOpen(false)}
+          onProduct={() => openScan(ROUTES.productForm)}
+          onInvoice={() => openScan(ROUTES.invoiceScan)}
+        />
+      ) : null}
+
+      <Animated.View pointerEvents={hidden ? 'none' : 'box-none'} style={[styles.scanWrap, { bottom: barBottom + layout.tabBarHeight - SCAN + RAISE - 4 }, barShown]}>
+        <ScanButton open={menuOpen} onPress={onScanPress} admin={isAdmin} />
+      </Animated.View>
+    </View>
+  );
+}
+
+// ─── Tab item ──────────────────────────────────────────────────────────────
+function TabItem({
+  label,
+  icon,
+  iconActive,
+  wide,
+  focused,
+  onPress,
+  onLongPress,
+  accessibilityLabel,
+}: {
+  label: string;
+  icon: IconName;
+  iconActive: IconName;
+  wide: boolean;
+  focused: boolean;
+  onPress: () => void;
+  onLongPress: () => void;
+  accessibilityLabel: string;
+}) {
+  const reduce = useReducedMotion();
+  const c = useSharedValue(focused ? 1 : 0);
+  const pop = useSharedValue(1);
+  const first = useRef(true);
+  useEffect(() => {
+    c.value = withTiming(focused ? 1 : 0, { duration: motion.duration.fast });
+    if (focused && !first.current && !reduce) {
+      pop.value = withSequence(withTiming(0.9, { duration: 60 }), withSpring(1, motion.spring.pop));
+    }
+    first.current = false;
+  }, [focused, reduce, c, pop]);
+
+  const labelStyle = useAnimatedStyle(() => ({ color: interpolateColor(c.value, [0, 1], [palette.text3, palette.em700]) }));
+  const iconStyle = useAnimatedStyle(() => ({ transform: [{ scale: pop.value }] }));
+
+  return (
+    <Pressable
+      onPress={onPress}
+      onLongPress={onLongPress}
+      accessibilityRole="tab"
+      accessibilityState={{ selected: focused }}
+      accessibilityLabel={accessibilityLabel}
+      style={[styles.item, { width: wide ? WIDE_W : ITEM_W }, Platform.OS === 'web' ? ({ cursor: 'pointer', userSelect: 'none' } as any) : null]}
+    >
+      <Animated.View style={[styles.iconBox, iconStyle]}>
+        <Ionicons name={focused ? iconActive : icon} size={23} color={focused ? palette.em700 : palette.text3} />
+      </Animated.View>
+      <Animated.Text style={[styles.label, labelStyle]} numberOfLines={1} maxFontSizeMultiplier={1.3}>
+        {label}
+      </Animated.Text>
+    </Pressable>
+  );
+}
+
+// ─── Scan button ───────────────────────────────────────────────────────────
+function ScanButton({ open, onPress, admin }: { open: boolean; onPress: () => void; admin: boolean }) {
+  const reduce = useReducedMotion();
+  const p = useSharedValue(open ? 1 : 0);
+  useEffect(() => {
+    p.value = open
+      ? reduce
+        ? withTiming(1, { duration: 120 })
+        : withSpring(1, motion.spring.snappy)
+      : withTiming(0, { duration: motion.duration.fast, easing: motion.easing.accel });
+  }, [open, reduce, p]);
+  const rotate = useAnimatedStyle(() => ({ transform: [{ rotate: `${p.value * 90}deg` }] }));
+  const scanIcon = useAnimatedStyle(() => ({ opacity: 1 - p.value }));
+  const closeIcon = useAnimatedStyle(() => ({ opacity: p.value }));
+
+  return (
+    <PressableScale
+      onPress={onPress}
+      scaleTo="scan"
+      accessibilityRole="button"
+      accessibilityLabel={admin ? (open ? 'Fermer le menu Scanner' : 'Scanner') : 'Scanner une bouteille'}
+      accessibilityState={{ expanded: admin ? open : undefined }}
+      style={styles.scanOuter}
+    >
+      <View style={[styles.scan, elevation.glow]}>
+        <LinearGradient {...gradients.scanButton} style={[StyleSheet.absoluteFill, { borderRadius: SCAN / 2 }]} />
+        <Animated.View style={[styles.scanIcons, rotate]}>
+          <Animated.View style={[StyleSheet.absoluteFill, styles.center, scanIcon]}>
+            <Ionicons name="scan" size={27} color="#FFFFFF" />
+          </Animated.View>
+          <Animated.View style={[StyleSheet.absoluteFill, styles.center, closeIcon]}>
+            <Ionicons name="close" size={28} color="#FFFFFF" />
+          </Animated.View>
+        </Animated.View>
+        <View style={styles.spark} />
+      </View>
+    </PressableScale>
+  );
+}
+
+// ─── Scanner menu (spec §5.7) ──────────────────────────────────────────────
+function ScannerMenu({
+  open,
+  bottom,
+  onClose,
+  onProduct,
+  onInvoice,
+}: {
+  open: boolean;
+  bottom: number;
+  onClose: () => void;
+  onProduct: () => void;
+  onInvoice: () => void;
+}) {
+  const reduce = useReducedMotion();
+  const [mounted, setMounted] = useState(open);
+  const scrim = useSharedValue(0);
+  const a = useSharedValue(0); // nearest card (product)
+  const b = useSharedValue(0); // invoice
+
+  useEffect(() => {
+    if (open) {
+      setMounted(true);
+      scrim.value = withTiming(1, { duration: 200 });
+      if (reduce) {
+        a.value = withTiming(1, { duration: 120 });
+        b.value = withTiming(1, { duration: 120 });
+      } else {
+        a.value = withSpring(1, motion.spring.gentle);
+        b.value = withDelay(50, withSpring(1, motion.spring.gentle));
+      }
+    } else if (mounted) {
+      const out = { duration: motion.duration.fast, easing: motion.easing.accel };
+      b.value = withTiming(0, out);
+      a.value = withDelay(30, withTiming(0, out));
+      scrim.value = withTiming(0, out);
+      const tm = setTimeout(() => setMounted(false), motion.duration.fast + 60);
+      return () => clearTimeout(tm);
+    }
+    return undefined;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  const scrimStyle = useAnimatedStyle(() => ({ opacity: scrim.value }));
+  const cardA = useAnimatedStyle(() => ({
+    opacity: interpolate(a.value, [0, 0.6], [0, 1], Extrapolation.CLAMP),
+    transform: [{ translateY: (1 - a.value) * 24 }, { scale: 0.96 + 0.04 * a.value }],
+  }));
+  const cardB = useAnimatedStyle(() => ({
+    opacity: interpolate(b.value, [0, 0.6], [0, 1], Extrapolation.CLAMP),
+    transform: [{ translateY: (1 - b.value) * 24 }, { scale: 0.96 + 0.04 * b.value }],
+  }));
+
+  if (!mounted) return null;
+
+  return (
+    <>
+      <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: palette.scrim }, scrimStyle]}>
+        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityRole="button" accessibilityLabel="Fermer le menu Scanner" />
+      </Animated.View>
+      <View pointerEvents={open ? 'box-none' : 'none'} style={[styles.menu, { bottom }]}>
+        <Animated.View style={cardB}>
+          <MenuCard icon="receipt-outline" title="Scanner une facture" subtitle="Importer plusieurs produits" onPress={onInvoice} />
+        </Animated.View>
+        <Animated.View style={cardA}>
+          <MenuCard icon="wine-outline" title="Scanner un produit" subtitle="Photo d’une bouteille" onPress={onProduct} primary />
+        </Animated.View>
+      </View>
+    </>
+  );
+}
+
+function MenuCard({ icon, title, subtitle, onPress, primary }: { icon: IconName; title: string; subtitle: string; onPress: () => void; primary?: boolean }) {
+  return (
+    <PressableScale onPress={onPress} scaleTo="card" haptic="select" accessibilityLabel={`${title}, ${subtitle}`} style={styles.menuCard}>
+      <View style={[styles.menuIcon, primary && { backgroundColor: palette.em700 }]}>
+        <Ionicons name={icon} size={22} color={primary ? '#FFFFFF' : palette.em700} />
+      </View>
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text style={styles.menuTitle}>{title}</Text>
+        <Text style={styles.menuSub}>{subtitle}</Text>
+      </View>
+      <Ionicons name="chevron-forward" size={18} color={palette.text4} />
+    </PressableScale>
+  );
+}
+
+const styles = StyleSheet.create({
+  fade: { position: 'absolute', left: 0, right: 0, bottom: 0 },
+  bar: {
+    position: 'absolute',
+    left: layout.tabBarSide,
+    right: layout.tabBarSide,
+    height: layout.tabBarHeight,
+    borderRadius: 26,
+    backgroundColor: palette.surface,
+    borderWidth: 1,
+    borderColor: palette.line,
+    maxWidth: 560,
+    alignSelf: 'center',
+    marginHorizontal: 'auto',
+    ...elevation.e3,
+  },
+  row: { flex: 1, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 4 },
+  half: { flex: 1, flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center', height: '100%' },
+  scanSlot: { width: SCAN_SLOT, height: '100%', alignItems: 'center', justifyContent: 'flex-end', paddingBottom: 9 },
+  pill: {
+    position: 'absolute',
+    left: 0,
+    top: (layout.tabBarHeight - 2 - 48) / 2,
+    height: PILL_H,
+    borderRadius: PILL_H / 2,
+    backgroundColor: palette.em50,
+  },
+  item: { height: 60, alignItems: 'center', justifyContent: 'center', gap: 3 },
+  iconBox: { width: PILL_W, height: PILL_H, alignItems: 'center', justifyContent: 'center' },
+  label: { ...type.tabLabel },
+  scanWrap: { position: 'absolute', left: 0, right: 0, alignItems: 'center' },
+  scanOuter: { width: SCAN + 8, height: SCAN + 8, borderRadius: (SCAN + 8) / 2, alignItems: 'center', justifyContent: 'center' },
+  scan: { width: SCAN, height: SCAN, borderRadius: SCAN / 2, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.em700 },
+  scanIcons: { width: 30, height: 30 },
+  center: { alignItems: 'center', justifyContent: 'center' },
+  spark: {
+    position: 'absolute',
+    top: 9,
+    right: 10,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: palette.lime,
+    borderWidth: 2,
+    borderColor: palette.em700,
+  },
+  menu: { position: 'absolute', left: 20, right: 20, alignItems: 'stretch', gap: 10, maxWidth: 420, alignSelf: 'center', marginHorizontal: 'auto' },
+  menuCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    padding: 14,
+    borderRadius: 20,
+    backgroundColor: palette.surface,
+    borderWidth: 1,
+    borderColor: palette.line,
+    ...elevation.e3,
+  },
+  menuIcon: { width: 44, height: 44, borderRadius: 14, backgroundColor: palette.em50, alignItems: 'center', justifyContent: 'center' },
+  menuTitle: { ...type.headline, color: palette.ink },
+  menuSub: { ...type.footnote, color: palette.text3, marginTop: 1 },
+});

@@ -198,6 +198,7 @@ export type TypeKey = keyof typeof type;
 
 /** Legacy `typography` keys → Jakarta equivalents (sizes kept close to the old ones). */
 export const typography = {
+  ...type,
   display: { fontFamily: fontFamily.extrabold, fontSize: 30, lineHeight: 36, letterSpacing: -0.8 },
   displaySmall: { fontFamily: fontFamily.extrabold, fontSize: 20, lineHeight: 26, letterSpacing: -0.4 },
   number: { fontFamily: fontFamily.extrabold, fontVariant: tnum },
@@ -210,7 +211,6 @@ export const typography = {
   button: { fontFamily: fontFamily.semibold, fontSize: 16, lineHeight: 22, letterSpacing: -0.2 },
   eyebrow: type.caps,
   script: { fontFamily: fontFamily.semibold, fontSize: 16, lineHeight: 22 },
-  ...type,
 } satisfies Record<string, TextStyle>;
 
 // ─── 4. Spacing (4-pt grid) ────────────────────────────────────────────────

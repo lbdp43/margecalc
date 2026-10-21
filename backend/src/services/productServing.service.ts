@@ -1,0 +1,144 @@
+import { Prisma } from '@prisma/client';
+import { prisma } from '../config/database';
+import { calculateServingMargin, DEFAULT_SERVING_TYPES, ServingMarginResult } from '@margebar/shared';
+import { HttpError } from '../utils/validation';
+
+type Tx = Prisma.TransactionClient;
+
+export interface ServingInput {
+  servingTypeId: string;
+  sellingPriceTTC: number;
+}
+
+export interface ValidatedServing {
+  servingTypeId: string;
+  sellingPriceTTC: number;
+  name: string;
+  volumeCl: number;
+  sortOrder: number;
+}
+
+const fmtPrice = (n: number) => `${n.toFixed(2).replace('.', ',')} €`;
+
+/** Create the default serving types the first time a user needs them. */
+export async function ensureServingTypes(userId: string, db: Tx | typeof prisma = prisma) {
+  const existing = await db.servingType.findMany({ where: { userId }, orderBy: { sortOrder: 'asc' } });
+  if (existing.length) return existing;
+  await db.servingType.createMany({
+    data: DEFAULT_SERVING_TYPES.map((st) => ({ userId, name: st.name, volumeCl: st.volumeCl, icon: st.icon, sortOrder: st.sortOrder })),
+  });
+  return db.servingType.findMany({ where: { userId }, orderBy: { sortOrder: 'asc' } });
+}
+
+/**
+ * Check a full set of servings before writing anything:
+ * - every serving type must belong to the user,
+ * - every price must be > 0 (the message names the services concerned),
+ * - duplicates are merged (last one wins).
+ * Returned list is sorted primary first (lowest sortOrder, then smallest volume).
+ */
+export async function validateServings(userId: string, servings: ServingInput[], db: Tx | typeof prisma = prisma): Promise<ValidatedServing[]> {
+  const byId = new Map<string, ServingInput>();
+  for (const s of servings) byId.set(s.servingTypeId, s);
+  const ids = [...byId.keys()];
+  if (!ids.length) return [];
+
+  const types = await db.servingType.findMany({ where: { userId, id: { in: ids } } });
+  const typeById = new Map(types.map((t) => [t.id, t]));
+  const unknown = ids.filter((id) => !typeById.has(id));
+  if (unknown.length) {
+    throw new HttpError(400, unknown.length > 1
+      ? `${unknown.length} services sont introuvables (supprimés ou d’un autre compte). Rechargez la page puis réessayez.`
+      : 'Un des services est introuvable (supprimé ou d’un autre compte). Rechargez la page puis réessayez.');
+  }
+
+  const zero = ids.filter((id) => !(Number.isFinite(byId.get(id)!.sellingPriceTTC) && byId.get(id)!.sellingPriceTTC > 0));
+  if (zero.length) {
+    const names = zero.map((id) => typeById.get(id)!.name);
+    throw new HttpError(400, names.length > 1
+      ? `Indiquez un prix de vente supérieur à 0 € pour les services : ${names.join(', ')}.`
+      : `Indiquez un prix de vente supérieur à 0 € pour le service « ${names[0]} ».`,
+      { details: zero.map((id) => ({ field: 'servings', label: typeById.get(id)!.name, message: `Prix de vente manquant pour « ${typeById.get(id)!.name} ».`, code: 'too_small', servingTypeId: id })) });
+  }
+
+  const tooHigh = ids.filter((id) => byId.get(id)!.sellingPriceTTC > 10_000);
+  if (tooHigh.length) {
+    throw new HttpError(400, `Le prix de vente de « ${typeById.get(tooHigh[0])!.name} » semble trop élevé (${fmtPrice(byId.get(tooHigh[0])!.sellingPriceTTC)}).`);
+  }
+
+  return ids
+    .map((id) => {
+      const t = typeById.get(id)!;
+      return { servingTypeId: id, sellingPriceTTC: Math.round(byId.get(id)!.sellingPriceTTC * 100) / 100, name: t.name, volumeCl: t.volumeCl, sortOrder: t.sortOrder };
+    })
+    .sort((a, b) => a.sortOrder - b.sortOrder || a.volumeCl - b.volumeCl || a.name.localeCompare(b.name));
+}
+
+/**
+ * Replace the product's servings with exactly `servings` (inside `tx`) and keep the product's
+ * headline price in sync with the primary serving (lowest sortOrder):
+ * sellingPriceTTC, doseVolumeCl and marginMode = fix_selling_price.
+ * An empty list removes every serving and leaves the product price unchanged.
+ */
+export async function replaceServings(tx: Tx, productId: string, servings: ValidatedServing[]): Promise<void> {
+  await tx.productServing.deleteMany({
+    where: { productId, servingTypeId: { notIn: servings.map((s) => s.servingTypeId) } },
+  });
+  for (const s of servings) {
+    await tx.productServing.upsert({
+      where: { productId_servingTypeId: { productId, servingTypeId: s.servingTypeId } },
+      create: { productId, servingTypeId: s.servingTypeId, sellingPriceTTC: s.sellingPriceTTC },
+      update: { sellingPriceTTC: s.sellingPriceTTC },
+    });
+  }
+  const primary = servings[0];
+  if (primary) {
+    await tx.product.update({
+      where: { id: productId },
+      data: { sellingPriceTTC: primary.sellingPriceTTC, doseVolumeCl: primary.volumeCl, marginMode: 'fix_selling_price' },
+    });
+  }
+}
+
+/** After a single serving was removed: re-sync the product price on the new primary serving. */
+export async function resyncPrimary(tx: Tx, productId: string): Promise<void> {
+  const rest = await tx.productServing.findMany({ where: { productId }, include: { servingType: true } });
+  if (!rest.length) return;
+  rest.sort((a, b) => a.servingType.sortOrder - b.servingType.sortOrder || a.servingType.volumeCl - b.servingType.volumeCl);
+  const p = rest[0];
+  await tx.product.update({
+    where: { id: productId },
+    data: { sellingPriceTTC: p.sellingPriceTTC, doseVolumeCl: p.servingType.volumeCl, marginMode: 'fix_selling_price' },
+  });
+}
+
+/** Servings of a product with their margins, primary first. Invalid rows are skipped, never thrown. */
+export async function getServingResults(product: { id: string; purchasePriceHT: number; containerVolumeCl: number; tvaRate: number }): Promise<ServingMarginResult[]> {
+  const rows = await prisma.productServing.findMany({
+    where: { productId: product.id },
+    include: { servingType: true },
+    orderBy: [{ servingType: { sortOrder: 'asc' } }, { servingType: { volumeCl: 'asc' } }],
+  });
+  const out: ServingMarginResult[] = [];
+  for (const ps of rows) {
+    try {
+      out.push(calculateServingMargin(
+        product.purchasePriceHT,
+        product.containerVolumeCl,
+        product.tvaRate,
+        {
+          id: ps.servingType.id,
+          userId: ps.servingType.userId,
+          name: ps.servingType.name,
+          volumeCl: ps.servingType.volumeCl,
+          icon: ps.servingType.icon,
+          sortOrder: ps.servingType.sortOrder,
+        },
+        ps.sellingPriceTTC,
+      ));
+    } catch (err: any) {
+      console.warn(`[SERVINGS] skipped invalid serving ${ps.id}: ${err?.message}`);
+    }
+  }
+  return out;
+}

@@ -10,12 +10,30 @@ import Svg, {
   LinearGradient,
   Stop,
 } from 'react-native-svg';
-import { colors, spacing, typography } from '../../theme';
+import { palette, spacing, type } from '../../theme';
 
-const AnimatedRect = Animated.createAnimatedComponent(Rect);
-const AnimatedEllipse = Animated.createAnimatedComponent(Ellipse);
-const AnimatedCircle = Animated.createAnimatedComponent(Circle);
-const AnimatedPath = Animated.createAnimatedComponent(Path);
+/**
+ * Beer mug filling — the full-screen / first-load loader requested by the
+ * owner, in the emerald palette. Use Skeletons for lists and cards, and the
+ * Button's built-in spinner for actions.
+ *
+ *   <YinYangSpinner size={80} message="Chargement des produits…" />
+ */
+
+// Animated.createAnimatedComponent passes `collapsable={false}`, which
+// react-native-svg forwards to the DOM on web (React warning). Strip it.
+function stripCollapsable<P extends object>(Component: React.ComponentType<P>) {
+  const Wrapped = React.forwardRef<any, P & { collapsable?: boolean }>(function Stripped(props, ref) {
+    const { collapsable: _c, ...rest } = props as any;
+    return <Component ref={ref} {...(rest as P)} />;
+  });
+  return Wrapped;
+}
+
+const AnimatedRect = Animated.createAnimatedComponent(stripCollapsable(Rect as any)) as any;
+const AnimatedEllipse = Animated.createAnimatedComponent(stripCollapsable(Ellipse as any)) as any;
+const AnimatedCircle = Animated.createAnimatedComponent(stripCollapsable(Circle as any)) as any;
+const AnimatedPath = Animated.createAnimatedComponent(stripCollapsable(Path as any)) as any;
 
 interface YinYangSpinnerProps {
   size?: number;
@@ -189,12 +207,12 @@ export function YinYangSpinner({
   const baseL = mugCx - baseW / 2;
 
   // ────────── COLORS ──────────
-  const beerBody = colors.accent;     // #40916C
-  const beerDark = colors.secondary;  // #2D6A4F
-  const outline = colors.primary;     // #1B4332
-  const foamWhite = '#EDF5F0';
-  const foamCream = colors.light;     // #D8F3DC
-  const baseTint = colors.light;      // #D8F3DC
+  const beerBody = palette.em500;     // bright emerald liquid
+  const beerDark = palette.em700;     // depth
+  const outline = palette.em800;      // mug outline
+  const foamWhite = '#FFFFFF';
+  const foamCream = palette.em50;
+  const baseTint = palette.em100;
 
   // ────────── INTERPOLATIONS ──────────
   const beerY = fillLevel.interpolate({
@@ -557,16 +575,15 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.xl,
   },
   message: {
-    ...typography.body,
-    fontWeight: '600',
-    color: colors.text,
+    ...type.headline,
+    color: palette.ink,
     marginTop: spacing.lg,
     textAlign: 'center',
   },
   submessage: {
-    ...typography.caption,
-    color: colors.textSecondary,
-    marginTop: spacing.sm,
+    ...type.footnote,
+    color: palette.text3,
+    marginTop: spacing.xs,
     textAlign: 'center',
   },
 });

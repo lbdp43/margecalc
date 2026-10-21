@@ -34,12 +34,19 @@ router.get('/', async (_req: Request, res: Response) => {
 // PUT /api/rates/:slug — admin only, update accise and cotisation rates
 router.put('/:slug', authenticate, requireAdmin, async (req: Request, res: Response) => {
   const { slug } = req.params;
-  const { acciseRate, cotisationRate } = req.body;
+  const { acciseRate, cotisationRate } = req.body ?? {};
 
   try {
-    const data: any = {};
-    if (acciseRate !== undefined) data.acciseRate = parseFloat(acciseRate);
-    if (cotisationRate !== undefined) data.cotisationRate = parseFloat(cotisationRate);
+    const data: { acciseRate?: number; cotisationRate?: number } = {};
+    const toRate = (v: unknown) => (typeof v === 'number' ? v : parseFloat(String(v).replace(',', '.')));
+    if (acciseRate !== undefined) data.acciseRate = toRate(acciseRate);
+    if (cotisationRate !== undefined) data.cotisationRate = toRate(cotisationRate);
+    for (const [key, v] of Object.entries(data)) {
+      if (!Number.isFinite(v) || v < 0 || v > 100_000) {
+        res.status(400).json({ error: `${key === 'acciseRate' ? 'Le taux d’accise' : 'La cotisation sécurité sociale'} doit être un nombre positif.` });
+        return;
+      }
+    }
 
     const rate = await prisma.rate.update({
       where: { slug },
@@ -61,7 +68,7 @@ router.put('/:slug', authenticate, requireAdmin, async (req: Request, res: Respo
     });
   } catch (err: any) {
     if (err?.code === 'P2025') {
-      res.status(404).json({ error: `Categorie "${slug}" non trouvee` });
+      res.status(404).json({ error: `Catégorie fiscale « ${slug} » non trouvée` });
       return;
     }
     console.error('[RATES] Error updating:', err);

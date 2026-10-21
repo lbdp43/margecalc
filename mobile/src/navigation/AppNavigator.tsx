@@ -1,9 +1,21 @@
-import React, { useState } from 'react';
-import { View, TouchableOpacity, StyleSheet, Text, Modal, Pressable } from 'react-native';
+/**
+ * Logged-in navigation.
+ *
+ *   Root stack
+ *   ├─ Tabs (floating TabBar)
+ *   │   ├─ Réglages        → SettingsMain, AdminProducts
+ *   │   ├─ Produits        → ProductList, ProductDetail
+ *   │   └─ Tableau de bord → DashboardMain, DutyCalculator
+ *   ├─ ProductForm   (create / edit — full screen, no tab bar)
+ *   └─ InvoiceScan   (full screen, no tab bar)
+ *
+ * Form flows live in the root stack so the floating tab bar and the sticky
+ * action bar never stack. Use the helpers in ./routes to navigate into
+ * nested stacks (they pass `initial: false`).
+ */
+import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { createAppStackNavigator } from './createStack';
-import { useNavigation } from '@react-navigation/native';
-import { Ionicons } from '@expo/vector-icons';
+import { createAppStackNavigator, stackScreenOptions } from './createStack';
 import { DashboardScreen } from '../screens/dashboard/DashboardScreen';
 import { ProductListScreen } from '../screens/products/ProductListScreen';
 import { ProductDetailScreen } from '../screens/products/ProductDetailScreen';
@@ -11,231 +23,96 @@ import { ProductFormScreen } from '../screens/products/ProductFormScreen';
 import { InvoiceScanScreen } from '../screens/products/InvoiceScanScreen';
 import { SettingsScreen } from '../screens/settings/SettingsScreen';
 import { AdminProductsScreen } from '../screens/settings/AdminProductsScreen';
-import { colors, shadows } from '../theme';
-import { CurvedTabBar } from '../components/ui/CurvedTabBar';
-import { useAuthStore } from '../store/auth.store';
+import { TabBar } from './TabBar';
+import { withTabTransition } from './TabScene';
+import { DutyCalculatorRoute } from './DutyCalculatorRoute';
+import { ROUTES } from './routes';
 
+const RootStack = createAppStackNavigator();
 const Tab = createBottomTabNavigator();
 const ProductStack = createAppStackNavigator();
 const SettingsStack = createAppStackNavigator();
+const DashboardStack = createAppStackNavigator();
 
 function SettingsNavigator() {
   return (
-    <SettingsStack.Navigator screenOptions={{ headerShown: false }}>
-      <SettingsStack.Screen name="SettingsMain" component={SettingsScreen} options={{ title: 'Réglages · MargeBar Pro' }} />
-      <SettingsStack.Screen name="AdminProducts" component={AdminProductsScreen} options={{ title: 'Tous les produits · MargeBar Pro' }} />
+    <SettingsStack.Navigator screenOptions={stackScreenOptions}>
+      <SettingsStack.Screen name={ROUTES.settingsMain} component={SettingsScreen} options={{ title: 'Réglages · MargeBar Pro' }} />
+      <SettingsStack.Screen name={ROUTES.adminProducts} component={AdminProductsScreen} options={{ title: 'Tous les produits · MargeBar Pro' }} />
     </SettingsStack.Navigator>
   );
 }
 
 function ProductsNavigator() {
   return (
-    <ProductStack.Navigator screenOptions={{ headerShown: false }}>
-      <ProductStack.Screen name="ProductList" component={ProductListScreen} options={{ title: 'Mes produits · MargeBar Pro' }} />
-      <ProductStack.Screen name="ProductDetail" component={ProductDetailScreen} options={{ title: 'Produit · MargeBar Pro' }} />
-      <ProductStack.Screen name="ProductForm" component={ProductFormScreen} options={{ title: 'Nouveau produit · MargeBar Pro' }} />
-      <ProductStack.Screen name="InvoiceScan" component={InvoiceScanScreen} options={{ title: 'Scanner une facture · MargeBar Pro' }} />
+    <ProductStack.Navigator screenOptions={stackScreenOptions} initialRouteName={ROUTES.productList}>
+      <ProductStack.Screen name={ROUTES.productList} component={ProductListScreen} options={{ title: 'Mes produits · MargeBar Pro' }} />
+      <ProductStack.Screen name={ROUTES.productDetail} component={ProductDetailScreen} options={{ title: 'Produit · MargeBar Pro' }} />
     </ProductStack.Navigator>
   );
 }
 
-function ScanTabButton() {
-  const navigation = useNavigation<any>();
-  const [menuVisible, setMenuVisible] = useState(false);
-  const isAdmin = useAuthStore((s) => s.user?.role === 'admin');
-
-  const handleOption = (screen: string) => {
-    setMenuVisible(false);
-    navigation.navigate('Produits', { screen, params: {} });
-  };
-
-  const handlePress = () => {
-    // Non-admins only have the bottle scan option — skip the menu and go directly.
-    if (!isAdmin) {
-      navigation.navigate('Produits', { screen: 'ProductForm', params: {} });
-      return;
-    }
-    setMenuVisible(true);
-  };
-
+function DashboardNavigator() {
   return (
-    <View style={scanStyles.wrapper}>
-      <TouchableOpacity
-        style={scanStyles.button}
-        activeOpacity={0.8}
-        onPress={handlePress}
-      >
-        <View style={scanStyles.innerCircle}>
-          <Ionicons name="scan" size={32} color={colors.white} />
-        </View>
-      </TouchableOpacity>
-
-      <Modal visible={menuVisible} transparent animationType="fade">
-        <Pressable style={scanStyles.overlay} onPress={() => setMenuVisible(false)}>
-          <View style={scanStyles.menu}>
-            <TouchableOpacity
-              style={scanStyles.menuItem}
-              onPress={() => handleOption('ProductForm')}
-            >
-              <View style={scanStyles.menuIcon}>
-                <Ionicons name="wine-outline" size={22} color={colors.primary} />
-              </View>
-              <View style={scanStyles.menuTextWrap}>
-                <Text style={scanStyles.menuTitle}>Scanner un produit</Text>
-                <Text style={scanStyles.menuDesc}>Photo d'une bouteille</Text>
-              </View>
-            </TouchableOpacity>
-            <View style={scanStyles.menuDivider} />
-            <TouchableOpacity
-              style={scanStyles.menuItem}
-              onPress={() => handleOption('InvoiceScan')}
-            >
-              <View style={scanStyles.menuIcon}>
-                <Ionicons name="receipt-outline" size={22} color={colors.primary} />
-              </View>
-              <View style={scanStyles.menuTextWrap}>
-                <Text style={scanStyles.menuTitle}>Scanner une facture</Text>
-                <Text style={scanStyles.menuDesc}>Importer plusieurs produits</Text>
-              </View>
-            </TouchableOpacity>
-          </View>
-        </Pressable>
-      </Modal>
-    </View>
+    <DashboardStack.Navigator screenOptions={stackScreenOptions} initialRouteName={ROUTES.dashboardMain}>
+      <DashboardStack.Screen name={ROUTES.dashboardMain} component={DashboardScreen} options={{ title: 'Tableau de bord · MargeBar Pro' }} />
+      <DashboardStack.Screen name={ROUTES.dutyCalculator} component={DutyCalculatorRoute} options={{ title: 'Calculateur de droits · MargeBar Pro' }} />
+    </DashboardStack.Navigator>
   );
 }
 
-// Placeholder screen (never rendered, tab press is intercepted)
-function EmptyScreen() {
-  return <View />;
-}
+const SettingsTab = withTabTransition(SettingsNavigator);
+const ProductsTab = withTabTransition(ProductsNavigator);
+const DashboardTab = withTabTransition(DashboardNavigator);
 
-const TAB_ICONS: Record<string, { focused: string; default: string }> = {
-  'Réglages': { focused: 'settings', default: 'settings-outline' },
-  'Produits': { focused: 'grid', default: 'grid-outline' },
-  'Tableau de bord': { focused: 'stats-chart', default: 'stats-chart-outline' },
-};
-
-export function AppNavigator() {
+function MainTabs() {
   return (
     <Tab.Navigator
-      initialRouteName="Tableau de bord"
-      tabBar={(props) => <CurvedTabBar {...props} />}
-      screenOptions={({ route }) => ({
-        headerShown: false,
-        tabBarIcon: ({ focused, color, size }) => {
-          const icons = TAB_ICONS[route.name];
-          if (!icons) return null;
-          const iconName = focused ? icons.focused : icons.default;
-          return <Ionicons name={iconName as any} size={size} color={color} />;
-        },
-        tabBarActiveTintColor: colors.primary,
-        tabBarInactiveTintColor: colors.tabBarInactive,
-      })}
+      initialRouteName={ROUTES.dashboardTab}
+      tabBar={(props) => <TabBar {...props} />}
+      screenOptions={{ headerShown: false }}
+      sceneContainerStyle={{ backgroundColor: 'transparent' }}
     >
       <Tab.Screen
-        name="Réglages"
-        component={SettingsNavigator}
+        name={ROUTES.settingsTab}
+        component={SettingsTab}
         listeners={({ navigation }) => ({
           tabPress: (e) => {
             e.preventDefault();
-            navigation.navigate('Réglages', { screen: 'SettingsMain' });
+            navigation.navigate(ROUTES.settingsTab, { screen: ROUTES.settingsMain });
           },
         })}
       />
       <Tab.Screen
-        name="Produits"
-        component={ProductsNavigator}
+        name={ROUTES.productsTab}
+        component={ProductsTab}
         listeners={({ navigation }) => ({
           tabPress: (e) => {
             e.preventDefault();
-            navigation.navigate('Produits', { screen: 'ProductList' });
+            navigation.navigate(ROUTES.productsTab, { screen: ROUTES.productList });
           },
         })}
       />
       <Tab.Screen
-        name="Scanner"
-        component={EmptyScreen}
-        options={{
-          tabBarLabel: () => null,
-          tabBarButton: () => <ScanTabButton />,
-        }}
+        name={ROUTES.dashboardTab}
+        component={DashboardTab}
+        listeners={({ navigation }) => ({
+          tabPress: (e) => {
+            e.preventDefault();
+            navigation.navigate(ROUTES.dashboardTab, { screen: ROUTES.dashboardMain });
+          },
+        })}
       />
-      <Tab.Screen name="Tableau de bord" component={DashboardScreen} />
     </Tab.Navigator>
   );
 }
 
-const scanStyles = StyleSheet.create({
-  wrapper: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    flex: 1,
-    top: -18,
-  },
-  button: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    backgroundColor: colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-    ...shadows.lg,
-  },
-  innerCircle: {
-    width: 58,
-    height: 58,
-    borderRadius: 29,
-    backgroundColor: colors.secondary,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: 'rgba(255,255,255,0.2)',
-  },
-  overlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    justifyContent: 'flex-end',
-    paddingBottom: 100,
-    paddingHorizontal: 24,
-  },
-  menu: {
-    backgroundColor: colors.white,
-    borderRadius: 28,
-    padding: 8,
-    ...shadows.lg,
-  },
-  menuItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 16,
-    borderRadius: 14,
-  },
-  menuIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    backgroundColor: colors.light,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 14,
-  },
-  menuTextWrap: {
-    flex: 1,
-  },
-  menuTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: colors.text,
-  },
-  menuDesc: {
-    fontSize: 13,
-    color: colors.tabBarInactive,
-    marginTop: 2,
-  },
-  menuDivider: {
-    height: 1,
-    backgroundColor: colors.border,
-    marginHorizontal: 16,
-  },
-});
+export function AppNavigator() {
+  return (
+    <RootStack.Navigator screenOptions={stackScreenOptions}>
+      <RootStack.Screen name={ROUTES.tabs} component={MainTabs} options={{ title: 'MargeBar Pro' }} />
+      <RootStack.Screen name={ROUTES.productForm} component={ProductFormScreen} options={{ title: 'Produit · MargeBar Pro' }} />
+      <RootStack.Screen name={ROUTES.invoiceScan} component={InvoiceScanScreen} options={{ title: 'Scanner une facture · MargeBar Pro' }} />
+    </RootStack.Navigator>
+  );
+}

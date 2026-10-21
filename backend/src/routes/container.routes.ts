@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { authenticate } from '../middleware/auth';
 import * as containerService from '../services/container.service';
+import { sendKnownError } from '../utils/validation';
 
 const router = Router();
 
@@ -33,8 +34,8 @@ router.post('/', async (req: Request, res: Response) => {
     const container = await containerService.createContainer(req.user!.userId, data);
     res.status(201).json(container);
   } catch (err: any) {
-    const status = err.name === 'ZodError' ? 400 : 500;
-    res.status(status).json({ error: err.name === 'ZodError' ? err.message : 'Erreur serveur' });
+    if (sendKnownError(res, err)) return;
+    res.status(500).json({ error: 'Erreur serveur' });
   }
 });
 
@@ -49,8 +50,8 @@ router.put('/:id', async (req: Request, res: Response) => {
     }
     res.json(container);
   } catch (err: any) {
-    const status = err.name === 'ZodError' ? 400 : 500;
-    res.status(status).json({ error: err.name === 'ZodError' ? err.message : 'Erreur serveur' });
+    if (sendKnownError(res, err)) return;
+    res.status(500).json({ error: 'Erreur serveur' });
   }
 });
 
