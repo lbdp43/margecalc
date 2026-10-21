@@ -141,17 +141,20 @@ export function CompositionBar({
   return (
     <View style={style} accessibilityRole="image" accessibilityLabel={a11y}>
       <View style={{ flexDirection: 'row', height, gap }}>
-        {visible.map((s) => (
+        {visible.map((s) => {
+          const amount = s.value;
+          return (
           <View
             key={s.key}
             style={{
-              flex: s.value,
+              flex: amount,
               height,
               borderRadius: height / 2,
               backgroundColor: s.color ?? compositionColor(s.key, surface),
             }}
           />
-        ))}
+          );
+        })}
         {visible.length === 0 ? (
           <View style={{ flex: 1, height, borderRadius: height / 2, backgroundColor: surface === 'emerald' ? 'rgba(255,255,255,0.16)' : palette.surface2 }} />
         ) : null}

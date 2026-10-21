@@ -9,7 +9,7 @@
  * - ink pill, 52 tall, radius 16, e3; icon in em300 / #FF8B78; action in lime.
  * - 3 s, or 5 s with an action (errors 5 s). Swipe down to dismiss.
  * - Sits 12 px above the sticky action bar, else above the floating tab bar.
- * - Never shown on top of an open BottomSheet: queued until the sheet closes.
+ * - Never shown on top of an open BottomSheet or Dialog: queued until it closes.
  */
 import React, { useEffect, useRef, useState } from 'react';
 import { PanResponder, Platform, StyleSheet, Text, View } from 'react-native';
@@ -124,6 +124,17 @@ export function ToastHost() {
     timer.current = setTimeout(() => hide(id), duration);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [current?.id, blocked, shownId]);
+
+  // A sheet or dialog opened while a toast is showing: hide it now and show
+  // it again (full duration) once the overlay closes — never stack overlays.
+  useEffect(() => {
+    if (!blocked || shownId === null) return;
+    if (timer.current) clearTimeout(timer.current);
+    opacity.value = withTiming(0, { duration: 100 });
+    const t = setTimeout(() => setShownId(null), 110);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [blocked]);
 
   useEffect(() => () => {
     if (timer.current) clearTimeout(timer.current);

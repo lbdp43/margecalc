@@ -52,7 +52,7 @@ import {
 import { fontFamily, palette, type } from '../theme';
 import { haptics } from '../theme/haptics';
 import { alert, confirm } from '../utils/alert';
-import { formatCoeff, formatDegree, formatEuro, formatNumber, formatPercent } from '../utils/format';
+import { formatCoeff, formatDegree, formatEuro, formatNumber, formatPercent, formatRate } from '../utils/format';
 
 const PURCHASE_HT = 32.5;
 const DOSES = 14;
@@ -94,14 +94,14 @@ export function Gallery() {
   const objectivePrice = (PURCHASE_HT / DOSES / (1 - 0.65)) * 1.2;
 
   const fiscalRows = [
-    { group: 'Spiritueux & liqueurs', key: 'spiritueux', title: 'Spiritueux', sub: 'Whisky, vodka, gin, cognac, tequila… · 1 932,42 €/hl AP' },
-    { group: 'Spiritueux & liqueurs', key: 'rhum-dom', title: 'Rhum des DOM', sub: 'Martinique, Guadeloupe, Réunion · tarif réduit · 966,21 €/hl AP' },
+    { group: 'Spiritueux & liqueurs', key: 'spiritueux', title: 'Spiritueux', sub: `Whisky, vodka, gin, cognac, tequila… · ${formatRate(1932.42, 'hl AP')}` },
+    { group: 'Spiritueux & liqueurs', key: 'rhum-dom', title: 'Rhum des DOM', sub: `Martinique, Guadeloupe, Réunion · tarif réduit · ${formatRate(966.21, 'hl AP')}` },
     { group: 'Spiritueux & liqueurs', key: 'liqueur', title: 'Liqueur', sub: 'Crèmes de fruits, amaretto, limoncello…' },
-    { group: 'Bières', key: 'biere', title: 'Bière (plus de 2,8 %)', sub: 'IPA, lagers, stouts, blondes, ambrées · 8,12 €/hl/°' },
+    { group: 'Bières', key: 'biere', title: 'Bière (plus de 2,8 %)', sub: `IPA, lagers, stouts, blondes, ambrées · ${formatRate(8.12, 'hl/°')}` },
     { group: 'Bières', key: 'biere-legere', title: 'Bière légère (0,5 % à 2,8 %)', sub: 'Panachés, radlers, bières sans alcool' },
-    { group: 'Vins, cidres & produits intermédiaires', key: 'vin', title: 'Vin tranquille', sub: 'Rouges, blancs, rosés non effervescents · 4,08 €/hl' },
-    { group: 'Vins, cidres & produits intermédiaires', key: 'cidre', title: 'Cidre et poiré', sub: 'Cidres bruts, doux, poirés · 1,48 €/hl' },
-    { group: 'Vins, cidres & produits intermédiaires', key: 'pi', title: 'Produits intermédiaires', sub: 'Porto, Lillet, Martini, Pineau · 498,98 €/hl' },
+    { group: 'Vins, cidres & produits intermédiaires', key: 'vin', title: 'Vin tranquille', sub: `Rouges, blancs, rosés non effervescents · ${formatRate(4.08, 'hl')}` },
+    { group: 'Vins, cidres & produits intermédiaires', key: 'cidre', title: 'Cidre et poiré', sub: `Cidres bruts, doux, poirés · ${formatRate(1.48, 'hl')}` },
+    { group: 'Vins, cidres & produits intermédiaires', key: 'pi', title: 'Produits intermédiaires', sub: `Porto, Lillet, Martini, Pineau · ${formatRate(498.98, 'hl')}` },
   ].filter((r) => !sheetQuery || `${r.title} ${r.sub}`.toLowerCase().includes(sheetQuery.toLowerCase()));
 
   const save = () => {
@@ -544,6 +544,7 @@ export function Gallery() {
               title={r.title}
               subtitle={r.sub}
               right="radio"
+              divider={fiscalRows[i + 1]?.group === r.group && fiscal !== r.key && fiscal !== fiscalRows[i + 1]?.key}
               selected={fiscal === r.key}
               onPress={() => {
                 setFiscal(r.key);

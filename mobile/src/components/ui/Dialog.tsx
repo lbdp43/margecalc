@@ -22,6 +22,7 @@ import { elevation, motion, palette, type } from '../../theme';
 import { haptics } from '../../theme/haptics';
 import { Button } from './Button';
 import { IconName } from './Icon';
+import { useChromeStore } from './chrome';
 
 export type DialogActionStyle = 'primary' | 'secondary' | 'cancel' | 'destructive';
 
@@ -114,6 +115,16 @@ export function DialogHost() {
       listeners.delete(setItems);
     };
   }, []);
+
+  const overlayOpened = useChromeStore((s) => s.sheetOpened);
+  const overlayClosed = useChromeStore((s) => s.sheetClosed);
+  const isOpen = !!current;
+  // Toasts wait while a dialog is open.
+  useEffect(() => {
+    if (!isOpen) return;
+    overlayOpened();
+    return () => overlayClosed();
+  }, [isOpen, overlayOpened, overlayClosed]);
 
   useEffect(() => {
     if (!current) return;

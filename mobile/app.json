@@ -8,7 +8,7 @@
     "splash": {
       "image": "./assets/splash.png",
       "resizeMode": "contain",
-      "backgroundColor": "#E8EFDD"
+      "backgroundColor": "#F3F6F4"
     },
     "ios": {
       "supportsTablet": false,
@@ -18,12 +18,30 @@
       "package": "com.margebar.app",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#E8EFDD"
+        "backgroundColor": "#F3F6F4"
       }
     },
     "web": {
       "bundler": "metro",
-      "favicon": "./assets/favicon.png"
-    }
+      "favicon": "./assets/favicon.png",
+      "backgroundColor": "#F3F6F4",
+      "themeColor": "#F3F6F4",
+      "name": "MargeBar Pro",
+      "shortName": "MargeBar",
+      "lang": "fr"
+    },
+    "backgroundColor": "#F3F6F4",
+    "primaryColor": "#087553",
+    "userInterfaceStyle": "light",
+    "plugins": [
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "MargeBar Pro accède à vos photos pour importer la photo d’une bouteille ou d’une facture.",
+          "cameraPermission": "MargeBar Pro utilise l’appareil photo pour scanner une bouteille ou une facture.",
+          "microphonePermission": false
+        }
+      ]
+    ]
   }
 }
