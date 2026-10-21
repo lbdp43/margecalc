@@ -41,12 +41,14 @@ export interface EmptyStateProps {
   secondary?: EmptyAction | EmptyAction[];
   /** Faint skeleton rows scrolling upward behind (paused under reduce motion). */
   marquee?: boolean;
+  /** Colour behind the empty state (for the marquee fades). Default bg. */
+  surface?: 'bg' | 'surface';
   style?: StyleProp<ViewStyle>;
 }
 
 const ROW_H = 100; // card 90 + gap 10
 
-function Marquee() {
+function Marquee({ surface }: { surface: string }) {
   const reduce = useReducedMotion();
   const y = useSharedValue(0);
   useEffect(() => {
@@ -64,15 +66,20 @@ function Marquee() {
         ))}
       </Animated.View>
       <LinearGradient
-        colors={[palette.bg, 'rgba(243,246,244,0)', 'rgba(243,246,244,0)', palette.bg]}
-        locations={[0, 0.25, 0.6, 1]}
+        colors={[surface, withAlpha(surface, 0), withAlpha(surface, 0.7), surface]}
+        locations={[0, 0.16, 0.36, 0.56]}
         style={StyleSheet.absoluteFill}
       />
     </View>
   );
 }
 
-export function EmptyState({ variant = 'default', title, text, query, icon, primary, secondary, marquee, style }: EmptyStateProps) {
+function withAlpha(hex: string, a: number) {
+  const n = parseInt(hex.slice(1), 16);
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
+}
+
+export function EmptyState({ variant = 'default', title, text, query, icon, primary, secondary, marquee, surface = 'bg', style }: EmptyStateProps) {
   const [h, setH] = useState(0);
   const resolvedTitle =
     title ??
@@ -84,7 +91,7 @@ export function EmptyState({ variant = 'default', title, text, query, icon, prim
   const resolvedText =
     text ??
     (variant === 'noResults'
-      ? 'Vérifiez l’orthographe ou essayez un autre mot.'
+      ? 'Essayez un autre mot ou vérifiez l’orthographe.'
       : variant === 'offline'
         ? 'Vos données s’afficheront dès le retour du réseau.'
         : 'Scannez une bouteille ou une facture : vos marges apparaîtront ici.');
@@ -93,7 +100,7 @@ export function EmptyState({ variant = 'default', title, text, query, icon, prim
 
   return (
     <View style={[styles.wrap, style]} onLayout={(e: LayoutChangeEvent) => setH(e.nativeEvent.layout.height)}>
-      {marquee && h > 0 ? <Marquee /> : null}
+      {marquee && h > 0 ? <Marquee surface={surface === 'surface' ? palette.surface : palette.bg} /> : null}
       <FadeIn style={styles.inner}>
         <View style={styles.circle}>
           {resolvedIcon ? <Ionicons name={resolvedIcon} size={30} color={palette.em700} /> : <BrandMark variant="tonal" size={44} />}

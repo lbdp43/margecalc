@@ -178,7 +178,7 @@ export function Gallery() {
           />
         </HeroHeader>
       </View>
-      <View style={[styles.row, { gap: 12, marginTop: -16 }]}>
+      <View style={{ flexDirection: 'row', gap: 12, marginTop: -16 }}>
         <StatTile label="Produits" value={24} unit="suivis" icon="cube-outline" style={{ flex: 1 }} />
         <StatTile label="Meilleur produit" icon="trophy-outline" iconTone="trophy" style={{ flex: 1 }}>
           <View style={{ gap: 4 }}>
@@ -385,7 +385,9 @@ export function Gallery() {
               <Text style={[type.headline, { color: palette.ink }]}>Calculer les droits d’alcool</Text>
               <Text style={[type.footnote, { color: palette.text3 }]}>13 catégories · Tarifs 2026</Text>
             </View>
-            <IconButton icon="chevron-forward" variant="tonal" accessibilityLabel="Ouvrir" />
+            <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: palette.em50, alignItems: 'center', justifyContent: 'center' }}>
+              <Text style={[type.title3, { color: palette.em700 }]}>›</Text>
+            </View>
           </View>
         </Card>
         <Card variant="flat">
@@ -450,6 +452,7 @@ export function Gallery() {
       <Section title="États vides">
         <Card>
           <EmptyState
+            surface="surface"
             marquee
             primary={{ label: 'Scanner une bouteille', icon: 'scan', onPress: () => {} }}
             secondary={[

@@ -146,6 +146,8 @@ export function ChipRow({
   const scrollToActive = (animated: boolean) => {
     const pos = positions.current[activeIndex];
     if (!pos || !ref.current) return;
+    // Initial: only when the chip would sit under the right fade; then x − 128.
+    if (!animated && pos.x + pos.width <= viewport.current - 44) return;
     const target = animated ? pos.x - (viewport.current - pos.width) / 2 : pos.x - 128;
     ref.current.scrollTo({ x: Math.max(0, target), animated });
   };

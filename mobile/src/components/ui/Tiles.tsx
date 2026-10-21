@@ -190,7 +190,7 @@ export function ResultGrid({ children, style, columns = 3 }: { children: React.R
         <View key={i} style={{ flexDirection: 'row', gap: 8 }}>
           {r.map((c, j) => (
             <View key={j} style={{ flex: 1, minWidth: 0 }}>
-              {c}
+              {React.isValidElement(c) ? React.cloneElement(c as React.ReactElement<any>, { style: [{ flex: 1 }, (c as any).props.style] }) : c}
             </View>
           ))}
           {r.length < columns
@@ -228,7 +228,7 @@ const styles = StyleSheet.create({
     borderColor: palette.line,
     paddingHorizontal: 12,
     paddingVertical: 10,
-    justifyContent: 'center',
+    justifyContent: 'flex-start',
     gap: 2,
   },
   resultLabel: { ...type.footnoteStrong, fontSize: 12, lineHeight: 16, color: palette.text3 },

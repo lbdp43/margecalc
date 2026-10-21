@@ -109,17 +109,18 @@ export function NumberInput({
     (dir: 1 | -1) => {
       stopRepeat();
       stepBy(dir);
+      // 400 ms delay, then every 80 ms; twice as fast once held for 1 s.
       timers.current.delay = setTimeout(() => {
         timers.current.repeat = setInterval(() => {
           if (!stepBy(dir)) stopRepeat();
         }, 80);
-        timers.current.fast = setTimeout(() => {
-          if (timers.current.repeat) clearInterval(timers.current.repeat);
-          timers.current.repeat = setInterval(() => {
-            if (!stepBy(dir)) stopRepeat();
-          }, 40);
-        }, 1000);
       }, 400);
+      timers.current.fast = setTimeout(() => {
+        if (timers.current.repeat) clearInterval(timers.current.repeat);
+        timers.current.repeat = setInterval(() => {
+          if (!stepBy(dir)) stopRepeat();
+        }, 40);
+      }, 1000);
     },
     [stepBy, stopRepeat],
   );
