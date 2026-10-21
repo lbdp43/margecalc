@@ -9,7 +9,6 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useOfflineQuery } from '../../hooks/useOfflineQuery';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
-import * as ImageManipulator from 'expo-image-manipulator';
 import { ServingTypeIcon } from '../../components/ui/ServingTypeIcon';
 import {
   MarginMode, TVA_RATES, Category, CONTAINER_PRESETS,
@@ -27,7 +26,6 @@ import { useRatesStore } from '../../store/rates.store';
 import * as productService from '../../services/product.service';
 import * as categoryService from '../../services/category.service';
 import * as servingService from '../../services/serving.service';
-import * as scanService from '../../services/scan.service';
 import { YinYangSpinner } from '../../components/ui/YinYangSpinner';
 import { colors, spacing, borderRadius, typography } from '../../theme';
 
@@ -52,7 +50,6 @@ export function ProductFormScreen({ route, navigation }: Props) {
 
   // Scan state
   const [imageUri, setImageUri] = useState<string | null>(null);
-  const [scanning, setScanning] = useState(false);
 
   // Product fields
   const [name, setName] = useState('');
@@ -144,14 +141,14 @@ export function ProductFormScreen({ route, navigation }: Props) {
     }
   }, [categories, categoryId]);
 
-  // === SCAN ===
+  // === PHOTO ===
   const pickImage = async (useCamera: boolean) => {
     const permission = useCamera
       ? await ImagePicker.requestCameraPermissionsAsync()
       : await ImagePicker.requestMediaLibraryPermissionsAsync();
 
     if (!permission.granted) {
-      alert('Permission requise', 'Autorisez l\'accès à la caméra/galerie');
+      alert('Permission requise', 'Autorisez l\'acces a la camera/galerie');
       return;
     }
 
@@ -165,39 +162,7 @@ export function ProductFormScreen({ route, navigation }: Props) {
 
     const asset = picked.assets[0];
     setImageUri(asset.uri);
-    setScanning(true);
-
-    try {
-      const compressed = await ImageManipulator.manipulateAsync(
-        asset.uri,
-        [{ resize: { width: 1024 } }],
-        { compress: 0.6, format: ImageManipulator.SaveFormat.JPEG, base64: true }
-      );
-
-      if (!compressed.base64) {
-        alert('Erreur', 'Impossible de lire l\'image');
-        setScanning(false);
-        return;
-      }
-
-      const result = await scanService.scanBottle(compressed.base64);
-
-      // Auto-fill form from scan
-      if (result.name) setName(result.name);
-      if (result.category) {
-        const matched = categories.find((c) => c.slug === result.category);
-        if (matched) setCategoryId(matched.id);
-      }
-      if (result.containerVolumeCl) setContainerVolume(String(result.containerVolumeCl));
-      if (result.estimatedPriceHT) setPurchasePrice(String(result.estimatedPriceHT));
-
-      // Go to form
-      setStep('form');
-    } catch (err: any) {
-      alert('Erreur de scan', err.response?.data?.error || err.message || 'Impossible d\'analyser');
-    } finally {
-      setScanning(false);
-    }
+    setStep('form');
   };
 
   // === FORM LOGIC ===
@@ -384,37 +349,25 @@ export function ProductFormScreen({ route, navigation }: Props) {
           </Card>
         )}
 
-        {scanning ? (
-          <View style={styles.loadingContainer}>
-            <YinYangSpinner
-              size={100}
-              message="Analyse en cours..."
-              submessage="Reconnaissance du produit..."
-            />
-          </View>
-        ) : (
-          <>
-            <Text style={styles.scanSubtitle}>
-              Prenez en photo la bouteille ou la facture
-            </Text>
+        <Text style={styles.scanSubtitle}>
+          Prenez en photo le produit pour l'ajouter a votre fiche
+        </Text>
 
-            <View style={styles.scanButtons}>
-              <TouchableOpacity style={styles.scanBtn} onPress={() => pickImage(true)}>
-                <Ionicons name="camera-outline" size={36} color={colors.white} />
-                <Text style={styles.scanBtnText}>Prendre une photo</Text>
-              </TouchableOpacity>
+        <View style={styles.scanButtons}>
+          <TouchableOpacity style={styles.scanBtn} onPress={() => pickImage(true)}>
+            <Ionicons name="camera-outline" size={36} color={colors.white} />
+            <Text style={styles.scanBtnText}>Prendre une photo</Text>
+          </TouchableOpacity>
 
-              <TouchableOpacity style={styles.scanBtn} onPress={() => pickImage(false)}>
-                <Ionicons name="images-outline" size={36} color={colors.white} />
-                <Text style={styles.scanBtnText}>Galerie</Text>
-              </TouchableOpacity>
-            </View>
+          <TouchableOpacity style={styles.scanBtn} onPress={() => pickImage(false)}>
+            <Ionicons name="images-outline" size={36} color={colors.white} />
+            <Text style={styles.scanBtnText}>Galerie</Text>
+          </TouchableOpacity>
+        </View>
 
-            <TouchableOpacity style={styles.manualBtn} onPress={() => setStep('form')}>
-              <Text style={styles.manualBtnText}>Remplir manuellement</Text>
-            </TouchableOpacity>
-          </>
-        )}
+        <TouchableOpacity style={styles.manualBtn} onPress={() => setStep('form')}>
+          <Text style={styles.manualBtnText}>Remplir manuellement</Text>
+        </TouchableOpacity>
       </ScreenWrapper>
     );
   }

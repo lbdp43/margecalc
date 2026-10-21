@@ -35,7 +35,7 @@ export function LandingScreen({ navigation }: Props) {
           { icon: 'calculator-outline', title: 'Calcul des droits d\'accise', desc: 'Calculez instantanement le prix HT avec droits pour les 13 categories fiscales francaises (vins, bieres, spiritueux, cidres...)' },
           { icon: 'receipt-outline', title: 'Prix de revient precis', desc: 'Integrez les droits d\'accise, la cotisation securite sociale et la TVA pour connaitre votre vrai cout d\'achat' },
           { icon: 'trending-up-outline', title: 'Calcul de marges', desc: 'Definissez vos prix de vente par type de service (shot, demi, pinte, bouteille) et visualisez vos marges en temps reel' },
-          { icon: 'scan-outline', title: 'Scan de produits', desc: 'Photographiez une bouteille ou une facture fournisseur — l\'app reconnait le produit et pre-remplit les informations' },
+          { icon: 'camera-outline', title: 'Photo produit', desc: 'Prenez en photo vos bouteilles pour les ajouter a votre catalogue avec une image' },
           { icon: 'bar-chart-outline', title: 'Tableau de bord', desc: 'Suivez la rentabilite de vos produits, identifiez les meilleurs et les moins performants, comparez par categorie' },
           { icon: 'cloud-done-outline', title: 'Donnees sauvegardees', desc: 'Vos produits, recettes et calculs sont synchronises sur le cloud. Accessible depuis n\'importe quel appareil' },
         ].map((f, i) => (
@@ -51,39 +51,15 @@ export function LandingScreen({ navigation }: Props) {
         ))}
       </View>
 
-      {/* Support */}
+      {/* Free app message */}
       <View style={styles.supportCard}>
         <View style={styles.supportHeader}>
-          <Ionicons name="heart-outline" size={22} color={colors.primary} />
-          <Text style={styles.supportTitle}>Soutenez MargeBar Pro</Text>
+          <Ionicons name="gift-outline" size={22} color={colors.primary} />
+          <Text style={styles.supportTitle}>100% gratuit</Text>
         </View>
         <Text style={styles.supportDesc}>
-          Votre abonnement permet de maintenir l'application, financer les serveurs et developper de nouvelles fonctionnalites.
+          MargeBar Pro est entierement gratuit. Creez un compte pour sauvegarder vos produits, calculer vos marges et acceder a toutes les fonctionnalites.
         </Text>
-        <View style={styles.featuresRow}>
-          {[
-            { icon: 'save-outline', text: 'Sauvegarde de vos donnees' },
-            { icon: 'scan-outline', text: 'Scan produits & factures' },
-            { icon: 'trending-up-outline', text: 'Tableau de bord complet' },
-          ].map((f, i) => (
-            <View key={i} style={styles.featureMini}>
-              <Ionicons name={f.icon as any} size={16} color={colors.accent} />
-              <Text style={styles.featureMiniText}>{f.text}</Text>
-            </View>
-          ))}
-        </View>
-        <View style={styles.plansRow}>
-          <View style={styles.planMini}>
-            <Text style={styles.planMiniPrice}>2,50 €<Text style={styles.planMiniPeriod}>/mois</Text></Text>
-          </View>
-          <Text style={styles.planOr}>ou</Text>
-          <View style={styles.planMini}>
-            <Text style={styles.planMiniPrice}>25 €<Text style={styles.planMiniPeriod}>/an</Text></Text>
-            <View style={styles.planSaveBadge}>
-              <Text style={styles.planSaveText}>-17%</Text>
-            </View>
-          </View>
-        </View>
       </View>
 
       {/* Auth buttons */}
@@ -92,8 +68,8 @@ export function LandingScreen({ navigation }: Props) {
         onPress={() => navigation.navigate('Register')}
         activeOpacity={0.8}
       >
-        <Ionicons name="heart" size={20} color={colors.white} style={{ marginRight: spacing.sm }} />
-        <Text style={styles.primaryBtnText}>Creer un compte et soutenir</Text>
+        <Ionicons name="person-add-outline" size={20} color={colors.white} style={{ marginRight: spacing.sm }} />
+        <Text style={styles.primaryBtnText}>Creer un compte gratuit</Text>
       </TouchableOpacity>
 
       <TouchableOpacity
@@ -106,11 +82,7 @@ export function LandingScreen({ navigation }: Props) {
       </TouchableOpacity>
 
       <Text style={styles.skipWarningText}>
-        Le calculateur ci-dessus est gratuit et ne necessite pas de compte.
-      </Text>
-
-      <Text style={styles.legal}>
-        Paiement securise par Stripe. Annulable a tout moment.
+        Le calculateur ci-dessus est accessible sans compte.
       </Text>
     </View>
   );
