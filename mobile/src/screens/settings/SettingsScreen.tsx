@@ -54,6 +54,12 @@ export function SettingsScreen() {
   const [editLienRef, setEditLienRef] = useState('');
   const [savingSystemParams, setSavingSystemParams] = useState(false);
 
+  // Promo codes (admin)
+  const [promoCodes, setPromoCodes] = useState<any[]>([]);
+  const [newPromoCode, setNewPromoCode] = useState('');
+  const [newPromoDays, setNewPromoDays] = useState('30');
+  const [newPromoMaxUses, setNewPromoMaxUses] = useState('1');
+
   // Categories
   const [categories, setCategories] = useState<Category[]>([]);
   const [newCategoryName, setNewCategoryName] = useState('');
@@ -79,6 +85,7 @@ export function SettingsScreen() {
       loadCategories();
       loadContainers();
       loadSubscription();
+      if (isAdmin) loadPromoCodes();
       // Load system params and rates, init admin edit fields
       useSystemParamsStore.getState().loadParams(true).then(() => {
         if (!mounted) return;
@@ -347,6 +354,24 @@ export function SettingsScreen() {
     } finally {
       setSavingSystemParams(false);
     }
+  };
+
+  const loadPromoCodes = async () => {
+    try { const res = await api.get('/promo'); setPromoCodes(res.data); } catch {}
+  };
+
+  const handleCreatePromo = async () => {
+    if (!newPromoCode.trim()) return;
+    try {
+      await api.post('/promo', { code: newPromoCode.trim(), durationDays: parseInt(newPromoDays) || 30, maxUses: parseInt(newPromoMaxUses) || 1 });
+      setNewPromoCode(''); setNewPromoDays('30'); setNewPromoMaxUses('1');
+      loadPromoCodes();
+      alert('Succes', 'Code promo cree');
+    } catch (err: any) { alert('Erreur', err.response?.data?.error || 'Impossible de creer le code'); }
+  };
+
+  const handleDeletePromo = async (id: string) => {
+    try { await api.delete(`/promo/${id}`); loadPromoCodes(); } catch {}
   };
 
   const handleLogout = () => {
@@ -909,6 +934,47 @@ export function SettingsScreen() {
                 <Ionicons name="refresh-outline" size={18} color={colors.textLight} style={{ marginRight: spacing.xs }} />
                 <Text style={styles.adminSaveBtnText}>Reinitialiser tarifs 2026</Text>
               </TouchableOpacity>
+            </View>
+          </View>
+          {/* Codes promo */}
+          <View style={styles.sectionCard}>
+            <View style={styles.sectionHeader}>
+              <View style={[styles.sectionAccent, { backgroundColor: colors.marginOrange }]} />
+              <Text style={styles.sectionTitle}>Codes promo</Text>
+            </View>
+            <View style={styles.sectionBody}>
+              <Text style={styles.sectionDesc}>Creez des codes d'acces gratuit pour vos clients.</Text>
+              <TextInput style={[styles.thresholdInput, { marginBottom: spacing.sm }]} value={newPromoCode} onChangeText={setNewPromoCode} placeholder="Code (ex: BRASSERIE2015)" placeholderTextColor={colors.textSecondary} autoCapitalize="characters" />
+              <View style={{ flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.sm }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.systemParamDesc}>Duree (jours)</Text>
+                  <TextInput style={styles.thresholdInput} value={newPromoDays} onChangeText={setNewPromoDays} placeholder="30" keyboardType="numeric" placeholderTextColor={colors.textSecondary} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.systemParamDesc}>Max utilisations</Text>
+                  <TextInput style={styles.thresholdInput} value={newPromoMaxUses} onChangeText={setNewPromoMaxUses} placeholder="1" keyboardType="numeric" placeholderTextColor={colors.textSecondary} />
+                </View>
+              </View>
+              <TouchableOpacity style={styles.adminSaveBtn} onPress={handleCreatePromo} activeOpacity={0.8}>
+                <Ionicons name="add-circle-outline" size={18} color={colors.textLight} style={{ marginRight: spacing.xs }} />
+                <Text style={styles.adminSaveBtnText}>Creer le code</Text>
+              </TouchableOpacity>
+              {promoCodes.length > 0 && (
+                <View style={{ marginTop: spacing.md }}>
+                  <Text style={styles.subLabel}>Codes existants</Text>
+                  {promoCodes.map((p: any) => (
+                    <View key={p.id} style={[styles.systemParamRow, { justifyContent: 'space-between' }]}>
+                      <View>
+                        <Text style={styles.systemParamLabel}>{p.code}</Text>
+                        <Text style={styles.systemParamDesc}>{p.durationDays}j | {p.currentUses}/{p.maxUses} utilise(s)</Text>
+                      </View>
+                      <TouchableOpacity onPress={() => handleDeletePromo(p.id)}>
+                        <Ionicons name="trash-outline" size={18} color={colors.marginRed} />
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                </View>
+              )}
             </View>
           </View>
         </>

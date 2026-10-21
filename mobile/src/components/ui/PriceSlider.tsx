@@ -89,6 +89,7 @@ export function PriceSlider({
         onResponderGrant={measureAndUpdate}
         onResponderMove={(e) => computeValue(e.nativeEvent.pageX)}
       >
+        <View style={styles.trackBg} />
         <View style={[styles.trackFill, { width: thumbX, backgroundColor: accentColor }]} />
         <View style={[styles.thumb, { left: thumbX - 12, borderColor: accentColor }]} />
       </View>
@@ -117,6 +118,14 @@ const styles = StyleSheet.create({
     height: 32,
     justifyContent: 'center',
     cursor: 'pointer' as any,
+  },
+  trackBg: {
+    height: 6,
+    borderRadius: 3,
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    backgroundColor: colors.border,
   },
   trackFill: {
     height: 6,

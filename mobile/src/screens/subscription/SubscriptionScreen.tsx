@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Linking, Platform } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Linking, Platform, TextInput } from 'react-native';
 import { alert, confirm } from '../../utils/alert';
 import { Ionicons } from '@expo/vector-icons';
 import { ScreenWrapper } from '../../components/ui/ScreenWrapper';
 import { DroitsCalculator } from '../../components/ui/DroitsCalculator';
 import { useAuthStore } from '../../store/auth.store';
+import { api } from '../../services/api';
 import * as subscriptionService from '../../services/subscription.service';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 
@@ -15,9 +16,25 @@ interface Props {
 export function SubscriptionScreen({ onDismiss }: Props) {
   const [selectedPlan, setSelectedPlan] = useState<'monthly' | 'yearly'>('monthly');
   const [loading, setLoading] = useState(false);
+  const [promoCode, setPromoCode] = useState('');
+  const [promoLoading, setPromoLoading] = useState(false);
   const user = useAuthStore((s) => s.user);
   const setAuth = useAuthStore((s) => s.setAuth);
   const token = useAuthStore((s) => s.token);
+
+  const handleRedeemPromo = async () => {
+    if (!promoCode.trim()) return;
+    setPromoLoading(true);
+    try {
+      const res = await api.post('/promo/redeem', { code: promoCode.trim() });
+      if (user && token) {
+        setAuth(token, { ...user, subscriptionStatus: 'active', subscriptionPlan: 'promo', subscriptionEndDate: res.data.subscriptionEndDate });
+      }
+      alert('Code active !', res.data.message);
+    } catch (err: any) {
+      alert('Erreur', err.response?.data?.error || 'Code invalide');
+    } finally { setPromoLoading(false); }
+  };
 
   const handleSubscribe = async () => {
     setLoading(true);
@@ -125,6 +142,29 @@ export function SubscriptionScreen({ onDismiss }: Props) {
         </Text>
       </TouchableOpacity>
 
+      {/* Promo code */}
+      <View style={styles.promoCard}>
+        <Text style={styles.promoTitle}>Vous avez un code ?</Text>
+        <View style={styles.promoRow}>
+          <TextInput
+            style={styles.promoInput}
+            value={promoCode}
+            onChangeText={setPromoCode}
+            placeholder="Ex : BRASSERIE2015"
+            placeholderTextColor={colors.tabBarInactive}
+            autoCapitalize="characters"
+          />
+          <TouchableOpacity
+            style={[styles.promoBtn, (!promoCode.trim() || promoLoading) && { opacity: 0.5 }]}
+            onPress={handleRedeemPromo}
+            disabled={!promoCode.trim() || promoLoading}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.promoBtnText}>{promoLoading ? '...' : 'Activer'}</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
       <TouchableOpacity
         style={styles.skipBtn}
         onPress={handleSkip}
@@ -172,6 +212,12 @@ const styles = StyleSheet.create({
   subscribeBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: colors.primary, borderRadius: borderRadius.md, paddingVertical: spacing.md, ...shadows.md },
   subscribeBtnDisabled: { opacity: 0.7 },
   subscribeBtnText: { ...typography.button, color: colors.white },
+  promoCard: { backgroundColor: colors.surface, borderRadius: borderRadius.md, padding: spacing.md, marginTop: spacing.lg },
+  promoTitle: { ...typography.bodySmall, fontWeight: '700', color: colors.text, marginBottom: spacing.sm },
+  promoRow: { flexDirection: 'row', gap: spacing.sm },
+  promoInput: { flex: 1, borderWidth: 1, borderColor: colors.border, borderRadius: borderRadius.md, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, ...typography.body, color: colors.text, backgroundColor: colors.cardBackground, fontWeight: '700', letterSpacing: 1 },
+  promoBtn: { backgroundColor: colors.accent, borderRadius: borderRadius.md, paddingHorizontal: spacing.lg, justifyContent: 'center' },
+  promoBtnText: { ...typography.bodySmall, fontWeight: '700', color: colors.textLight },
   skipBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.border, borderRadius: borderRadius.md, paddingVertical: spacing.md - 4, marginTop: spacing.sm, backgroundColor: colors.cardBackground },
   skipBtnText: { ...typography.bodySmall, fontWeight: '600', color: colors.textSecondary },
   skipWarningText: { ...typography.caption, color: colors.textSecondary, textAlign: 'center', marginTop: spacing.sm, lineHeight: 17, paddingHorizontal: spacing.md },

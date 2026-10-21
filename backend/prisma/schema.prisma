@@ -54,6 +54,16 @@ model Rate {
   updatedAt       DateTime @updatedAt
 }
 
+model PromoCode {
+  id             String    @id @default(uuid())
+  code           String    @unique
+  durationDays   Int       @default(30)
+  maxUses        Int       @default(1)
+  currentUses    Int       @default(0)
+  expiresAt      DateTime?
+  createdAt      DateTime  @default(now())
+}
+
 model CustomContainer {
   id        String   @id @default(uuid())
   userId    String

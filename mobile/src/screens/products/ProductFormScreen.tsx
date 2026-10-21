@@ -121,6 +121,13 @@ export function ProductFormScreen({ route, navigation }: Props) {
     }
   }, [existingServings]);
 
+  // Auto-select first category when categories load (if not editing and not set)
+  useEffect(() => {
+    if (!isEditing && !categoryId && categories.length > 0) {
+      setCategoryId(categories[0].id);
+    }
+  }, [categories, isEditing, categoryId]);
+
   // Pre-fill from incoming scan data (from ScanScreen or draft)
   useEffect(() => {
     if (incomingScanData) {
@@ -337,6 +344,14 @@ export function ProductFormScreen({ route, navigation }: Props) {
   const handleSave = () => {
     if (!name || !purchasePrice || !containerVolume) {
       alert('Erreur', 'Remplissez le nom, le prix et le volume');
+      return;
+    }
+    if (!categoryId) {
+      alert('Erreur', 'Selectionnez une categorie');
+      return;
+    }
+    if (enabledServings.size === 0) {
+      alert('Erreur', 'Selectionnez au moins un type de service');
       return;
     }
     saveMutation.mutate();
