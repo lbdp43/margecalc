@@ -15,7 +15,8 @@ import * as categoryService from '../../services/category.service';
 import * as draftService from '../../services/draft.service';
 import { ScanDraft } from '../../services/draft.service';
 import { YinYangSpinner } from '../../components/ui/YinYangSpinner';
-import { colors, spacing, borderRadius, typography } from '../../theme';
+import { colors, spacing, borderRadius, typography, fonts } from '../../theme';
+import { Display, Eyebrow, Script, Scribble } from '../../components/ui/atelier';
 
 type Props = NativeStackScreenProps<any, 'Scan'>;
 
@@ -153,9 +154,14 @@ export function ScanScreen({ navigation }: Props) {
 
   return (
     <ScreenWrapper>
-      <Text style={styles.title}>Scanner un produit</Text>
+      <View style={{ marginBottom: spacing.md }}>
+        <Eyebrow color={colors.textMuted}>On vous écoute</Eyebrow>
+        <Display size={30} style={{ marginTop: spacing.xs }}>Scanner un produit</Display>
+        <Scribble width={50} color={colors.primary} style={{ marginTop: spacing.xs }} />
+      </View>
       <Text style={styles.subtitle}>
-        Prenez en photo une bouteille ou une facture pour remplir automatiquement les informations
+        Photographiez une bouteille ou une facture —{' '}
+        <Script size={16} color={colors.primary}>on s'occupe du reste.</Script>
       </Text>
 
       <View style={styles.buttonRow}>

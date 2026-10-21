@@ -1,14 +1,4 @@
-import Tesseract from 'tesseract.js';
 import { CONTAINER_PRESETS } from '@margebar/shared';
-
-export interface ScanResult {
-  name: string;
-  category: string;
-  containerVolumeCl: number | null;
-  estimatedPriceHT: number | null;
-  confidence: number;
-  raw: string;
-}
 
 export interface InvoiceProduct {
   name: string;
@@ -26,158 +16,251 @@ export interface InvoiceScanResult {
   raw: string;
 }
 
-// Category keywords for auto-detection
-const CATEGORY_KEYWORDS: Record<string, string[]> = {
-  spiritueux: ['whisky', 'whiskey', 'vodka', 'gin', 'rhum', 'rum', 'cognac', 'armagnac', 'tequila', 'mezcal', 'brandy', 'eau de vie', 'absinthe', 'pastis', 'ricard', 'bourbon', 'scotch'],
-  vins: ['vin', 'wine', 'bordeaux', 'bourgogne', 'champagne', 'chablis', 'merlot', 'cabernet', 'pinot', 'chardonnay', 'sauvignon', 'rose', 'rouge', 'blanc', 'cremant', 'prosecco', 'cava', 'cotes du', 'chateau', 'domaine'],
-  bieres: ['biere', 'beer', 'ipa', 'lager', 'stout', 'ale', 'blonde', 'ambree', 'blanche', 'pilsner', 'porter', 'pils', 'kronenbourg', 'heineken', 'leffe', 'hoegaarden', 'desperados'],
-  softs: ['coca', 'pepsi', 'orangina', 'schweppes', 'perrier', 'evian', 'vittel', 'badoit', 'jus', 'sirop', 'limonade', 'tonic', 'soda', 'eau minerale', 'red bull', 'sprite', 'fanta'],
-  ingredients_cocktails: ['triple sec', 'curacao', 'grenadine', 'angostura', 'bitter', 'vermouth', 'cointreau', 'grand marnier', 'amaretto', 'bailey', 'kahlua', 'malibu', 'limoncello'],
-};
-
-function detectCategory(text: string): string {
-  const lower = text.toLowerCase();
-  let best = 'spiritueux';
-  let bestScore = 0;
-  for (const [cat, keywords] of Object.entries(CATEGORY_KEYWORDS)) {
-    const score = keywords.filter(k => lower.includes(k)).length;
-    if (score > bestScore) { bestScore = score; best = cat; }
-  }
-  return best;
-}
-
-// Extract volume from OCR text (e.g. "70cl", "75 cl", "1L", "700ml")
-function extractVolume(text: string): number | null {
-  const clMatch = text.match(/(\d+(?:[.,]\d+)?)\s*cl\b/i);
-  if (clMatch) return parseFloat(clMatch[1].replace(',', '.'));
-  const mlMatch = text.match(/(\d+)\s*ml\b/i);
-  if (mlMatch) return parseFloat(mlMatch[1]) / 10;
-  const lMatch = text.match(/(\d+(?:[.,]\d+)?)\s*(?:l|litre|litres)\b/i);
-  if (lMatch) return parseFloat(lMatch[1].replace(',', '.')) * 100;
-  return null;
-}
-
-// Extract alcohol degree (e.g. "40%", "40% vol", "12,5° vol")
-function extractDegree(text: string): number | null {
-  const match = text.match(/(\d+(?:[.,]\d+)?)\s*(%\s*(?:vol)?|°\s*(?:vol)?)/i);
-  if (match) return parseFloat(match[1].replace(',', '.'));
-  return null;
-}
-
-// Extract price (e.g. "12,50€", "€15.99", "HT: 8,90")
-function extractPrice(text: string): number | null {
-  const patterns = [
-    /(\d+[.,]\d{2})\s*€/,
-    /€\s*(\d+[.,]\d{2})/,
-    /HT\s*:?\s*(\d+[.,]\d{2})/i,
-    /prix\s*:?\s*(\d+[.,]\d{2})/i,
-  ];
-  for (const p of patterns) {
-    const m = text.match(p);
-    if (m) return parseFloat(m[1].replace(',', '.'));
-  }
-  return null;
-}
-
-// Extract the most prominent text as product name (first meaningful line)
-function extractName(text: string): string {
-  const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 2);
-  // Skip very short lines and lines that are just numbers/symbols
-  for (const line of lines) {
-    if (line.match(/^[\d\s.,€%°]+$/)) continue;
-    if (line.length >= 3 && line.length <= 80) return line;
-  }
-  return lines[0] || 'Produit';
+export interface ScanResult {
+  name: string;
+  category: string;
+  containerVolumeCl: number | null;
+  estimatedPriceHT: number | null;
+  confidence: number;
+  raw: string;
 }
 
 /**
- * Analyze a bottle image using Tesseract OCR (free, no API key needed).
+ * Analyze a bottle image using Claude Vision API.
+ * Requires ANTHROPIC_API_KEY environment variable.
  */
 export async function analyzeBottleImage(imageBase64: string): Promise<ScanResult> {
-  console.log('[SCAN] OCR Tesseract en cours...');
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) {
+    throw new Error('ANTHROPIC_API_KEY non configurée. Ajoutez-la dans les variables d\'environnement.');
+  }
+
+  const prompt = `Tu es un expert en boissons pour bars et restaurants. Analyse cette image de bouteille/produit.
+
+Réponds UNIQUEMENT en JSON valide avec ces champs:
+{
+  "name": "nom complet du produit (marque + type)",
+  "category": "spiritueux" | "vins" | "bieres" | "softs" | "ingredients_cocktails" | "consommables",
+  "containerVolumeCl": nombre en cl (50, 70, 100, 150, 300, 500, 1000, 2000, 3000) ou null si pas visible,
+  "estimatedPriceHT": prix d'achat HT estimé en euros (prix grossiste bar) ou null si impossible,
+  "confidence": 0 à 1 (confiance dans la reconnaissance)
+}
+
+Contenants standards: ${CONTAINER_PRESETS.map(p => p.label).join(', ')}
+
+Sois précis sur le nom. Si c'est un spiritueux, indique la marque et le type (ex: "Absolut Vodka", "Havana Club 3 ans").
+Si tu ne reconnais pas le produit, mets confidence à 0.`;
+
+  console.log('[SCAN] Envoi image à Claude Vision API...');
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 60000);
 
   try {
-    const buffer = Buffer.from(imageBase64, 'base64');
-    const { data: { text } } = await Tesseract.recognize(buffer, 'fra+eng', {
-      logger: (m: any) => { if (m.status === 'recognizing text') console.log(`[SCAN] OCR: ${Math.round(m.progress * 100)}%`); },
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 500,
+        messages: [
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'image',
+                source: {
+                  type: 'base64',
+                  media_type: 'image/jpeg',
+                  data: imageBase64,
+                },
+              },
+              {
+                type: 'text',
+                text: prompt,
+              },
+            ],
+          },
+        ],
+      }),
+      signal: controller.signal,
     });
 
-    console.log('[SCAN] Texte extrait:', text.substring(0, 300));
+    clearTimeout(timeout);
 
-    const name = extractName(text);
-    const category = detectCategory(text);
-    const volume = extractVolume(text);
-    const price = extractPrice(text);
-    const hasContent = text.trim().length > 10;
+    if (!response.ok) {
+      const err = await response.text();
+      console.error(`[SCAN] Erreur API: ${response.status} - ${err}`);
+      throw new Error('Erreur lors de l\'analyse de l\'image. Réessayez.');
+    }
 
-    return {
-      name,
-      category,
-      containerVolumeCl: volume,
-      estimatedPriceHT: price,
-      confidence: hasContent ? 0.6 : 0.1,
-      raw: text,
-    };
-  } catch (err) {
-    console.error('[SCAN] Erreur OCR:', err);
-    throw new Error('Impossible de lire le texte sur l\'image. Essayez avec une photo plus nette.');
+    const data = (await response.json()) as { content?: Array<{ text?: string }> };
+    const text = data.content?.[0]?.text || '';
+    console.log('[SCAN] Réponse reçue:', text.substring(0, 200));
+
+    try {
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) throw new Error('Pas de JSON dans la réponse');
+      const parsed = JSON.parse(jsonMatch[0]);
+
+      return {
+        name: parsed.name || 'Produit non reconnu',
+        category: parsed.category || 'spiritueux',
+        containerVolumeCl: parsed.containerVolumeCl || null,
+        estimatedPriceHT: parsed.estimatedPriceHT || null,
+        confidence: parsed.confidence || 0,
+        raw: text,
+      };
+    } catch {
+      console.warn('[SCAN] Parsing JSON échoué, réponse brute:', text);
+      return {
+        name: 'Produit non reconnu',
+        category: 'spiritueux',
+        containerVolumeCl: null,
+        estimatedPriceHT: null,
+        confidence: 0,
+        raw: text,
+      };
+    }
+  } catch (err: any) {
+    clearTimeout(timeout);
+    if (err.name === 'AbortError') {
+      console.error('[SCAN] Timeout après 60s');
+      throw new Error('L\'analyse a pris trop de temps. Réessayez avec une photo plus nette.');
+    }
+    throw err;
   }
 }
 
 /**
- * Analyze an invoice image using Tesseract OCR.
- * Extracts product lines from the text.
+ * Analyze an invoice/facture image using Claude Vision API.
+ * Extracts all product lines from the invoice.
+ * Requires ANTHROPIC_API_KEY environment variable.
  */
 export async function analyzeInvoiceImage(imageBase64: string): Promise<InvoiceScanResult> {
-  console.log('[SCAN-INVOICE] OCR Tesseract en cours...');
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) {
+    throw new Error('ANTHROPIC_API_KEY non configurée. Ajoutez-la dans les variables d\'environnement.');
+  }
+
+  const prompt = `Tu es un expert en analyse de factures pour bars et restaurants. Analyse cette image de facture/invoice.
+
+Extrais TOUS les produits listés sur la facture. Réponds UNIQUEMENT en JSON valide avec ce format:
+{
+  "supplier": "nom du fournisseur",
+  "invoiceDate": "date de la facture au format YYYY-MM-DD" ou null si pas visible,
+  "products": [
+    {
+      "name": "nom complet du produit (marque + type)",
+      "category": "spiritueux" | "vins" | "bieres" | "softs" | "ingredients_cocktails" | "consommables",
+      "containerVolumeCl": nombre en cl (50, 70, 100, 150, 300, 500, 1000, 2000, 3000) ou null si pas visible,
+      "purchasePriceHT": prix d'achat HT par unité en euros ou null si pas visible,
+      "quantity": quantité commandée (1 par défaut),
+      "confidence": 0 à 1 (confiance dans la reconnaissance de cette ligne)
+    }
+  ]
+}
+
+Contenants standards: ${CONTAINER_PRESETS.map(p => p.label).join(', ')}
+
+Identifie bien:
+- Le nom du fournisseur (en-tête de la facture)
+- La date de la facture
+- Pour chaque ligne produit: le nom complet, la catégorie, le volume du contenant en cl, le prix d'achat HT unitaire, la quantité commandée
+
+Sois précis sur les noms de produits. Si c'est un spiritueux, indique la marque et le type (ex: "Absolut Vodka", "Havana Club 3 ans").
+N'oublie aucune ligne produit de la facture.`;
+
+  console.log('[SCAN-INVOICE] Envoi image de facture à Claude Vision API...');
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 120000);
 
   try {
-    const buffer = Buffer.from(imageBase64, 'base64');
-    const { data: { text } } = await Tesseract.recognize(buffer, 'fra+eng', {
-      logger: (m: any) => { if (m.status === 'recognizing text') console.log(`[SCAN-INVOICE] OCR: ${Math.round(m.progress * 100)}%`); },
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 2000,
+        messages: [
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'image',
+                source: {
+                  type: 'base64',
+                  media_type: 'image/jpeg',
+                  data: imageBase64,
+                },
+              },
+              {
+                type: 'text',
+                text: prompt,
+              },
+            ],
+          },
+        ],
+      }),
+      signal: controller.signal,
     });
 
-    console.log('[SCAN-INVOICE] Texte extrait:', text.substring(0, 500));
+    clearTimeout(timeout);
 
-    // Try to extract supplier from first lines
-    const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 2);
-    const supplier = lines[0] || 'Fournisseur inconnu';
-
-    // Extract date
-    const dateMatch = text.match(/(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/);
-    let invoiceDate: string | null = null;
-    if (dateMatch) {
-      const day = dateMatch[1].padStart(2, '0');
-      const month = dateMatch[2].padStart(2, '0');
-      const year = dateMatch[3].length === 2 ? `20${dateMatch[3]}` : dateMatch[3];
-      invoiceDate = `${year}-${month}-${day}`;
+    if (!response.ok) {
+      const err = await response.text();
+      console.error(`[SCAN-INVOICE] Erreur API: ${response.status} - ${err}`);
+      throw new Error('Erreur lors de l\'analyse de la facture. Réessayez.');
     }
 
-    // Try to extract product lines (lines with a price pattern)
-    const products: InvoiceProduct[] = [];
-    for (const line of lines) {
-      const price = extractPrice(line);
-      if (price && price > 0) {
-        const category = detectCategory(line);
-        const volume = extractVolume(line);
-        const qtyMatch = line.match(/x\s*(\d+)|(\d+)\s*x/i);
-        const quantity = qtyMatch ? parseInt(qtyMatch[1] || qtyMatch[2]) : 1;
-        const name = line.replace(/[\d.,]+\s*€/g, '').replace(/€\s*[\d.,]+/g, '').replace(/x\s*\d+|\d+\s*x/gi, '').trim() || 'Produit';
+    const data = (await response.json()) as { content?: Array<{ text?: string }> };
+    const text = data.content?.[0]?.text || '';
+    console.log('[SCAN-INVOICE] Réponse reçue:', text.substring(0, 200));
 
-        products.push({
-          name: name.substring(0, 100),
-          category,
-          containerVolumeCl: volume,
-          purchasePriceHT: price,
-          quantity,
-          confidence: 0.5,
-        });
-      }
+    try {
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) throw new Error('Pas de JSON dans la réponse');
+      const parsed = JSON.parse(jsonMatch[0]);
+
+      const products: InvoiceProduct[] = (parsed.products || []).map((p: any) => ({
+        name: p.name || 'Produit non reconnu',
+        category: p.category || 'spiritueux',
+        containerVolumeCl: p.containerVolumeCl || null,
+        purchasePriceHT: p.purchasePriceHT || null,
+        quantity: p.quantity || 1,
+        confidence: p.confidence || 0,
+      }));
+
+      return {
+        supplier: parsed.supplier || 'Fournisseur inconnu',
+        invoiceDate: parsed.invoiceDate || null,
+        products,
+        raw: text,
+      };
+    } catch {
+      console.warn('[SCAN-INVOICE] Parsing JSON échoué, réponse brute:', text);
+      return {
+        supplier: 'Fournisseur inconnu',
+        invoiceDate: null,
+        products: [],
+        raw: text,
+      };
     }
-
-    return { supplier, invoiceDate, products, raw: text };
-  } catch (err) {
-    console.error('[SCAN-INVOICE] Erreur OCR:', err);
-    throw new Error('Impossible de lire la facture. Essayez avec une photo plus nette.');
+  } catch (err: any) {
+    clearTimeout(timeout);
+    if (err.name === 'AbortError') {
+      console.error('[SCAN-INVOICE] Timeout après 120s');
+      throw new Error('L\'analyse de la facture a pris trop de temps. Réessayez avec une photo plus nette.');
+    }
+    throw err;
   }
 }

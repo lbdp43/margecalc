@@ -6,7 +6,8 @@ import { RecipeWithCost, formatPercent, formatPrice, MARGIN_COLOR_MAP } from '@m
 import { ScreenWrapper } from '../../components/ui/ScreenWrapper';
 import { useOfflineQuery } from '../../hooks/useOfflineQuery';
 import * as recipeService from '../../services/recipe.service';
-import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
+import { colors, spacing, borderRadius, typography, shadows, fonts } from '../../theme';
+import { Display, Eyebrow, Scribble } from '../../components/ui/atelier';
 
 type Tab = 'mine' | 'community';
 
@@ -72,7 +73,11 @@ export function CocktailListScreen() {
 
   return (
     <ScreenWrapper scrollable={false}>
-      <Text style={styles.title}>Cocktails</Text>
+      <View style={{ marginBottom: spacing.md }}>
+        <Eyebrow color={colors.textMuted}>La carte</Eyebrow>
+        <Display size={30} style={{ marginTop: spacing.xs }}>Cocktails</Display>
+        <Scribble width={50} color={colors.primary} style={{ marginTop: spacing.xs }} />
+      </View>
 
       {/* Tab switcher */}
       <View style={styles.tabRow}>

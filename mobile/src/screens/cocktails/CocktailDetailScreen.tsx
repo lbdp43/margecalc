@@ -8,7 +8,7 @@ import { RecipeWithCost, formatPercent, formatPrice, MARGIN_COLOR_MAP } from '@m
 import { ScreenWrapper } from '../../components/ui/ScreenWrapper';
 import { useOfflineQuery } from '../../hooks/useOfflineQuery';
 import * as recipeService from '../../services/recipe.service';
-import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
+import { colors, spacing, borderRadius, typography, shadows, fonts } from '../../theme';
 
 export function CocktailDetailScreen() {
   const navigation = useNavigation<any>();
@@ -280,7 +280,11 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     ...typography.h3,
+    fontFamily: fonts.serif,
+    fontStyle: 'italic',
+    fontWeight: '500',
     color: colors.text,
+    letterSpacing: -0.3,
   },
 
   ingRow: {

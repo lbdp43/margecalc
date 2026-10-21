@@ -8,6 +8,7 @@ import { Button } from '../../components/ui/Button';
 import { useAuthStore } from '../../store/auth.store';
 import * as authService from '../../services/auth.service';
 import { colors, spacing, typography } from '../../theme';
+import { Display, Eyebrow, Scribble } from '../../components/ui/atelier';
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -44,7 +45,7 @@ export function RegisterScreen({ navigation }: Props) {
         businessName: businessName || undefined,
         isAutoEntrepreneur,
       });
-      setAuth(result.token, result.user);
+      setAuth(result.token, result.user, result.refreshToken);
     } catch (err: any) {
       alert('Erreur', err.response?.data?.error || 'Inscription impossible');
     } finally {
@@ -58,7 +59,13 @@ export function RegisterScreen({ navigation }: Props) {
         style={styles.container}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-        <Text style={styles.title}>Créer un compte</Text>
+        <View style={{ marginBottom: spacing.lg }}>
+          <Eyebrow color={colors.textMuted}>Bienvenue</Eyebrow>
+          <Display size={32} style={{ marginTop: spacing.xs }}>
+            Créer un compte
+          </Display>
+          <Scribble width={50} color={colors.primary} style={{ marginTop: spacing.xs }} />
+        </View>
 
         <Input
           label="Email"
@@ -112,11 +119,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     paddingTop: spacing.xl,
-  },
-  title: {
-    ...typography.h1,
-    color: colors.primary,
-    marginBottom: spacing.lg,
   },
   switchRow: {
     flexDirection: 'row',

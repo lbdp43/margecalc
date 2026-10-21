@@ -24,7 +24,6 @@ const createSchema = z.object({
   tvaRate: z.number().min(0).max(1),
   alcoholDegree: z.number().min(0).max(100).optional(),
   supplier: z.string().optional(),
-  imageUrl: z.string().optional(),
 });
 
 router.use(authenticate);

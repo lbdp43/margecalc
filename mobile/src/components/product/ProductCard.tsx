@@ -5,7 +5,7 @@ import {
   ProductWithMargin, formatPrice, formatPercent, MARGIN_COLOR_MAP,
   calculateServingMargin, CONTAINER_PRESETS,
 } from '@margebar/shared';
-import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
+import { colors, spacing, borderRadius, typography, shadows, fonts } from '../../theme';
 
 function getContainerLabel(volumeCl: number): string {
   const preset = CONTAINER_PRESETS.find((p) => p.volumeCl === volumeCl);
@@ -24,7 +24,7 @@ export const ProductCard = React.memo(function ProductCard({ product, onPress }:
   const servings = product.servings || [];
 
   return (
-    <TouchableOpacity onPress={onPress} activeOpacity={0.7} style={styles.pressable}>
+    <TouchableOpacity onPress={onPress} activeOpacity={0.8} style={styles.pressable}>
       <View style={styles.card}>
         {/* Header */}
         <View style={styles.header}>
@@ -32,18 +32,24 @@ export const ProductCard = React.memo(function ProductCard({ product, onPress }:
           <View style={styles.headerInfo}>
             <Text style={styles.name} numberOfLines={1}>{product.name}</Text>
             <Text style={styles.subtitle}>
-              Achat : {formatPrice(product.purchasePriceHT)} HT · {getContainerLabel(product.containerVolumeCl)}
+              Achat <Text style={styles.subtitleStrong}>{formatPrice(product.purchasePriceHT)}</Text> HT
+              <Text style={styles.subtitleDot}> · </Text>
+              {getContainerLabel(product.containerVolumeCl)}
             </Text>
           </View>
-          <Text style={[styles.marginText, { color: accent }]}>
-            {formatPercent(product.computed.marginPercent)}
-          </Text>
-          <Ionicons name="chevron-forward" size={16} color={colors.tabBarInactive} />
+          <View style={styles.marginWrap}>
+            <Text style={[styles.marginText, { color: accent }]}>
+              {formatPercent(product.computed.marginPercent)}
+            </Text>
+            <Text style={styles.marginLabel}>de marge</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
         </View>
 
         {/* Serving table */}
         {servings.length > 0 && (
           <View style={styles.tableWrap}>
+            <View style={styles.dashedRule} />
             <View style={styles.tableHeaderRow}>
               <Text style={[styles.tableHeader, { flex: 2 }]}>SERVICE</Text>
               <Text style={[styles.tableHeader, { flex: 1.2, textAlign: 'right' }]}>PRIX TTC</Text>
@@ -68,14 +74,14 @@ export const ProductCard = React.memo(function ProductCard({ product, onPress }:
                     <Text style={styles.servingName}>{s.servingType.name}</Text>
                     <Text style={styles.servingVol}>{s.servingType.volumeCl} cl</Text>
                   </View>
-                  <Text style={[styles.cell, { flex: 1.2, textAlign: 'right' }]}>
+                  <Text style={[styles.cellNum, { flex: 1.2, textAlign: 'right' }]}>
                     {formatPrice(s.sellingPriceTTC)}
                   </Text>
-                  <Text style={[styles.cellBold, { flex: 1.2, textAlign: 'right', color: rowColor }]}>
+                  <Text style={[styles.cellNumBold, { flex: 1.2, textAlign: 'right', color: rowColor }]}>
                     {formatPercent(margin.marginPercent)}
                   </Text>
-                  <Text style={[styles.cell, { flex: 1, textAlign: 'right' }]}>
-                    x {coeff}
+                  <Text style={[styles.cellNum, { flex: 1, textAlign: 'right' }]}>
+                    × {coeff}
                   </Text>
                 </View>
               );
@@ -95,7 +101,9 @@ const styles = StyleSheet.create({
     backgroundColor: colors.cardBackground,
     borderRadius: borderRadius.lg,
     overflow: 'hidden',
-    ...shadows.sm,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    ...shadows.paper,
   },
   header: {
     flexDirection: 'row',
@@ -105,7 +113,7 @@ const styles = StyleSheet.create({
   },
   indicator: {
     width: 4,
-    height: 32,
+    height: 36,
     borderRadius: 2,
     marginRight: spacing.sm + 2,
   },
@@ -114,44 +122,69 @@ const styles = StyleSheet.create({
     marginRight: spacing.sm,
   },
   name: {
-    ...typography.body,
-    fontWeight: '700',
+    ...typography.displaySmall,
+    fontSize: 19,
     color: colors.text,
   },
   subtitle: {
     ...typography.caption,
+    color: colors.textMuted,
+    marginTop: 3,
+  },
+  subtitleStrong: {
+    fontFamily: fonts.serif,
+    fontStyle: 'italic',
     color: colors.textSecondary,
-    marginTop: 2,
+  },
+  subtitleDot: {
+    color: colors.textFaint,
+  },
+  marginWrap: {
+    alignItems: 'flex-end',
+    marginRight: spacing.xs,
   },
   marginText: {
-    ...typography.h3,
-    fontWeight: '800',
-    marginRight: spacing.xs,
+    fontFamily: fonts.serif,
+    fontStyle: 'italic',
+    fontSize: 22,
+    fontWeight: '600',
+    letterSpacing: -0.3,
+  },
+  marginLabel: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: colors.textFaint,
+    letterSpacing: 1.3,
+    textTransform: 'uppercase',
+    marginTop: 1,
   },
   tableWrap: {
     paddingHorizontal: spacing.md,
     paddingBottom: spacing.md,
   },
+  dashedRule: {
+    borderBottomWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: colors.border,
+    marginBottom: spacing.xs,
+    opacity: 0.85,
+  },
   tableHeaderRow: {
     flexDirection: 'row',
     paddingVertical: spacing.xs + 2,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-    marginBottom: spacing.xs,
+    marginBottom: 2,
   },
   tableHeader: {
-    fontSize: 10,
-    fontWeight: '600',
-    color: colors.tabBarInactive,
+    fontSize: 9.5,
+    fontWeight: '700',
+    color: colors.textMuted,
     textTransform: 'uppercase',
-    letterSpacing: 0.5,
+    letterSpacing: 1.2,
   },
   tableRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: spacing.sm,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.border,
+    paddingVertical: spacing.sm - 2,
   },
   servingName: {
     ...typography.bodySmall,
@@ -159,16 +192,22 @@ const styles = StyleSheet.create({
     color: colors.text,
   },
   servingVol: {
-    ...typography.caption,
-    color: colors.textSecondary,
+    fontFamily: fonts.serif,
+    fontStyle: 'italic',
     fontSize: 11,
+    color: colors.textMuted,
+    marginTop: 1,
   },
-  cell: {
-    ...typography.bodySmall,
+  cellNum: {
+    fontFamily: fonts.serif,
+    fontStyle: 'italic',
+    fontSize: 13.5,
     color: colors.text,
   },
-  cellBold: {
-    ...typography.bodySmall,
-    fontWeight: '700',
+  cellNumBold: {
+    fontFamily: fonts.serif,
+    fontStyle: 'italic',
+    fontSize: 14,
+    fontWeight: '600',
   },
 });

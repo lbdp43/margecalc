@@ -10,7 +10,8 @@ import { CategoryTabs } from '../../components/product/CategoryTabs';
 import { useOfflineQuery } from '../../hooks/useOfflineQuery';
 import * as productService from '../../services/product.service';
 import * as categoryService from '../../services/category.service';
-import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
+import { colors, spacing, borderRadius, typography, shadows, fonts } from '../../theme';
+import { Eyebrow, Display, InkStamp, Script } from '../../components/ui/atelier';
 
 type Props = NativeStackScreenProps<any, 'ProductList'>;
 
@@ -35,7 +36,7 @@ export function ProductListScreen({ navigation }: Props) {
     categoryService.getCategories,
   );
 
-  const { data: products = [], isLoading, refetch, isOffline } = useOfflineQuery<ProductWithMargin[]>(
+  const { data: products = [], isLoading, refetch } = useOfflineQuery<ProductWithMargin[]>(
     ['products', selectedCategory],
     () => productService.getProducts(selectedCategory || undefined),
   );
@@ -64,12 +65,20 @@ export function ProductListScreen({ navigation }: Props) {
 
   return (
     <ScreenWrapper scrollable={false}>
-      {/* Dark header */}
+      {/* Atelier hero header */}
       <View style={styles.darkHeader}>
-        <Text style={styles.title}>Mes produits</Text>
-        <Text style={styles.count}>
-          {count} produit{count !== 1 ? 's' : ''}
-        </Text>
+        <View style={styles.headerTopRow}>
+          <InkStamp size={36} color={colors.onAccent} rotate={-6} />
+          <View style={{ marginLeft: spacing.sm + 2, flex: 1 }}>
+            <Eyebrow color="rgba(243,248,236,0.78)" size={9.5} track={1.8}>Inventaire</Eyebrow>
+            <Display size={22} color={colors.onAccent} style={{ marginTop: 2 }}>
+              Mes produits
+            </Display>
+            <Script size={13} color="rgba(243,248,236,0.85)" style={{ marginTop: 2 }}>
+              {count} produit{count !== 1 ? 's' : ''} au comptoir
+            </Script>
+          </View>
+        </View>
       </View>
 
       {/* Category pills */}
@@ -82,17 +91,17 @@ export function ProductListScreen({ navigation }: Props) {
       {/* Search bar */}
       <View style={styles.searchRow}>
         <View style={styles.searchBox}>
-          <Ionicons name="search-outline" size={20} color={colors.textSecondary} />
+          <Ionicons name="search-outline" size={18} color={colors.textMuted} />
           <TextInput
             style={styles.searchInput}
             value={searchQuery}
             onChangeText={setSearchQuery}
-            placeholder="Rechercher un produit..."
-            placeholderTextColor={colors.textSecondary}
+            placeholder="Chercher une bouteille…"
+            placeholderTextColor={colors.textMuted}
           />
           {searchQuery.length > 0 && (
             <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={CLEAR_HIT_SLOP}>
-              <Ionicons name="close-circle" size={20} color={colors.textSecondary} />
+              <Ionicons name="close-circle" size={18} color={colors.textMuted} />
             </TouchableOpacity>
           )}
         </View>
@@ -110,7 +119,7 @@ export function ProductListScreen({ navigation }: Props) {
                 if (sortBy === s.key) setSortAsc(!sortAsc);
                 else { setSortBy(s.key as any); setSortAsc(true); }
               }}
-              activeOpacity={0.7}
+              activeOpacity={0.8}
             >
               <Text style={[styles.sortBtnText, isActive && styles.sortBtnTextActive]}>
                 {s.label}
@@ -118,7 +127,7 @@ export function ProductListScreen({ navigation }: Props) {
               {isActive && (
                 <Ionicons
                   name={sortAsc ? 'arrow-up' : 'arrow-down'}
-                  size={12}
+                  size={11}
                   color={colors.textLight}
                 />
               )}
@@ -145,12 +154,17 @@ export function ProductListScreen({ navigation }: Props) {
           ListEmptyComponent={
             <View style={styles.empty}>
               <View style={styles.emptyIconWrap}>
-                <Ionicons name="wine-outline" size={40} color={colors.accent} />
+                <InkStamp size={64} color={colors.primary} rotate={-6} letter="M" />
               </View>
-              <Text style={styles.emptyText}>Aucun produit</Text>
+              <Display size={22} style={styles.emptyText}>
+                Le carnet est vide
+              </Display>
               <Text style={styles.emptySubtext}>
-                Scannez une bouteille ou appuyez sur + pour commencer
+                Scannez une bouteille, ou ajoutez-la à la main.
               </Text>
+              <Script size={20} color={colors.accent} style={{ marginTop: 6 }}>
+                c'est parti !
+              </Script>
             </View>
           }
         />
@@ -160,9 +174,9 @@ export function ProductListScreen({ navigation }: Props) {
       <TouchableOpacity
         style={styles.fab}
         onPress={() => navigation.navigate('ProductForm', {})}
-        activeOpacity={0.8}
+        activeOpacity={0.85}
       >
-        <Ionicons name="add" size={30} color={colors.textLight} />
+        <Ionicons name="add" size={28} color={colors.textLight} />
       </TouchableOpacity>
     </ScreenWrapper>
   );
@@ -181,46 +195,41 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
     ...shadows.md,
   },
-  title: {
-    ...typography.h1,
-    color: colors.textLight,
-  },
-  count: {
-    ...typography.bodySmall,
-    color: 'rgba(255,255,255,0.6)',
-    marginTop: 2,
+  headerTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   list: {
     paddingBottom: 100,
     paddingTop: spacing.xs,
   },
-  loader: {
-    marginTop: spacing.xl * 2,
-  },
   empty: {
     alignItems: 'center',
-    paddingTop: spacing.xl * 3,
-    gap: spacing.sm + 4,
+    paddingTop: spacing.xl * 2,
   },
   emptyIconWrap: {
-    width: 80,
-    height: 80,
-    borderRadius: borderRadius.xl,
-    backgroundColor: colors.light,
+    width: 110,
+    height: 110,
+    borderRadius: borderRadius.xxl,
+    backgroundColor: colors.cardBackgroundHi,
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
+    borderColor: colors.border,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: spacing.sm,
+    marginBottom: spacing.md,
   },
   emptyText: {
-    ...typography.h3,
     color: colors.text,
+    textAlign: 'center',
   },
   emptySubtext: {
     ...typography.body,
     color: colors.textSecondary,
     textAlign: 'center',
-    maxWidth: 260,
+    maxWidth: 280,
     lineHeight: 22,
+    marginTop: spacing.xs,
   },
   searchRow: {
     marginBottom: spacing.md,
@@ -229,44 +238,53 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: colors.cardBackground,
-    borderRadius: borderRadius.lg,
+    borderRadius: borderRadius.full,
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm + 4,
+    paddingVertical: spacing.sm + 2,
     gap: spacing.sm + 2,
-    ...shadows.sm,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    ...shadows.paper,
   },
   searchInput: {
     flex: 1,
-    ...typography.body,
+    fontFamily: fonts.serif,
+    fontStyle: 'italic',
+    fontSize: 15,
     color: colors.text,
     padding: 0,
   },
   sortRow: {
     flexDirection: 'row',
-    gap: spacing.sm,
+    gap: spacing.xs + 2,
     marginBottom: spacing.md,
   },
   sortBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: spacing.md,
+    paddingHorizontal: spacing.md - 2,
     paddingVertical: spacing.sm,
     borderRadius: borderRadius.full,
     backgroundColor: colors.cardBackground,
     gap: spacing.xs,
-    ...shadows.sm,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    ...shadows.paper,
   },
   sortBtnActive: {
     backgroundColor: colors.primary,
-    ...shadows.md,
+    borderColor: colors.secondary,
   },
   sortBtnText: {
     ...typography.caption,
+    fontSize: 12,
     fontWeight: '600',
     color: colors.textSecondary,
+    letterSpacing: 0.2,
   },
   sortBtnTextActive: {
     color: colors.textLight,
+    fontWeight: '700',
   },
   fab: {
     position: 'absolute',
@@ -278,6 +296,8 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: colors.secondary,
     ...shadows.lg,
   },
 });

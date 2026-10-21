@@ -28,11 +28,6 @@ const linking = {
           ProductForm: 'product/new',
         },
       },
-      Cocktails: {
-        screens: {
-          CocktailDetail: 'cocktail/:recipeId',
-        },
-      },
     },
   },
 };
@@ -42,7 +37,7 @@ export default function App() {
     <ErrorBoundary fallbackMessage="L'application a rencontré une erreur. Veuillez la redémarrer.">
       <SafeAreaProvider>
         <QueryClientProvider client={queryClient}>
-          <NavigationContainer linking={linking}>
+          <NavigationContainer linking={linking as any}>
             <StatusBar style="dark" />
             <RootNavigator />
           </NavigationContainer>

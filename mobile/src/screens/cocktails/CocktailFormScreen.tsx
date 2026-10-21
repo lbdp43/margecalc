@@ -16,7 +16,7 @@ import { useOfflineQuery } from '../../hooks/useOfflineQuery';
 import { alert } from '../../utils/alert';
 import * as recipeService from '../../services/recipe.service';
 import * as productService from '../../services/product.service';
-import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
+import { colors, spacing, borderRadius, typography, shadows, fonts } from '../../theme';
 import { useAuthStore } from '../../store/auth.store';
 
 interface IngredientRow {
@@ -528,7 +528,11 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     ...typography.h2,
+    fontFamily: fonts.serif,
+    fontStyle: 'italic',
+    fontWeight: '500',
     color: colors.text,
+    letterSpacing: -0.3,
   },
   saveBtn: {
     ...typography.button,
@@ -540,7 +544,9 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.lg,
     padding: spacing.md,
     marginBottom: spacing.md,
-    ...shadows.sm,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    ...shadows.paper,
   },
   sectionHeader: {
     flexDirection: 'row',
@@ -555,7 +561,11 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     ...typography.h3,
+    fontFamily: fonts.serif,
+    fontStyle: 'italic',
+    fontWeight: '500',
     color: colors.text,
+    letterSpacing: -0.3,
   },
 
   label: {

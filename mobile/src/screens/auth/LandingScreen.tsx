@@ -1,10 +1,11 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Platform, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Platform, ScrollView, Linking } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { DroitsCalculator } from '../../components/ui/DroitsCalculator';
-import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
+import { colors, spacing, borderRadius, typography, shadows, fonts } from '../../theme';
+import { Eyebrow, Display, Script, InkStamp, Scribble } from '../../components/ui/atelier';
 
 type Props = NativeStackScreenProps<any, 'Landing'>;
 
@@ -13,14 +14,42 @@ export function LandingScreen({ navigation }: Props) {
     <View style={styles.inner}>
       {/* Header */}
       <View style={styles.header}>
-        <View style={styles.logoBadge}>
-          <Ionicons name="bar-chart" size={32} color={colors.white} />
-        </View>
-        <Text style={styles.title}>MargeBar Pro</Text>
+        <InkStamp size={64} color={colors.primary} rotate={-6} />
+        <Eyebrow color={colors.textMuted} style={{ marginTop: spacing.md }}>
+          Pour les pros du comptoir
+        </Eyebrow>
+        <Display size={36} style={{ marginTop: spacing.xs, textAlign: 'center' }}>
+          MargeBar Pro
+        </Display>
+        <Scribble width={70} color={colors.primary} style={{ marginTop: spacing.xs }} />
         <Text style={styles.subtitle}>
-          Calculez vos marges, optimisez votre rentabilite
+          Calculez vos marges,{' '}
+          <Script size={18} color={colors.primary}>sans prise de tête.</Script>
         </Text>
       </View>
+
+      {/* Auth buttons (top) */}
+      <TouchableOpacity
+        style={styles.primaryBtn}
+        onPress={() => navigation.navigate('Register')}
+        activeOpacity={0.8}
+      >
+        <Ionicons name="person-add-outline" size={20} color={colors.white} style={{ marginRight: spacing.sm }} />
+        <Text style={styles.primaryBtnText}>Créer un compte gratuit</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        style={styles.secondaryBtn}
+        onPress={() => navigation.navigate('Login')}
+        activeOpacity={0.7}
+      >
+        <Ionicons name="log-in-outline" size={20} color={colors.primary} style={{ marginRight: spacing.sm }} />
+        <Text style={styles.secondaryBtnText}>J'ai déjà un compte</Text>
+      </TouchableOpacity>
+
+      <Text style={styles.skipWarningText}>
+        Le calculateur ci-dessous ne nécessite pas de compte mais vous ne pouvez pas sauvegarder.
+      </Text>
 
       {/* Calculator */}
       <DroitsCalculator />
@@ -29,15 +58,15 @@ export function LandingScreen({ navigation }: Props) {
       <View style={styles.featuresCard}>
         <Text style={styles.featuresTitle}>Ce que MargeBar Pro vous permet</Text>
         <Text style={styles.featuresIntro}>
-          L'outil de calcul de marges concu pour les professionnels CHR (bars, restaurants, hotels).
+          L'outil de calcul de marges conçu pour les professionnels CHR (bars, restaurants, hôtels).
         </Text>
         {[
-          { icon: 'calculator-outline', title: 'Calcul des droits d\'accise', desc: 'Calculez instantanement le prix HT avec droits pour les 13 categories fiscales francaises (vins, bieres, spiritueux, cidres...)' },
-          { icon: 'receipt-outline', title: 'Prix de revient precis', desc: 'Integrez les droits d\'accise, la cotisation securite sociale et la TVA pour connaitre votre vrai cout d\'achat' },
-          { icon: 'trending-up-outline', title: 'Calcul de marges', desc: 'Definissez vos prix de vente par type de service (shot, demi, pinte, bouteille) et visualisez vos marges en temps reel' },
-          { icon: 'camera-outline', title: 'Photo produit', desc: 'Prenez en photo vos bouteilles pour les ajouter a votre catalogue avec une image' },
-          { icon: 'bar-chart-outline', title: 'Tableau de bord', desc: 'Suivez la rentabilite de vos produits, identifiez les meilleurs et les moins performants, comparez par categorie' },
-          { icon: 'cloud-done-outline', title: 'Donnees sauvegardees', desc: 'Vos produits, recettes et calculs sont synchronises sur le cloud. Accessible depuis n\'importe quel appareil' },
+          { icon: 'calculator-outline', title: 'Calcul des droits d\'accise', desc: 'Calculez instantanément le prix HT avec droits pour les 13 catégories fiscales françaises (vins, bières, spiritueux, cidres…)' },
+          { icon: 'receipt-outline', title: 'Prix de revient précis', desc: 'Intégrez les droits d\'accise, la cotisation sécurité sociale et la TVA pour connaître votre vrai coût d\'achat' },
+          { icon: 'trending-up-outline', title: 'Calcul de marges', desc: 'Définissez vos prix de vente par type de service (shot, demi, pinte, bouteille) et visualisez vos marges en temps réel' },
+          { icon: 'scan-outline', title: 'Scan de produits', desc: 'Photographiez une bouteille ou une facture fournisseur — l\'app reconnaît le produit et pré-remplit les informations' },
+          { icon: 'bar-chart-outline', title: 'Tableau de bord', desc: 'Suivez la rentabilité de vos produits, identifiez les meilleurs et les moins performants, comparez par catégorie' },
+          { icon: 'cloud-done-outline', title: 'Données sauvegardées', desc: 'Vos produits, recettes et calculs sont synchronisés sur le cloud. Accessible depuis n\'importe quel appareil' },
         ].map((f, i) => (
           <View key={i} style={styles.featureItem}>
             <View style={styles.featureIconBox}>
@@ -51,39 +80,47 @@ export function LandingScreen({ navigation }: Props) {
         ))}
       </View>
 
-      {/* Free app message */}
+      {/* Support */}
       <View style={styles.supportCard}>
         <View style={styles.supportHeader}>
-          <Ionicons name="gift-outline" size={22} color={colors.primary} />
-          <Text style={styles.supportTitle}>100% gratuit</Text>
+          <Ionicons name="sparkles-outline" size={22} color={colors.primary} />
+          <Text style={styles.supportTitle}>Application gratuite</Text>
         </View>
         <Text style={styles.supportDesc}>
-          MargeBar Pro est entierement gratuit. Creez un compte pour sauvegarder vos produits, calculer vos marges et acceder a toutes les fonctionnalites.
+          Créez un compte gratuit pour profiter de toutes les fonctionnalités. Vos produits et vos marges restent privés vis-à-vis des autres utilisateurs.
         </Text>
+        <View style={styles.featuresRow}>
+          {[
+            { icon: 'lock-closed-outline', text: 'Données protégées et privées' },
+            { icon: 'scan-outline', text: 'Scan produits & factures' },
+            { icon: 'trending-up-outline', text: 'Tableau de bord complet' },
+          ].map((f, i) => (
+            <View key={i} style={styles.featureMini}>
+              <Ionicons name={f.icon as any} size={16} color={colors.accent} />
+              <Text style={styles.featureMiniText}>{f.text}</Text>
+            </View>
+          ))}
+        </View>
       </View>
 
-      {/* Auth buttons */}
-      <TouchableOpacity
-        style={styles.primaryBtn}
-        onPress={() => navigation.navigate('Register')}
-        activeOpacity={0.8}
-      >
-        <Ionicons name="person-add-outline" size={20} color={colors.white} style={{ marginRight: spacing.sm }} />
-        <Text style={styles.primaryBtnText}>Creer un compte gratuit</Text>
-      </TouchableOpacity>
-
-      <TouchableOpacity
-        style={styles.secondaryBtn}
-        onPress={() => navigation.navigate('Login')}
-        activeOpacity={0.7}
-      >
-        <Ionicons name="log-in-outline" size={20} color={colors.primary} style={{ marginRight: spacing.sm }} />
-        <Text style={styles.secondaryBtnText}>J'ai deja un compte</Text>
-      </TouchableOpacity>
-
-      <Text style={styles.skipWarningText}>
-        Le calculateur ci-dessus est accessible sans compte.
-      </Text>
+      <View style={styles.aboutCard}>
+        <Text style={styles.aboutTitle}>
+          Application crée par{' '}
+          <Text
+            style={styles.aboutTitleLink}
+            onPress={() => Linking.openURL('https://labrasseriedesplantes.fr/')}
+          >
+            La Brasserie des Plantes
+          </Text>
+        </Text>
+        <Text style={styles.aboutDesc}>
+          Si vous êtes intéressés par nos produits ou si vous avez des questions, n'hésitez pas à nous contacter.
+        </Text>
+        <TouchableOpacity style={styles.aboutRow} onPress={() => Linking.openURL('mailto:labrasseriedesplantes@gmail.com')}>
+          <Ionicons name="mail-outline" size={16} color={colors.primary} />
+          <Text style={styles.aboutLink}>labrasseriedesplantes@gmail.com</Text>
+        </TouchableOpacity>
+      </View>
     </View>
   );
 
@@ -124,36 +161,28 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: spacing.lg,
   },
-  logoBadge: {
-    width: 56,
-    height: 56,
-    borderRadius: borderRadius.lg,
-    backgroundColor: colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: spacing.sm,
-    ...shadows.md,
-  },
-  title: {
-    ...typography.h1,
-    color: colors.primary,
-    marginBottom: spacing.xs,
-  },
   subtitle: {
-    ...typography.bodySmall,
+    ...typography.body,
     color: colors.textSecondary,
     textAlign: 'center',
+    marginTop: spacing.md,
+    paddingHorizontal: spacing.md,
   },
   featuresCard: {
     backgroundColor: colors.cardBackground,
     borderRadius: borderRadius.lg,
     padding: spacing.lg,
     marginBottom: spacing.lg,
-    ...shadows.sm,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    ...shadows.paper,
   },
   featuresTitle: {
-    ...typography.h3,
-    color: colors.primary,
+    ...typography.h2,
+    fontFamily: fonts.serif,
+    fontStyle: 'italic',
+    fontWeight: '500',
+    color: colors.text,
     marginBottom: spacing.xs,
   },
   featuresIntro: {
@@ -291,6 +320,23 @@ const styles = StyleSheet.create({
     ...typography.button,
     color: colors.primary,
   },
+  promoBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.accent,
+    borderStyle: 'dashed',
+    borderRadius: borderRadius.md,
+    paddingVertical: spacing.sm + 2,
+    marginTop: spacing.sm,
+    backgroundColor: colors.cardBackground,
+  },
+  promoBtnText: {
+    ...typography.bodySmall,
+    fontWeight: '600',
+    color: colors.accent,
+  },
   skipBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -320,5 +366,42 @@ const styles = StyleSheet.create({
     color: colors.tabBarInactive,
     textAlign: 'center',
     marginTop: spacing.md,
+  },
+  aboutCard: {
+    backgroundColor: colors.cardBackground,
+    borderRadius: borderRadius.lg,
+    padding: spacing.lg,
+    marginTop: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+  },
+  aboutTitle: {
+    ...typography.bodySmall,
+    fontWeight: '700',
+    color: colors.primary,
+    textAlign: 'center',
+    marginBottom: spacing.xs,
+  },
+  aboutTitleLink: {
+    textDecorationLine: 'underline',
+  },
+  aboutDesc: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 17,
+    marginBottom: spacing.md,
+  },
+  aboutRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginBottom: spacing.xs,
+  },
+  aboutLink: {
+    ...typography.bodySmall,
+    color: colors.primary,
+    fontWeight: '600',
   },
 });

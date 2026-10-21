@@ -6,7 +6,7 @@ import {
   formatPercent, formatPrice, MARGIN_COLOR_MAP,
   CONTAINER_PRESETS,
 } from '@margebar/shared';
-import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
+import { colors, spacing, borderRadius, typography, shadows, fonts } from '../../theme';
 
 function getContainerLabel(volumeCl: number): string {
   const preset = CONTAINER_PRESETS.find((p) => p.volumeCl === volumeCl);
@@ -35,7 +35,7 @@ export const ProductDashboardCard = React.memo(function ProductDashboardCard({
 }: ProductDashboardCardProps) {
   return (
     <TouchableOpacity
-      activeOpacity={0.7}
+      activeOpacity={0.85}
       onPress={() => onPress(p.id)}
       accessibilityRole="button"
       accessibilityLabel={`${p.name}, marge ${formatPercent(p.computed.marginPercent)}`}
@@ -47,17 +47,23 @@ export const ProductDashboardCard = React.memo(function ProductDashboardCard({
           <View style={styles.productTitleWrap}>
             <Text style={styles.productName} numberOfLines={1}>{p.name}</Text>
             <Text style={styles.productSubtitle}>
-              Achat : {formatPrice(p.purchasePriceHT)} HT · {getContainerLabel(p.containerVolumeCl)}
+              Achat <Text style={styles.subtitleStrong}>{formatPrice(p.purchasePriceHT)}</Text> HT
+              <Text style={styles.dot}> · </Text>
+              {getContainerLabel(p.containerVolumeCl)}
             </Text>
           </View>
-          <Text style={[styles.productMargin, { color: accent }]}>
-            {formatPercent(p.computed.marginPercent)}
-          </Text>
-          <Ionicons name="chevron-forward" size={18} color={colors.tabBarInactive} />
+          <View style={styles.marginWrap}>
+            <Text style={[styles.productMargin, { color: accent }]}>
+              {formatPercent(p.computed.marginPercent)}
+            </Text>
+            <Text style={styles.marginLabel}>de marge</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
         </View>
 
         {servingMargins.length > 0 && (
           <View style={styles.servingsTable}>
+            <View style={styles.dashedRule} />
             <View style={styles.tableHeaderRow}>
               <Text style={styles.thService}>SERVICE</Text>
               <Text style={styles.thRight12}>PRIX TTC</Text>
@@ -82,7 +88,7 @@ export const ProductDashboardCard = React.memo(function ProductDashboardCard({
                     {formatPercent(margin.marginPercent)}
                   </Text>
                   <Text style={styles.cellRight1}>
-                    x {coeff}
+                    × {coeff}
                   </Text>
                 </View>
               );
@@ -100,7 +106,9 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.lg,
     marginBottom: spacing.md,
     overflow: 'hidden',
-    ...shadows.sm,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    ...shadows.paper,
   },
   productHeader: {
     flexDirection: 'row',
@@ -110,7 +118,7 @@ const styles = StyleSheet.create({
   },
   productIndicator: {
     width: 4,
-    height: 32,
+    height: 36,
     borderRadius: 2,
     marginRight: spacing.sm + 2,
   },
@@ -119,37 +127,65 @@ const styles = StyleSheet.create({
     marginRight: spacing.sm,
   },
   productName: {
-    ...typography.body,
-    fontWeight: '700',
+    fontFamily: fonts.serif,
+    fontStyle: 'italic',
+    fontSize: 19,
+    fontWeight: '500',
+    letterSpacing: -0.3,
     color: colors.text,
   },
   productSubtitle: {
     ...typography.caption,
+    color: colors.textMuted,
+    marginTop: 3,
+  },
+  subtitleStrong: {
+    fontFamily: fonts.serif,
+    fontStyle: 'italic',
     color: colors.textSecondary,
-    marginTop: 2,
+  },
+  dot: {
+    color: colors.textFaint,
+  },
+  marginWrap: {
+    alignItems: 'flex-end',
+    marginRight: spacing.xs,
   },
   productMargin: {
-    ...typography.h3,
-    fontWeight: '800',
-    marginRight: spacing.xs,
+    fontFamily: fonts.serif,
+    fontStyle: 'italic',
+    fontSize: 22,
+    fontWeight: '600',
+    letterSpacing: -0.3,
+  },
+  marginLabel: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: colors.textFaint,
+    letterSpacing: 1.3,
+    textTransform: 'uppercase',
+    marginTop: 1,
   },
   servingsTable: {
     paddingHorizontal: spacing.md,
     paddingBottom: spacing.md,
   },
+  dashedRule: {
+    borderBottomWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: colors.border,
+    marginBottom: spacing.xs,
+    opacity: 0.85,
+  },
   tableHeaderRow: {
     flexDirection: 'row',
     paddingVertical: spacing.xs + 2,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-    marginBottom: spacing.xs,
+    marginBottom: 2,
   },
   tableRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: spacing.sm,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.border,
+    paddingVertical: spacing.sm - 2,
   },
   servingName: {
     ...typography.bodySmall,
@@ -157,36 +193,35 @@ const styles = StyleSheet.create({
     color: colors.text,
   },
   servingVolume: {
-    ...typography.caption,
-    color: colors.textSecondary,
+    fontFamily: fonts.serif,
+    fontStyle: 'italic',
     fontSize: 11,
+    color: colors.textMuted,
+    marginTop: 1,
   },
   thService: {
-    ...typography.caption,
-    color: colors.tabBarInactive,
-    fontWeight: '600',
+    fontSize: 9.5,
+    color: colors.textMuted,
+    fontWeight: '700',
     textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    fontSize: 10,
+    letterSpacing: 1.2,
     flex: 2,
   },
   thRight12: {
-    ...typography.caption,
-    color: colors.tabBarInactive,
-    fontWeight: '600',
+    fontSize: 9.5,
+    color: colors.textMuted,
+    fontWeight: '700',
     textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    fontSize: 10,
+    letterSpacing: 1.2,
     flex: 1.2,
     textAlign: 'right',
   },
   thRight1: {
-    ...typography.caption,
-    color: colors.tabBarInactive,
-    fontWeight: '600',
+    fontSize: 9.5,
+    color: colors.textMuted,
+    fontWeight: '700',
     textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    fontSize: 10,
+    letterSpacing: 1.2,
     flex: 1,
     textAlign: 'right',
   },
@@ -194,19 +229,25 @@ const styles = StyleSheet.create({
     flex: 2,
   },
   cellRight12: {
-    ...typography.bodySmall,
+    fontFamily: fonts.serif,
+    fontStyle: 'italic',
+    fontSize: 13.5,
     color: colors.text,
     flex: 1.2,
     textAlign: 'right',
   },
   cellRight12Bold: {
-    ...typography.bodySmall,
-    fontWeight: '700',
+    fontFamily: fonts.serif,
+    fontStyle: 'italic',
+    fontSize: 14,
+    fontWeight: '600',
     flex: 1.2,
     textAlign: 'right',
   },
   cellRight1: {
-    ...typography.bodySmall,
+    fontFamily: fonts.serif,
+    fontStyle: 'italic',
+    fontSize: 13.5,
     color: colors.text,
     flex: 1,
     textAlign: 'right',

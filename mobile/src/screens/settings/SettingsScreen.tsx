@@ -1,7 +1,7 @@
 import React, { useState, useCallback } from 'react';
 import { View, Text, StyleSheet, Switch, TouchableOpacity, ScrollView, TextInput, Linking, Platform } from 'react-native';
 import { alert, confirm } from '../../utils/alert';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { TVA_RATES, CONTAINER_PRESETS, ServingType, DEFAULT_MARGIN_THRESHOLDS, Category, CustomContainer } from '@margebar/shared';
@@ -11,6 +11,8 @@ import { ServingTypeIcon } from '../../components/ui/ServingTypeIcon';
 import { Input } from '../../components/ui/Input';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
+import { AdminTicketsSection } from '../../components/ui/AdminTicketsSection';
+import { AdminUsersSection } from '../../components/ui/AdminUsersSection';
 import { useAuthStore } from '../../store/auth.store';
 import { useSystemParamsStore } from '../../store/systemParams.store';
 import { useRatesStore } from '../../store/rates.store';
@@ -19,7 +21,8 @@ import * as servingService from '../../services/serving.service';
 import * as categoryService from '../../services/category.service';
 import * as containerService from '../../services/container.service';
 import * as subscriptionService from '../../services/subscription.service';
-import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
+import { colors, spacing, borderRadius, typography, shadows, fonts } from '../../theme';
+import { Display, Eyebrow, InkStamp, Scribble } from '../../components/ui/atelier';
 
 export function SettingsScreen() {
   const { user, setAuth, logout } = useAuthStore();
@@ -46,6 +49,7 @@ export function SettingsScreen() {
   const { params: systemParams, updateParam } = useSystemParamsStore();
   const { rates, updateRate, resetDefaults } = useRatesStore();
   const isAdmin = user?.role === 'admin';
+  const navigation = useNavigation<any>();
 
   // Local state for admin editing of rates
   const [editRates, setEditRates] = useState<Record<string, { accise: string; cotisation: string }>>({});
@@ -53,12 +57,6 @@ export function SettingsScreen() {
   const [editTvaFood, setEditTvaFood] = useState('');
   const [editLienRef, setEditLienRef] = useState('');
   const [savingSystemParams, setSavingSystemParams] = useState(false);
-
-  // Promo codes (admin)
-  const [promoCodes, setPromoCodes] = useState<any[]>([]);
-  const [newPromoCode, setNewPromoCode] = useState('');
-  const [newPromoDays, setNewPromoDays] = useState('30');
-  const [newPromoMaxUses, setNewPromoMaxUses] = useState('1');
 
   // Categories
   const [categories, setCategories] = useState<Category[]>([]);
@@ -85,7 +83,6 @@ export function SettingsScreen() {
       loadCategories();
       loadContainers();
       loadSubscription();
-      if (isAdmin) loadPromoCodes();
       // Load system params and rates, init admin edit fields
       useSystemParamsStore.getState().loadParams(true).then(() => {
         if (!mounted) return;
@@ -356,24 +353,6 @@ export function SettingsScreen() {
     }
   };
 
-  const loadPromoCodes = async () => {
-    try { const res = await api.get('/promo'); setPromoCodes(res.data); } catch {}
-  };
-
-  const handleCreatePromo = async () => {
-    if (!newPromoCode.trim()) return;
-    try {
-      await api.post('/promo', { code: newPromoCode.trim(), durationDays: parseInt(newPromoDays) || 30, maxUses: parseInt(newPromoMaxUses) || 1 });
-      setNewPromoCode(''); setNewPromoDays('30'); setNewPromoMaxUses('1');
-      loadPromoCodes();
-      alert('Succes', 'Code promo cree');
-    } catch (err: any) { alert('Erreur', err.response?.data?.error || 'Impossible de creer le code'); }
-  };
-
-  const handleDeletePromo = async (id: string) => {
-    try { await api.delete(`/promo/${id}`); loadPromoCodes(); } catch {}
-  };
-
   const handleLogout = () => {
     confirm('Déconnexion', 'Voulez-vous vous déconnecter ?', logout, 'Déconnexion', true);
   };
@@ -381,7 +360,13 @@ export function SettingsScreen() {
   return (
     <ScreenWrapper>
       <DecorativeCurve variant="top" />
-      <Text style={styles.title}>Paramètres</Text>
+      <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: spacing.lg }}>
+        <InkStamp size={44} color={colors.primary} rotate={-6} />
+        <View style={{ marginLeft: spacing.sm + 2 }}>
+          <Eyebrow color={colors.textMuted}>Atelier</Eyebrow>
+          <Display size={28} style={{ marginTop: 2 }}>Paramètres</Display>
+        </View>
+      </View>
 
       {/* Mon établissement */}
       <View style={styles.sectionCard}>
@@ -764,45 +749,16 @@ export function SettingsScreen() {
         <View style={styles.sectionBody}>
           <View style={styles.subscriptionCard}>
             <View style={styles.subscriptionInfo}>
-              <View style={[styles.subscriptionBadge, subStatus === 'active' || subStatus === 'trialing' ? styles.subscriptionBadgeActive : styles.subscriptionBadgeInactive]}>
-                <Ionicons
-                  name={subStatus === 'active' || subStatus === 'trialing' ? 'checkmark-circle' : 'close-circle'}
-                  size={20}
-                  color={subStatus === 'active' || subStatus === 'trialing' ? colors.marginGreen : colors.tabBarInactive}
-                />
+              <View style={[styles.subscriptionBadge, styles.subscriptionBadgeActive]}>
+                <Ionicons name="checkmark-circle" size={20} color={colors.marginGreen} />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={styles.subscriptionStatus}>
-                  {subStatus === 'active' ? 'Abonnement actif' :
-                   subStatus === 'trialing' ? 'Période d\'essai' :
-                   subStatus === 'past_due' ? 'Paiement en retard' :
-                   subStatus === 'canceled' ? 'Abonnement annulé' :
-                   'Aucun abonnement'}
+                <Text style={styles.subscriptionStatus}>Gratuit — open source</Text>
+                <Text style={styles.subscriptionPlan}>
+                  Toutes les fonctionnalites sont accessibles gratuitement.
                 </Text>
-                {subPlan && (
-                  <Text style={styles.subscriptionPlan}>
-                    Plan : {subPlan === 'pro_yearly' ? 'Annuel' : 'Mensuel'} — 2,50 €/mois
-                  </Text>
-                )}
-                {subEndDate && (
-                  <Text style={styles.subscriptionDate}>
-                    {subStatus === 'active' ? 'Renouvellement' : 'Expire'} le {new Date(subEndDate).toLocaleDateString('fr-FR')}
-                  </Text>
-                )}
               </View>
             </View>
-            <TouchableOpacity
-              style={styles.subscriptionBtn}
-              onPress={handleManageSubscription}
-              disabled={subLoading}
-              activeOpacity={0.7}
-            >
-              <Ionicons name="card-outline" size={18} color={colors.primary} style={{ marginRight: spacing.xs }} />
-              <Text style={styles.subscriptionBtnText}>
-                {subLoading ? 'Chargement...' : subStatus === 'active' ? 'Gérer mon abonnement' : 'Voir les offres'}
-              </Text>
-              <Ionicons name="chevron-forward" size={16} color={colors.primary} />
-            </TouchableOpacity>
           </View>
         </View>
       </View>
@@ -810,6 +766,28 @@ export function SettingsScreen() {
       {/* Admin panel — visible only to admins */}
       {isAdmin && (
         <>
+          {/* Utilisateurs */}
+          <AdminUsersSection />
+
+          {/* Voir tous les produits */}
+          <TouchableOpacity
+            style={styles.adminNavBtn}
+            onPress={() => navigation.navigate('AdminProducts')}
+            activeOpacity={0.7}
+          >
+            <View style={styles.adminNavBtnLeft}>
+              <Ionicons name="grid-outline" size={20} color={colors.primary} />
+              <View>
+                <Text style={styles.adminNavBtnTitle}>Tous les produits</Text>
+                <Text style={styles.adminNavBtnDesc}>Vue d'ensemble de tous les utilisateurs</Text>
+              </View>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={colors.primary} />
+          </TouchableOpacity>
+
+          {/* Tickets / retours beta */}
+          <AdminTicketsSection />
+
           {/* Tarifs d'accise */}
           <View style={styles.sectionCard}>
             <View style={styles.sectionHeader}>
@@ -936,47 +914,6 @@ export function SettingsScreen() {
               </TouchableOpacity>
             </View>
           </View>
-          {/* Codes promo */}
-          <View style={styles.sectionCard}>
-            <View style={styles.sectionHeader}>
-              <View style={[styles.sectionAccent, { backgroundColor: colors.marginOrange }]} />
-              <Text style={styles.sectionTitle}>Codes promo</Text>
-            </View>
-            <View style={styles.sectionBody}>
-              <Text style={styles.sectionDesc}>Creez des codes d'acces gratuit pour vos clients.</Text>
-              <TextInput style={[styles.thresholdInput, { marginBottom: spacing.sm }]} value={newPromoCode} onChangeText={setNewPromoCode} placeholder="Code (ex: BRASSERIE2015)" placeholderTextColor={colors.textSecondary} autoCapitalize="characters" />
-              <View style={{ flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.sm }}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.systemParamDesc}>Duree (jours)</Text>
-                  <TextInput style={styles.thresholdInput} value={newPromoDays} onChangeText={setNewPromoDays} placeholder="30" keyboardType="numeric" placeholderTextColor={colors.textSecondary} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.systemParamDesc}>Max utilisations</Text>
-                  <TextInput style={styles.thresholdInput} value={newPromoMaxUses} onChangeText={setNewPromoMaxUses} placeholder="1" keyboardType="numeric" placeholderTextColor={colors.textSecondary} />
-                </View>
-              </View>
-              <TouchableOpacity style={styles.adminSaveBtn} onPress={handleCreatePromo} activeOpacity={0.8}>
-                <Ionicons name="add-circle-outline" size={18} color={colors.textLight} style={{ marginRight: spacing.xs }} />
-                <Text style={styles.adminSaveBtnText}>Creer le code</Text>
-              </TouchableOpacity>
-              {promoCodes.length > 0 && (
-                <View style={{ marginTop: spacing.md }}>
-                  <Text style={styles.subLabel}>Codes existants</Text>
-                  {promoCodes.map((p: any) => (
-                    <View key={p.id} style={[styles.systemParamRow, { justifyContent: 'space-between' }]}>
-                      <View>
-                        <Text style={styles.systemParamLabel}>{p.code}</Text>
-                        <Text style={styles.systemParamDesc}>{p.durationDays}j | {p.currentUses}/{p.maxUses} utilise(s)</Text>
-                      </View>
-                      <TouchableOpacity onPress={() => handleDeletePromo(p.id)}>
-                        <Ionicons name="trash-outline" size={18} color={colors.marginRed} />
-                      </TouchableOpacity>
-                    </View>
-                  ))}
-                </View>
-              )}
-            </View>
-          </View>
         </>
       )}
 
@@ -1001,7 +938,23 @@ export function SettingsScreen() {
         <Text style={styles.logoutBtnText}>Se déconnecter</Text>
       </TouchableOpacity>
 
-      <Text style={styles.version}>MargeBar Pro v1.0.0</Text>
+      <View style={styles.aboutSection}>
+        <Text style={styles.aboutTitle}>
+          Application crée par{' '}
+          <Text
+            style={styles.aboutTitleLink}
+            onPress={() => Linking.openURL('https://labrasseriedesplantes.fr/')}
+          >
+            La Brasserie des Plantes
+          </Text>
+        </Text>
+        <TouchableOpacity style={styles.aboutRow} onPress={() => Linking.openURL('mailto:labrasseriedesplantes@gmail.com')}>
+          <Ionicons name="mail-outline" size={14} color={colors.primary} />
+          <Text style={styles.aboutLink}>labrasseriedesplantes@gmail.com</Text>
+        </TouchableOpacity>
+      </View>
+
+      <Text style={styles.version}>MargeBar Pro v3.14</Text>
     </ScreenWrapper>
   );
 }
@@ -1018,7 +971,9 @@ const styles = StyleSheet.create({
     backgroundColor: colors.cardBackground,
     borderRadius: borderRadius.lg,
     marginBottom: spacing.lg,
-    ...shadows.sm,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    ...shadows.paper,
     overflow: 'hidden',
   },
   sectionHeader: {
@@ -1037,7 +992,11 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     ...typography.h3,
+    fontFamily: fonts.serif,
+    fontStyle: 'italic',
+    fontWeight: '500',
     color: colors.text,
+    letterSpacing: -0.3,
   },
   sectionBody: {
     paddingHorizontal: spacing.lg,
@@ -1483,12 +1442,68 @@ const styles = StyleSheet.create({
     lineHeight: 15,
   },
 
+  adminNavBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: colors.cardBackground,
+    borderRadius: borderRadius.lg,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    ...shadows.sm,
+  },
+  adminNavBtnLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    flex: 1,
+  },
+  adminNavBtnTitle: {
+    ...typography.bodySmall,
+    fontWeight: '700',
+    color: colors.primary,
+  },
+  adminNavBtnDesc: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  aboutSection: {
+    alignItems: 'center',
+    paddingVertical: spacing.lg,
+    marginTop: spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  aboutTitle: {
+    ...typography.bodySmall,
+    fontWeight: '700',
+    color: colors.primary,
+    marginBottom: spacing.sm,
+  },
+  aboutTitleLink: {
+    textDecorationLine: 'underline',
+  },
+  aboutRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginBottom: spacing.xs,
+  },
+  aboutLink: {
+    ...typography.bodySmall,
+    color: colors.primary,
+    fontWeight: '600',
+  },
+
   // Version
   version: {
     ...typography.caption,
     color: colors.textSecondary,
     textAlign: 'center',
-    marginTop: spacing.xl,
+    marginTop: spacing.sm,
     marginBottom: spacing.md,
   },
 });

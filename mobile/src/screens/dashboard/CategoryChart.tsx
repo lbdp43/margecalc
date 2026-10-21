@@ -1,14 +1,13 @@
 import React from 'react';
-import { View, Text, StyleSheet, useWindowDimensions } from 'react-native';
-import Svg, { Rect, Text as SvgText } from 'react-native-svg';
-import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
+import { View, Text, StyleSheet } from 'react-native';
+import { colors, spacing, borderRadius, typography, shadows, fonts } from '../../theme';
+import { Scribble } from '../../components/ui/atelier';
 
 const CATEGORY_COLORS = [
-  '#1B4332', '#2D6A4F', '#40916C', '#52B788', '#74C69D', '#95D5B2', '#B7E4C7',
+  '#1B7A55', '#2F8A63', '#43A47C', '#62B597', '#7EC4AB', '#9AD3BF', '#B8E3D5',
 ];
 
-const BAR_HEIGHT = 40;
-const LABEL_WIDTH = 80;
+const ROW_HEIGHT = 32;
 
 interface CategoryDatum {
   name: string;
@@ -21,11 +20,7 @@ interface CategoryChartProps {
 }
 
 export const CategoryChart = React.memo(function CategoryChart({ data }: CategoryChartProps) {
-  const { width } = useWindowDimensions();
-  const chartWidth = width - spacing.md * 4;
-  const barMaxWidth = chartWidth - LABEL_WIDTH;
   const maxMargin = Math.max(...data.map((c) => c.avgMargin), 1);
-  const svgHeight = data.length * BAR_HEIGHT + 8;
 
   if (data.length === 0) return null;
 
@@ -35,47 +30,23 @@ export const CategoryChart = React.memo(function CategoryChart({ data }: Categor
       accessibilityLabel={`Graphique marge par catégorie, ${data.length} catégories`}
     >
       <View style={styles.sectionHeader}>
-        <View style={[styles.sectionIndicator, styles.indicatorPrimary]} />
+        <Scribble width={28} color={colors.primary} style={{ marginRight: spacing.sm }} />
         <Text style={styles.sectionTitle}>Marge par catégorie</Text>
       </View>
-      <View style={[styles.chartContainer, { height: svgHeight }]}>
-        <Svg width={chartWidth} height={svgHeight}>
-          {data.map((cat, i) => {
-            const barW = Math.max((cat.avgMargin / maxMargin) * barMaxWidth, 4);
-            const y = i * BAR_HEIGHT + 4;
-            const colorIdx = i % CATEGORY_COLORS.length;
-            return (
-              <React.Fragment key={cat.name}>
-                <SvgText
-                  x={0}
-                  y={y + 16}
-                  fontSize={11}
-                  fill={colors.text}
-                  fontWeight="600"
-                >
-                  {cat.name.length > 12 ? cat.name.slice(0, 11) + '…' : cat.name}
-                </SvgText>
-                <Rect
-                  x={LABEL_WIDTH}
-                  y={y + 2}
-                  width={barW}
-                  height={22}
-                  rx={6}
-                  fill={CATEGORY_COLORS[colorIdx]}
-                />
-                <SvgText
-                  x={LABEL_WIDTH + barW + 6}
-                  y={y + 17}
-                  fontSize={12}
-                  fill={colors.text}
-                  fontWeight="700"
-                >
-                  {cat.avgMargin.toFixed(1)} %
-                </SvgText>
-              </React.Fragment>
-            );
-          })}
-        </Svg>
+      <View style={styles.rows}>
+        {data.map((cat, i) => {
+          const ratio = Math.max(cat.avgMargin / maxMargin, 0.04);
+          const barColor = CATEGORY_COLORS[i % CATEGORY_COLORS.length];
+          return (
+            <View key={cat.name} style={[styles.row, { height: ROW_HEIGHT }]}>
+              <Text style={styles.label} numberOfLines={1}>{cat.name}</Text>
+              <View style={styles.barTrack}>
+                <View style={[styles.barFill, { width: `${ratio * 100}%`, backgroundColor: barColor }]} />
+              </View>
+              <Text style={styles.value}>{cat.avgMargin.toFixed(1)} %</Text>
+            </View>
+          );
+        })}
       </View>
     </View>
   );
@@ -87,26 +58,57 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.lg,
     padding: spacing.md,
     marginBottom: spacing.md,
-    ...shadows.sm,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    ...shadows.paper,
   },
   sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-  },
-  sectionIndicator: {
-    width: 4,
-    height: 20,
-    borderRadius: 2,
-    marginRight: spacing.sm,
-  },
-  indicatorPrimary: {
-    backgroundColor: colors.primary,
+    marginBottom: spacing.sm + 2,
   },
   sectionTitle: {
     ...typography.h3,
+    fontFamily: fonts.serif,
+    fontStyle: 'italic',
+    fontWeight: '500',
+    color: colors.text,
+    letterSpacing: -0.3,
+  },
+  rows: {
+    gap: 6,
+  },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  label: {
+    width: 86,
+    fontSize: 12.5,
+    fontWeight: '600',
     color: colors.text,
   },
-  chartContainer: {
-    marginTop: spacing.sm,
+  barTrack: {
+    flex: 1,
+    height: 10,
+    borderRadius: 99,
+    backgroundColor: colors.cardBackgroundLo,
+    borderWidth: 1.2,
+    borderColor: colors.border,
+    overflow: 'hidden',
+  },
+  barFill: {
+    height: '100%',
+    borderRadius: 99,
+  },
+  value: {
+    fontFamily: fonts.serif,
+    fontStyle: 'italic',
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.text,
+    minWidth: 52,
+    textAlign: 'right',
   },
 });
