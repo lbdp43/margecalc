@@ -206,12 +206,6 @@ export function YinYangSpinner({
     outputRange: [0, innerB - innerT - mugH * 0.05],
   });
 
-  // Foam Y follows fill level
-  const foamY = fillLevel.interpolate({
-    inputRange: [0, 1],
-    outputRange: [innerB, mugT - 2 * s],
-  });
-
   // Drip lengths (foam running down outside of glass)
   const dripLenL = dripAnim.interpolate({
     inputRange: [0, 1],
@@ -430,10 +424,9 @@ export function YinYangSpinner({
         {/* Foam cloud inner highlight bumps */}
         <AnimatedEllipse
           cx={fMid - 12 * s}
-          cy={foamY.interpolate({
-            inputRange: [innerB, mugT - 2 * s],
+          cy={fillLevel.interpolate({
+            inputRange: [0, 1],
             outputRange: [innerB, fTop + 14 * s],
-            extrapolate: 'clamp',
           })}
           rx={foamWobble.interpolate({
             inputRange: [0, 1],
@@ -451,10 +444,9 @@ export function YinYangSpinner({
         />
         <AnimatedEllipse
           cx={fMid + 10 * s}
-          cy={foamY.interpolate({
-            inputRange: [innerB, mugT - 2 * s],
+          cy={fillLevel.interpolate({
+            inputRange: [0, 1],
             outputRange: [innerB, fTop + 12 * s],
-            extrapolate: 'clamp',
           })}
           rx={foamWobble.interpolate({
             inputRange: [0, 1],
