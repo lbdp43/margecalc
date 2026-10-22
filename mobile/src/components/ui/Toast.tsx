@@ -12,7 +12,8 @@
  * - Never shown on top of an open BottomSheet or Dialog: it waits until the
  *   overlay closes. One opening over a toast already seen (> 800 ms) dismisses it.
  * - The newest message wins: it replaces a plain toast at once, and cuts an
- *   action toast down to 1,5 s. A toast that waited more than 4 s is dropped.
+ *   action toast down to 1,5 s. A toast that waited more than 4 s (not
+ *   counting time behind an open overlay) is dropped.
  */
 import React, { useEffect, useRef, useState } from 'react';
 import { PanResponder, Platform, StyleSheet, Text, View } from 'react-native';
@@ -41,7 +42,7 @@ interface ToastItem extends ToastOptions {
   queuedAt: number;
 }
 
-/** A toast that waited longer than this (behind a sheet, a dialog…) is no longer news. */
+/** A toast that waited longer than this (behind other toasts) is no longer news. Time spent behind an open sheet or dialog does not count. */
 const STALE_MS = 4000;
 /** A toast seen for longer than this is dismissed, not re-shown, when an overlay opens over it. */
 const SEEN_MS = 800;
@@ -156,10 +157,20 @@ export function ToastHost() {
     timer.current = setTimeout(() => hide(id), ms);
   };
 
+  // When the last overlay closed: what waited behind it was deliberately held
+  // back (« Tarifs à jour », « Compte créé » behind the welcome sheet), not
+  // stale — its waiting clock starts there.
+  const wasBlocked = useRef(blocked);
+  const unblockedAt = useRef(0);
+
   useEffect(() => {
+    if (wasBlocked.current && !blocked) unblockedAt.current = Date.now();
+    wasBlocked.current = blocked;
     if (!current || blocked || shownId === current.id) return;
-    // Waited too long (behind a sheet, a dialog, an action toast): drop it.
-    if (Date.now() - current.queuedAt > STALE_MS) {
+    // A sheet that opened in this same commit is not in `blocked` yet.
+    if (useChromeStore.getState().sheetCount > 0) return;
+    // Waited too long behind other toasts: drop it.
+    if (Date.now() - Math.max(current.queuedAt, unblockedAt.current) > STALE_MS) {
       dismiss(current.id);
       return;
     }
@@ -214,8 +225,10 @@ export function ToastHost() {
     opacity.value = withTiming(0, { duration: 100 });
     const t = setTimeout(() => setShownId(null), 110);
     return () => clearTimeout(t);
+    // Also when the toast appeared in the same commit as the overlay (shownId
+    // set after `blocked` flipped): it must not stay on top of it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [blocked]);
+  }, [blocked, shownId]);
 
   useEffect(() => () => {
     if (timer.current) clearTimeout(timer.current);

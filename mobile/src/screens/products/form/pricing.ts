@@ -28,6 +28,25 @@ export const TYPING_MAX = 1_000_000_000;
 export const formatCount = (n: number) => formatNumber(n, 1, { minDigits: 0 });
 
 /**
+ * Servings in a container, as a bar counts them: whole servings, with « ≈ »
+ * when the division leaves a remainder (« ≈ 23 » for 70 cl ÷ 3 cl: 23 full
+ * shots and a drop). Under 2 the fraction is the information (« 1,5 » pichet,
+ * never « ≈ 1 »). Only the label rounds: the gains keep the exact count.
+ */
+export function formatServings(n: number): string {
+  if (!(n > 0) || !isFinite(n)) return formatCount(n);
+  const whole = Math.floor(n + 1e-6);
+  if (n - whole < 0.05) return formatNumber(whole, 0);
+  if (n < 2) return formatCount(n);
+  return `≈${NBSP}${formatNumber(whole, 0)}`;
+}
+
+/** « 14 verres », « ≈ 23 shots », « 1,5 pichet » (French plural from 2). */
+export function servingsText(n: number, noun: Pick<ServiceNoun, 'one' | 'many'>): string {
+  return `${formatServings(n)}${NBSP}${n >= 2 ? noun.many : noun.one}`;
+}
+
+/**
  * Margin for display: one decimal up to ±100 % (« 69,0 % »), none beyond
  * (« -757 % »), and absurd values — a typo in a price — read « ≤ -999 % »
  * instead of « -85 714 185,0 % ».
@@ -264,13 +283,11 @@ export function containerNoun(cl: number): string {
 /** True when one dose is the whole container (a can, a bottle sold as is). */
 export const soldWhole = (containerCl: number, doseCl: number) => containerCl > 0 && doseCl > 0 && doseCl >= containerCl;
 
-/** « 14 verres par bouteille », « 23,3 shots par bouteille », « Vendu à l’unité ». */
+/** « 14 verres par bouteille », « ≈ 23 shots par bouteille », « Vendu à l’unité ». */
 export function dosesSentence(containerCl: number, doseCl: number, noun: ServiceNoun): string | null {
   if (!(containerCl > 0) || !(doseCl > 0)) return null;
   if (soldWhole(containerCl, doseCl)) return 'Vendu à l’unité';
-  const n = containerCl / doseCl;
-  const word = n >= 2 ? noun.many : noun.one;
-  return `${formatCount(n)}${NBSP}${word} par ${containerNoun(containerCl)}`;
+  return `${servingsText(containerCl / doseCl, noun)} par ${containerNoun(containerCl)}`;
 }
 
 /**

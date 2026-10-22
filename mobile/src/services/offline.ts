@@ -136,22 +136,26 @@ export async function getCached<T>(key: string): Promise<T | null> {
 /**
  * The offline cache shares the origin's ~5 MB with things that must never fail
  * to save (the session, the product draft, the form preferences). So:
- * - full-size photos (`imageUrl`, up to 300 000 chars) are not cached — the
- *   160 px `thumbnailUrl` is, and the online fetch brings the photo back;
+ * - full-size photos (`imageUrl`, up to 300 000 chars) are never persisted —
+ *   the 160 px `thumbnailUrl` is, with `hasImage: true`, exactly like the API
+ *   list (GET /api/products has no `imageUrl`); the online fetch of the detail
+ *   brings the photo back (it lives in memory only, in ['product', id]);
  * - all cache entries together stay under CACHE_BUDGET: the least recently
  *   written ones are evicted first.
  */
 const CACHE_BUDGET = 1_500_000;
 const CACHE_INDEX_KEY = `${CACHE_PREFIX}_index`;
-const BIG_IMAGE = 40_000;
 
-function slimItem(item: any): any {
+/** A product (or any record) as persisted: without its full photo. */
+export function withoutFullPhoto<T>(item: T): T {
   if (!item || typeof item !== 'object' || Array.isArray(item)) return item;
-  if (typeof item.imageUrl === 'string' && item.imageUrl.length > BIG_IMAGE) return { ...item, imageUrl: null };
-  return item;
+  const { imageUrl, ...rest } = item as any;
+  // No photo (`null`) stays as is; a photo becomes « there is one » + its thumbnail.
+  if (typeof imageUrl !== 'string' || !imageUrl) return item;
+  return { ...rest, hasImage: true } as T;
 }
 function slim<T>(data: T): T {
-  return (Array.isArray(data) ? data.map(slimItem) : slimItem(data)) as T;
+  return (Array.isArray(data) ? data.map(withoutFullPhoto) : withoutFullPhoto(data)) as T;
 }
 
 type CacheIndex = Record<string, { size: number; ts: number }>;

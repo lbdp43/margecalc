@@ -473,16 +473,39 @@ export function fingerprint(values: FormValues): string {
   ]);
 }
 
+export interface FormSummary {
+  /** Enabled services. */
+  count: number;
+  /** Margin of the WEAKEST service (null while a price or the cost is missing). */
+  margin: number | null;
+  /** Coefficient of that same service. */
+  coeff: number | null;
+  costKnown: boolean;
+  /** Several services: `margin` / `coeff` are the minimum (« marge min. »). */
+  isMin: boolean;
+  /** Key of the weakest service. */
+  weakest: string | null;
+}
+
 /**
- * Sticky bar summary: the margin and coefficient of the PRIMARY service (the
- * first in API order), i.e. the numbers the detail, the list badge and the
- * dashboard show once the product is saved.
+ * Sticky bar summary, next to « Enregistrer »: with one service its margin and
+ * coefficient; with several, the WEAKEST one (« 2 services · marge min.
+ * 78,4 % »), so the zone colour always means « the worst service of this
+ * product » and the number says which margin it is, whichever service the
+ * pricing card shows. Null while any service lacks a price (or the cost is
+ * unknown): validation will ask for it.
  */
-export function summaryOf(values: FormValues, d: Derived, servingTypes: ServingType[]) {
+export function summaryOf(values: FormValues, d: Derived, servingTypes: ServingType[]): FormSummary {
   const keys = orderedServiceKeys(values, servingTypes);
   const n = keys.length;
-  const r = keys.length ? resultOf(keys[0], values, d) : null;
-  if (!r) return { count: n, margin: null as number | null, coeff: null as number | null, costKnown: d.costKnown };
-  const coeff = r.costPerServingHT > 0 ? r.sellingPriceHT / r.costPerServingHT : null;
-  return { count: n, margin: r.marginPercent, coeff, costKnown: d.costKnown };
+  const empty: FormSummary = { count: n, margin: null, coeff: null, costKnown: d.costKnown, isMin: n > 1, weakest: null };
+  let worst: { key: string; r: NonNullable<ReturnType<typeof resultOf>> } | null = null;
+  for (const key of keys) {
+    const r = resultOf(key, values, d);
+    if (!r) return empty;
+    if (!worst || r.marginPercent < worst.r.marginPercent) worst = { key, r };
+  }
+  if (!worst) return empty;
+  const coeff = worst.r.costPerServingHT > 0 ? worst.r.sellingPriceHT / worst.r.costPerServingHT : null;
+  return { ...empty, margin: worst.r.marginPercent, coeff, weakest: worst.key };
 }

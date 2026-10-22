@@ -6,7 +6,7 @@ import {
   ImportProductsResult,
 } from '@margebar/shared';
 import { api } from './api';
-import { assertOnline, clearCache, setCache } from './offline';
+import { assertOnline, clearCache, setCache, withoutFullPhoto } from './offline';
 
 /**
  * Products API. Writes never queue offline: they throw an `OfflineError`
@@ -89,13 +89,15 @@ export async function getPriceHistory(productId: string): Promise<PriceHistoryEn
 
 /**
  * After a save: put the fresh product in the cache (the detail shows it at once)
- * and refetch everything that depends on it (RC3). The persisted offline copy
- * keeps the thumbnail only (see offline.ts setCache).
+ * and refetch everything that depends on it (RC3). The full photo (`imageUrl`,
+ * up to 300 000 chars) lives in memory in ['product', id] only: the offline
+ * copy keeps the thumbnail and `hasImage`, and the list is refetched, never
+ * written with it (GET /api/products has no `imageUrl`).
  */
 export function refreshProductCaches(queryClient: QueryClient, saved: ProductWithMargin): void {
   const id = saved.id;
   queryClient.setQueryData(productKeys.detail(id), saved);
-  setCache(JSON.stringify(productKeys.detail(id)), saved).catch(() => {});
+  setCache(JSON.stringify(productKeys.detail(id)), withoutFullPhoto(saved)).catch(() => {});
   clearCache(JSON.stringify(productKeys.servings(id))).catch(() => {});
   queryClient.invalidateQueries({ queryKey: productKeys.list });
   queryClient.invalidateQueries({ queryKey: productKeys.detail(id) });

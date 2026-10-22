@@ -28,7 +28,7 @@ import type { ChipItem } from '../../../components/ui';
 import { servingIconName } from '../../../components/ui/ServingTypeIcon';
 import { marginColors, palette, radius, type } from '../../../theme';
 import { getMarginZone, MarginThresholds } from '../../../utils/marginThresholds';
-import { NBSP, clamp, formatCoeff, formatEuro, formatPercent, formatVolumeCl, roundToStep } from '../../../utils/format';
+import { clamp, formatCoeff, formatEuro, formatPercent, formatVolumeCl, roundToStep } from '../../../utils/format';
 import { ControlRow, FieldError } from './FieldBits';
 import { Derived, FormValues, orderedServiceKeys, priceMaxMessage, resultOf, serviceName, shownModeValue } from './model';
 import {
@@ -38,13 +38,13 @@ import {
   ServiceState,
   TYPING_MAX,
   dosesSentence,
-  formatCount,
   formatMargin,
   priceForMargin,
   priceFromMode,
   pricingSetup,
   round2,
   serviceNoun,
+  servingsText,
   soldWhole,
   suggestedPrice,
   tvaLabel,
@@ -311,7 +311,8 @@ function ServicePricing({ serviceKey: key, values, setValues, servingTypes, d, t
   const shown = shownModeValue(s, cost, tva);
   const objective = priceForMargin(cost, tva, t.good);
   const glasses = d.containerCl > 0 && dose > 0 ? d.containerCl / dose : 0;
-  const glassesText = glasses > 0 ? `${formatCount(glasses)}${NBSP}${glasses >= 2 ? noun.many : noun.one}` : undefined;
+  // Whole servings in the caption (« ≈ 23 shots »); the total keeps the exact count.
+  const glassesText = glasses > 0 ? servingsText(glasses, noun) : undefined;
   const priceHT = s.price > 0 ? s.price / (1 + tva) : null;
   const coeff = result && result.costPerServingHT > 0 ? result.sellingPriceHT / result.costPerServingHT : null;
   const objectiveText = formatPercent(t.good, Number.isInteger(t.good) ? 0 : 1);

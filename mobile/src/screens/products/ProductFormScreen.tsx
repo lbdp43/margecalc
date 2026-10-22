@@ -12,7 +12,7 @@
  * all its services (inline `servings`). See BRIEF §2 for RC1–RC13.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Platform, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -160,6 +160,7 @@ export function ProductFormScreen({ route, navigation }: Props) {
   const prefill: ProductPrefill | undefined = params.scanData;
   const user = useAuthStore((s) => s.user);
   const queryClient = useQueryClient();
+  const { width: winW } = useWindowDimensions();
   const thresholds = useMarginThresholds();
   const rates = useRatesStore((s) => s.rates);
   const seuilSS = useSystemParamsStore((s) => {
@@ -403,6 +404,60 @@ export function ProductFormScreen({ route, navigation }: Props) {
   }, [values, editing, step, saveState, user?.id]);
 
   // ─── Leaving ─────────────────────────────────────────────────────────────
+  // NavBar, Android back, browser back and reload. Unsaved edits of an existing
+  // product, or a save in flight, are guarded. (A new product needs no guard:
+  // its draft keeps the work, and a reload resumes it.)
+  const dirtyEdit = editing && hydrated && step === 'form' && fingerprint(values) !== baseline.current;
+  const guardActive = dirtyEdit || saveState === 'saving';
+  /** Web: the form's own history entry, put back when a browser back is refused. */
+  const ownEntry = useRef<{ state: unknown; path: string } | null>(null);
+  /** A browser back popped the form's entry while the dialog decides. */
+  const restored = useRef(false);
+  const confirming = useRef(false);
+  /**
+   * Captured while the form is on screen and its URL long settled (the first
+   * edit, a save), never at mount: the router writes the new URL after the
+   * screen's first effects.
+   */
+  const captureEntry = useCallback(() => {
+    const path = isWeb ? webPath() : null;
+    if (path && web.history) ownEntry.current = { state: web.history.state, path };
+  }, []);
+
+  useEffect(() => {
+    if (!isWeb || !guardActive) return;
+    captureEntry();
+    // Reload / tab close: the browser's own « leave this page? » prompt.
+    const onBeforeUnload = (ev: any) => {
+      ev.preventDefault();
+      ev.returnValue = '';
+      return '';
+    };
+    web.addEventListener?.('beforeunload', onBeforeUnload);
+    return () => web.removeEventListener?.('beforeunload', onBeforeUnload);
+  }, [guardActive, captureEntry]);
+
+  /**
+   * After a refused browser back the URL is already the previous screen's while
+   * the form stays: push the form's entry back so the URL, the next back and a
+   * reload all match the screen. False when the URL is still the form's (NavBar).
+   */
+  const restoreEntry = useCallback((): boolean => {
+    if (!isWeb) return false;
+    const own = ownEntry.current;
+    const path = webPath();
+    if (!own || !path || !web.history || path === own.path) return false;
+    web.history.pushState(own.state, '', own.path);
+    // The router still counts the refused back as the pop in progress: the next
+    // navigation (« Enregistrer », the NavBar back) would then overwrite the
+    // form's entry instead of going back, leaving « detail, detail ». A no-op
+    // state change settles it (same URL, same entry).
+    setTimeout(() => {
+      if (mounted.current) navigation.setParams({});
+    }, 0);
+    return true;
+  }, [navigation]);
+
   useEffect(
     () =>
       navigation.addListener('beforeRemove', (e: any) => {
@@ -411,6 +466,7 @@ export function ProductFormScreen({ route, navigation }: Props) {
         // conservé » and then jump to the saved product a few seconds later.
         if (saving.current) {
           e.preventDefault();
+          restoreEntry();
           toast.info('Enregistrement en cours…');
           return;
         }
@@ -428,6 +484,9 @@ export function ProductFormScreen({ route, navigation }: Props) {
           return;
         }
         e.preventDefault();
+        if (restoreEntry()) restored.current = true;
+        if (confirming.current) return; // a second back while the dialog is open
+        confirming.current = true;
         dialog
           .confirm({
             title: 'Quitter sans enregistrer ?',
@@ -438,14 +497,23 @@ export function ProductFormScreen({ route, navigation }: Props) {
             icon: 'exit-outline',
           })
           .then((ok) => {
-            if (ok) {
-              allowLeave.current = true;
-              clearUndoToast();
-              navigation.dispatch(e.data.action);
-            }
+            confirming.current = false;
+            const replay = restored.current;
+            restored.current = false;
+            if (!ok || !mounted.current) return;
+            allowLeave.current = true;
+            clearUndoToast();
+            // A browser back: replay it from the restored entry, so the history
+            // reads « …, detail » with the form as the forward entry.
+            if (replay) web.history.back();
+            else navigation.dispatch(e.data.action);
+            // The removal normally unmounts the form; if it did not, guard again.
+            setTimeout(() => {
+              if (mounted.current) allowLeave.current = false;
+            }, 1500);
           });
       }),
-    [navigation, step, editing, user?.id, clearUndoToast],
+    [navigation, step, editing, user?.id, clearUndoToast, restoreEntry],
   );
 
   // ─── Scan ────────────────────────────────────────────────────────────────
@@ -829,6 +897,7 @@ export function ProductFormScreen({ route, navigation }: Props) {
       return;
     }
     saving.current = true;
+    captureEntry();
     clearUndoToast();
     // Selling below cost is allowed, but never silently (a typo in a price).
     const losses = lossServices(v, dv, servingTypes);
@@ -895,7 +964,7 @@ export function ProductFormScreen({ route, navigation }: Props) {
         icon: info.offline ? 'cloud-offline-outline' : 'alert-circle-outline',
       });
     }
-  }, [photoBusy, servingTypes, rates, seuilSS, productId, editing, user?.id, queryClient, navigation, scrollToField, clearUndoToast]);
+  }, [photoBusy, servingTypes, rates, seuilSS, productId, editing, user?.id, queryClient, navigation, scrollToField, clearUndoToast, captureEntry]);
 
   const remove = useCallback(async () => {
     if (!productId || deleting) return;
@@ -999,6 +1068,10 @@ export function ProductFormScreen({ route, navigation }: Props) {
   const zone = sum.margin !== null ? getMarginZone(sum.margin, thresholds) : undefined;
   const zoneColor = zone ? marginColors[zone].fg : palette.text3;
   const meta = pricingMeta(values, d, servingTypes);
+  // Several services: the weakest one, said as such. Narrow phones keep both
+  // sides of the bar on one line (« min. » once on the left is enough).
+  const marginWord = !sum.isMin ? 'marge' : winW < 340 ? 'min.' : 'marge min.';
+  const coeffWord = sum.isMin && winW >= 380 ? 'Coeff min.' : 'Coeff';
 
   const footer = (
     <StickyActionBar
@@ -1008,8 +1081,13 @@ export function ProductFormScreen({ route, navigation }: Props) {
         ) : sum.margin === null ? (
           `${plural(sum.count, 'service')} · ${sum.costKnown ? 'prix à compléter' : d.needsDegree ? 'degré à compléter' : 'prix d’achat à compléter'}`
         ) : (
-          <Text style={[styles.summary, { color: zoneColor }]} numberOfLines={1} testID="sticky-summary">
-            {plural(sum.count, 'service')} · marge{' '}
+          <Text
+            style={[styles.summary, { color: zoneColor }]}
+            numberOfLines={1}
+            testID="sticky-summary"
+            accessibilityLabel={`${plural(sum.count, 'service')}, marge ${sum.isMin ? 'minimale ' : ''}${formatMargin(sum.margin)}${zone ? `, ${marginColors[zone].label}` : ''}`}
+          >
+            {plural(sum.count, 'service')} · {marginWord}{' '}
             <AnimatedNumber
               value={sum.margin}
               from={null}
@@ -1028,7 +1106,8 @@ export function ProductFormScreen({ route, navigation }: Props) {
             <Text style={styles.offlineText}>Hors ligne</Text>
           </View>
         ) : sum.coeff ? (
-          `Coeff ${formatCoeff(sum.coeff)}`
+          // Same service as the margin (the weakest margin is the lowest coefficient).
+          `${coeffWord} ${formatCoeff(sum.coeff)}`
         ) : undefined
       }
       primary={{
