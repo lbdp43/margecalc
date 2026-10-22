@@ -9,7 +9,8 @@
  *   Contenant                    Bouteille · 70 cl
  *   [2 cl] [4 cl] … [70 cl] … [Fût 30 L]       (scrolled to the selection)
  *   Result panel (answer first, breakdown after)
- *   « Enregistrer comme produit » (logged in) or `footer` (logged out CTA)
+ *   « Enregistrer comme produit » (logged in) or `footer(draft)` (logged out
+ *   CTA, which keeps the calculation across sign-up: ./savedCalcs)
  *
  * Out-of-range typing is never clamped silently: the calculation uses the
  * nearest allowed value while a line under the field says so, and the field
@@ -40,16 +41,24 @@ export interface DutyDraft {
   degree: number;
   volumeCl: number;
   result: DroitsResult;
+  /** False while every input still holds its opening value (nothing was calculated yet). */
+  edited: boolean;
 }
 
 export interface DutyCalculatorProps {
   /** Logged in: shows « Enregistrer comme produit ». */
   onSaveAsProduct?: (draft: DutyDraft) => void;
-  /** Rendered after the result (e.g. the logged-out sign-up card). */
-  footer?: React.ReactNode;
+  /**
+   * Rendered after the result (e.g. the logged-out sign-up card). A function
+   * receives the current calculation, so the card can keep it across sign-up.
+   */
+  footer?: React.ReactNode | ((draft: DutyDraft) => React.ReactNode);
   /** The container chips bleed to the screen edges (inside a padded Screen). */
   bleed?: boolean;
 }
+
+/** Opening values (« Spiritueux · 11,00 € · 40 % vol. · 70 cl »). */
+const INITIAL = { slug: 'spiritueux', price: 11, degree: 40, volumeCl: 70 };
 
 const REFERENCE_URL = 'https://entreprendre.service-public.fr/vosdroits/F32101';
 const PRICE_MAX = 99999;
@@ -71,13 +80,13 @@ export function DutyCalculator({ onSaveAsProduct, footer, bleed = true }: DutyCa
   const tvaRate = isFinite(tvaRaw) && tvaRaw > 0 && tvaRaw < 1 ? tvaRaw : 0.2;
   const reference = useParam('lien_reference') || REFERENCE_URL;
 
-  const [slug, setSlug] = useState('spiritueux');
+  const [slug, setSlug] = useState(INITIAL.slug);
   // Raw values as typed (may be out of range while editing); the
   // calculation always uses the clamped ones.
-  const [priceRaw, setPriceRaw] = useState(11);
-  const [priceText, setPriceText] = useState(() => toInputString(11, 2));
-  const [degreeRaw, setDegreeRaw] = useState(40);
-  const [volumeCl, setVolumeCl] = useState(70);
+  const [priceRaw, setPriceRaw] = useState(INITIAL.price);
+  const [priceText, setPriceText] = useState(() => toInputString(INITIAL.price, 2));
+  const [degreeRaw, setDegreeRaw] = useState(INITIAL.degree);
+  const [volumeCl, setVolumeCl] = useState(INITIAL.volumeCl);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [editingPrice, setEditingPrice] = useState(false);
   const [editingDegree, setEditingDegree] = useState(false);
@@ -146,7 +155,9 @@ export function DutyCalculator({ onSaveAsProduct, footer, bleed = true }: DutyCa
         tone: 'warn' as const,
       }
     : degreeHint(rate, degree, seuilSS);
-  const draft: DutyDraft = { rate, price, degree, volumeCl, result };
+  const edited = rate.slug !== INITIAL.slug || price !== INITIAL.price || degree !== INITIAL.degree || volumeCl !== INITIAL.volumeCl;
+  const draft: DutyDraft = { rate, price, degree, volumeCl, result, edited };
+  const footerNode = typeof footer === 'function' ? footer(draft) : footer;
   const formatDeg = width < SHORT_DEGREE_BELOW ? (n: number) => `${formatNumber(n, Number.isInteger(n) ? 0 : 1)}${NBSP}%` : formatDegree;
 
   return (
@@ -260,7 +271,7 @@ export function DutyCalculator({ onSaveAsProduct, footer, bleed = true }: DutyCa
         </View>
       ) : null}
 
-      {footer ? <View style={styles.section}>{footer}</View> : null}
+      {footerNode ? <View style={styles.section}>{footerNode}</View> : null}
 
       <PressableScale
         onPress={() => Linking.openURL(reference).catch(() => {})}

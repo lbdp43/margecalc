@@ -1,13 +1,13 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import * as authService from '../services/auth.service';
-import { BannedAccountError } from '../services/auth.service';
+import { BannedAccountError, InvalidCredentialsError } from '../services/auth.service';
 import { sendKnownError } from '../utils/validation';
 
 const router = Router();
 
 const registerSchema = z.object({
-  email: z.string().trim().email('Adresse e-mail invalide.'),
+  email: z.string().trim().max(254, 'Adresse e-mail trop longue.').email('Adresse e-mail invalide.'),
   password: z.string().min(8, 'Le mot de passe doit contenir au moins 8 caractères.').max(200),
   businessName: z.string().optional(),
   isAutoEntrepreneur: z.boolean().optional(),
@@ -24,12 +24,11 @@ router.post('/register', async (req: Request, res: Response) => {
     const result = await authService.register(data.email, data.password, data.businessName, data.isAutoEntrepreneur);
     res.status(201).json(result);
   } catch (err: any) {
-    if (sendKnownError(res, err)) {
-      return;
-    } else {
-      // Known: "Un compte existe déjà avec cet email"
-      res.status(409).json({ error: 'Un compte existe déjà avec cet email' });
-    }
+    // 400 validation, 409 address already used (HttpError from the service).
+    if (sendKnownError(res, err)) return;
+    // Anything else (database down…) is NOT « account exists »: say it is temporary.
+    console.error('[AUTH] register failed:', err?.message ?? err);
+    res.status(500).json({ error: 'Impossible de créer le compte pour le moment. Réessayez dans un instant.' });
   }
 });
 
@@ -39,12 +38,14 @@ router.post('/login', async (req: Request, res: Response) => {
     const result = await authService.login(data.email, data.password);
     res.json(result);
   } catch (err: any) {
-    if (sendKnownError(res, err)) {
-      return;
-    } else if (err instanceof BannedAccountError) {
-      res.status(403).json({ error: err.message });
+    if (sendKnownError(res, err)) return;
+    if (err instanceof BannedAccountError) {
+      res.status(403).json({ error: err.message, code: 'banned' });
+    } else if (err instanceof InvalidCredentialsError) {
+      res.status(401).json({ error: err.message });
     } else {
-      res.status(401).json({ error: 'Email ou mot de passe incorrect' });
+      console.error('[AUTH] login failed:', err?.message ?? err);
+      res.status(500).json({ error: 'Connexion impossible pour le moment. Réessayez dans un instant.' });
     }
   }
 });

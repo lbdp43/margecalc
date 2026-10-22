@@ -54,8 +54,45 @@ export function computeMarginSafe(p: MarginFields): MarginResult {
   }
 }
 
-function enrichProduct<T extends MarginFields>(product: T): T & { computed: MarginResult } {
-  return { ...product, computed: computeMarginSafe(product) };
+type HeadlineServing = { sellingPriceTTC: number; servingType: { sortOrder: number; volumeCl: number } | null };
+
+/**
+ * Primary service of a product: lowest servingType.sortOrder, then smallest volume (the rule of
+ * resyncPrimary), among the priced services that fit in the container. Null without one.
+ */
+export function primaryServing<S extends HeadlineServing>(servings: S[] | null | undefined, containerVolumeCl: number): S | null {
+  const usable = (servings ?? []).filter((s) => s.servingType && s.servingType.volumeCl > 0
+    && s.servingType.volumeCl <= containerVolumeCl && s.sellingPriceTTC > 0);
+  usable.sort((a, b) => a.servingType!.sortOrder - b.servingType!.sortOrder || a.servingType!.volumeCl - b.servingType!.volumeCl);
+  return usable[0] ?? null;
+}
+
+/**
+ * Headline price fields as the API reports them. A product with services is priced by its
+ * primary service (contract: sellingPriceTTC, doseVolumeCl and marginMode follow it). Rows saved
+ * by older versions (whose PUT /servings never synced them) can still hold another price until
+ * the next save: read-time, the primary service wins, so the list pill, the detail and the
+ * dashboard never show a margin computed from a different price. Nothing is written.
+ */
+export function withHeadline<T extends MarginFields & { servings?: HeadlineServing[] | null }>(product: T): T {
+  const primary = primaryServing(product.servings, product.containerVolumeCl);
+  if (!primary) return product;
+  return {
+    ...product,
+    marginMode: MarginMode.FIX_SELLING_PRICE,
+    sellingPriceTTC: primary.sellingPriceTTC,
+    doseVolumeCl: primary.servingType!.volumeCl,
+  };
+}
+
+/** Margin of a product as shown everywhere (primary service first, see withHeadline). */
+export function productMargin(product: MarginFields & { servings?: HeadlineServing[] | null }): MarginResult {
+  return computeMarginSafe(withHeadline(product));
+}
+
+function enrichProduct<T extends MarginFields & { servings?: HeadlineServing[] | null }>(product: T): T & { computed: MarginResult } {
+  const headline = withHeadline(product);
+  return { ...headline, computed: computeMarginSafe(headline) };
 }
 
 const fmtCl = (n: number) => `${String(Math.round(n * 100) / 100).replace('.', ',')} cl`;
@@ -134,6 +171,18 @@ const LIST_SELECT = {
   servings: servingsInclude,
 } satisfies Prisma.ProductSelect;
 
+/**
+ * A stored photo the app can display: a data URI or an https URL (what POST/PUT accept).
+ * Anything else (legacy blob:/file:/http: values) is reported as « no photo » so the product
+ * page offers « Ajouter une photo » instead of an empty photo card. Migration 0006 clears them.
+ */
+const USABLE_IMAGE_WHERE: Prisma.ProductWhereInput[] = [
+  { imageUrl: { startsWith: 'data:image/' } },
+  { imageUrl: { startsWith: 'https://' } },
+];
+const usableImage = (url: string | null | undefined): string | null =>
+  url && (url.startsWith('data:image/') || url.startsWith('https://')) ? url : null;
+
 /** GET /api/products — thumbnailUrl + hasImage, never imageUrl. */
 export async function getProducts(userId: string, categoryId?: string) {
   const where: Prisma.ProductWhereInput = { userId };
@@ -141,7 +190,7 @@ export async function getProducts(userId: string, categoryId?: string) {
 
   const [products, withImage] = await Promise.all([
     prisma.product.findMany({ where, select: LIST_SELECT, orderBy: { updatedAt: 'desc' } }),
-    prisma.product.findMany({ where: { ...where, imageUrl: { not: null } }, select: { id: true } }),
+    prisma.product.findMany({ where: { ...where, OR: USABLE_IMAGE_WHERE }, select: { id: true } }),
   ]);
   const hasImage = new Set(withImage.map((p) => p.id));
   return products.map((p) => ({ ...enrichProduct(p), hasImage: hasImage.has(p.id) }));
@@ -154,7 +203,8 @@ export async function getProduct(id: string, userId: string) {
     include: { category: true, servings: servingsInclude },
   });
   if (!product) throw new Error('Produit non trouvé');
-  return { ...enrichProduct(product), hasImage: !!product.imageUrl };
+  const imageUrl = usableImage(product.imageUrl);
+  return { ...enrichProduct(product), imageUrl, hasImage: !!imageUrl };
 }
 
 export type ProductWrite = Partial<CreateProductInput> & { servings?: ServingInput[] };

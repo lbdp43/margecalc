@@ -63,7 +63,7 @@ L'application est **gratuite pour tous** : pas d'abonnement, pas de carte bancai
 
 ### Direction esthétique
 
-L'interface adopte une esthétique **« Atelier »** — papier kraft crème (`#E8EFDD`), accent vert émeraude (`#1B7A55`), typographie italique sérif pour les chiffres et titres, accents manuscrits cursifs sur les éléments décoratifs. Inspirée du carnet de bistrot, conçue pour rester lisible et chaleureuse.
+L'interface suit le système **D1 « Émeraude Signature »** : thème clair (fond `#F3F6F4`), palette émeraude (`#087553` en couleur principale, dégradés `#065A41` → `#0B8F65` pour les en-têtes), lime `#C5F04A` réservé aux actions sur fond émeraude, couleurs de marge (bonne / à surveiller / à revoir) calculées depuis les seuils de chaque compte. Une seule famille de caractères, **Plus Jakarta Sans** (400 à 800, chiffres tabulaires), sans italique ni sérif. Animations à ressort (react-native-reanimated) qui respectent le réglage « réduire les animations ».
 
 ---
 
@@ -71,16 +71,19 @@ L'interface adopte une esthétique **« Atelier »** — papier kraft crème (`#
 
 ```
 margebar/
-├── shared/    # Types, constantes (PALETTE, DEFAULT_MARGIN_THRESHOLDS), utils (calculateMargin, calculateServingMargin)
-├── backend/   # API Express + Prisma + routes (auth, products, recipes, scan, admin, subscription, tickets)
-├── mobile/    # Application Expo (iOS, Android, Web)
+├── shared/    # Types, constantes (catégories, barème des 13 catégories fiscales, seuils de marge), utils (calculateMargin, calculateServingMargin)
+├── backend/   # API Express + Prisma + routes (auth, products, servings, categories, scan, admin, tickets)
+│   ├── prisma/          # schema.prisma, migrations versionnées, seed.ts
+│   └── scripts/         # baseline.cjs (avant `migrate deploy`), brand-lookalikes.ts
+├── mobile/    # Application Expo (iOS, Android, Web / PWA)
 │   └── src/
-│       ├── components/ui/atelier.tsx  # Display, Eyebrow, Script, Num, InkStamp, Scribble, HangTag
-│       ├── theme/index.ts             # Palette + tokens atelier
-│       ├── navigation/                # Auth + App navigators (titres FR pour l'onglet web)
-│       ├── screens/                   # dashboard, products, cocktails, scan, settings, auth, subscription
-│       └── services/                  # API clients (axios)
-└── scripts/   # generate-icons.py (logo M atelier), patch-html.js (PWA meta)
+│       ├── components/ui/   # Composants D1 : Button, Card, TextField, NumberInput, Slider, BottomSheet, Toast, ProductCard…
+│       ├── theme/           # Tokens D1 (palette, typographie Plus Jakarta Sans, espacements, animations), haptics
+│       ├── navigation/      # Auth + App navigators, barre d'onglets flottante, routes
+│       ├── screens/         # auth, dashboard, products (liste, fiche, formulaire), invoice, settings
+│       ├── services/        # Clients API (axios), file hors ligne
+│       └── utils/           # Formats fr-FR, seuils de marge
+└── scripts/   # generate-icons.py (logo D1), patch-html.js (PWA meta)
 ```
 
 Le monorepo utilise les **npm workspaces**.
@@ -114,8 +117,11 @@ Variables requises :
 | Variable       | Description                                       |
 |----------------|---------------------------------------------------|
 | `DATABASE_URL` | URL PostgreSQL (`postgres://user:pass@host/db`)   |
-| `JWT_SECRET`   | Clé secrète JWT (32+ caractères en production)    |
+| `JWT_SECRET`   | Clé secrète JWT (32 caractères minimum)           |
+| `NODE_ENV`     | **`production` obligatoire en production** : active la redirection HTTPS, le verrouillage CORS, `upgrade-insecure-requests` et la limite de 10 créations de compte par heure. `development` (ou `test`) en local uniquement. |
 | `PORT`         | Port HTTP (défaut : 3000)                         |
+
+Hors `NODE_ENV=development`/`test`, le serveur refuse de démarrer sans `DATABASE_URL` ni `JWT_SECRET` (32 caractères minimum) : il n'existe aucun secret par défaut en production. `ANTHROPIC_API_KEY` n'est plus utilisée (le scan fonctionne sans service externe) et peut être supprimée.
 
 Variables optionnelles :
 
@@ -142,14 +148,12 @@ Variables optionnelles :
 ### 3. Initialiser la base de données
 
 ```bash
-npm run db:push
+npm run db:migrate && (cd backend && npx tsx prisma/seed.ts)
 ```
 
-ou pour appliquer les migrations Prisma versionnées :
+`db:migrate` applique les migrations Prisma versionnées (`prisma migrate deploy`) ; le seed crée les catégories intégrées, les paramètres système et le barème des 13 catégories fiscales.
 
-```bash
-cd backend && npx prisma migrate deploy && cd ..
-```
+N'utilisez pas `npm run db:push` (`prisma db push`) : il ne crée ni les index partiels de la migration `0005_user_categories` (unicité des catégories intégrées) ni l'historique des migrations, et le `prisma migrate deploy` suivant échoue (P3005). Une base déjà créée ainsi est rattrapée par `node backend/scripts/baseline.cjs`, lancé avant `migrate deploy` au démarrage en production.
 
 ### 4. Lancer en développement
 
@@ -188,13 +192,18 @@ Tests unitaires des extracteurs du scan (sans image ni moteur OCR, ~1 s) :
 npm test --workspace=backend
 ```
 
-Pour démarrer en production :
+Pour démarrer en production (après `npm run build`) :
 
 ```bash
-npm start
+npm run start:prod --workspace=backend
 ```
 
-Cela exécute les migrations Prisma, le seed initial (catégories + types de service par défaut), puis démarre le serveur Express qui sert l'API + le bundle web statique.
+Cela enchaîne :
+
+1. `scripts/baseline.cjs` : ne fait rien sur une base vide ou déjà gérée par les migrations ; sur une base créée par l'ancien `db push`, il enregistre comme appliquées les migrations déjà présentes ;
+2. les migrations Prisma (`prisma migrate deploy`) ;
+3. le seed (`prisma/seed.ts`) : catégories intégrées, paramètres système, barème des 13 catégories fiscales. Il ne réécrit jamais un taux ni une valeur modifiés par un admin ;
+4. le serveur Express, qui sert l'API et le bundle web statique.
 
 ---
 
@@ -205,7 +214,10 @@ Le projet inclut une configuration `railway.json` pour [Railway](https://railway
 1. Railway détecte le monorepo Node 22 (`railpack`)
 2. `npm ci` installe les workspaces
 3. `npm run build` compile tout
-4. La commande de démarrage exécute les migrations + seed + serveur
+4. La commande de démarrage (`npm run start:prod --workspace=backend`) exécute baseline + migrations + seed + serveur
+5. Railway attend que `GET /health` (qui vérifie la base) réponde 200 avant de basculer le trafic ; un déploiement qui ne démarre pas laisse l'ancien en place
+
+Variables à définir sur Railway : `DATABASE_URL`, `JWT_SECRET` et `NODE_ENV=production` (voir plus haut).
 
 Le déploiement actuel est accessible à [margecalc-production.up.railway.app](https://margecalc-production.up.railway.app/Landing).
 
@@ -221,9 +233,11 @@ Les erreurs ont toujours la forme `{ error: '<phrase en français>', details?: [
 
 | Méthode | Endpoint                | Description                                  |
 |---------|-------------------------|----------------------------------------------|
-| POST    | `/api/auth/register`    | Créer un compte                              |
+| POST    | `/api/auth/register`    | Créer un compte (409 si l'adresse est déjà utilisée) |
 | POST    | `/api/auth/login`       | Connexion (refuse 403 si compte banni)       |
 | POST    | `/api/auth/refresh`     | Renouveler l'access token                    |
+
+L'adresse e-mail est enregistrée en minuscules et comparée sans tenir compte de la casse : « Bar@exemple.fr » et « bar@exemple.fr » désignent le même compte.
 
 ### Données utilisateur
 
@@ -250,7 +264,7 @@ La lecture des photos se fait **sur le serveur avec [Tesseract.js](https://tesse
 - `POST /api/scan/invoice` `{ imageBase64 }` → `{ supplier, invoiceDate, products: [...], raw }` ; l'import se fait ensuite via `POST /api/products/import`.
 - Extraction heuristique : plus grandes lignes de texte pour le nom, correction des marques connues mal lues (sans jamais réécrire un mot courant : « Pomme » reste « Pomme »), contenance (cl / ml / L), degré (% vol, °), catégorie par mots-clés.
 - Échec de lecture → **422** `{ error: 'Lecture impossible…', code, retryable }` (`empty`, `bad_image`, `busy`, `timeout`, `engine`). L'application passe alors à la fiche à remplir en gardant la photo.
-- Seuls les scans **réussis** comptent dans le quota quotidien (`SCAN_DAILY_LIMIT`, 50 par défaut). Limites d'équité : 10 scans par minute, un scan à la fois par compte, pause de quelques minutes après 3 photos illisibles d'affilée.
+- Seuls les scans **réussis et reçus** comptent dans le quota quotidien (`SCAN_DAILY_LIMIT`, 50 par défaut) : un scan abandonné en cours de lecture (retour arrière, onglet fermé) s'arrête et n'est pas compté. Limites d'équité : 10 scans par minute, un scan à la fois par compte, pause de quelques minutes après 3 photos illisibles d'affilée.
 - L'application réduit la photo à 1 600 px avant l'envoi ; le serveur refuse les images de plus de 2 400 px (bouteille) / 3 500 px (facture) de côté.
 
 ### Photos produit

@@ -78,6 +78,21 @@ export class OcrError extends Error {
   }
 }
 
+/**
+ * The client went away before the result (back button, closed tab): the scan stops at the next
+ * checkpoint (before it starts, or between two OCR passes) and nothing is sent or counted.
+ */
+export class ScanAbortedError extends Error {
+  constructor() {
+    super('Scan annulé : le client a quitté avant le résultat.');
+    this.name = 'ScanAbortedError';
+  }
+}
+
+function throwIfAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) throw new ScanAbortedError();
+}
+
 // ---------------------------------------------------------------------------
 // Worker lifecycle: lazy singleton + serialized queue + deadlines + idle shutdown
 // ---------------------------------------------------------------------------
@@ -178,14 +193,20 @@ function scheduleIdleShutdown() {
   idleTimer.unref();
 }
 
-/** Run `job` alone on the worker. Rejects fast when the queue is full or the deadline passed. */
-function runExclusive<T>(job: (w: Worker, remainingMs: number) => Promise<T>, timeoutMs: number): Promise<T> {
+/**
+ * Run `job` alone on the worker. Rejects fast when the queue is full or the deadline passed.
+ * With `signal`: a job whose client left while it was queued is skipped (never started), and the
+ * returned promise rejects with ScanAbortedError as soon as the client leaves.
+ */
+function runExclusive<T>(job: (w: Worker, remainingMs: number) => Promise<T>, timeoutMs: number, signal?: AbortSignal): Promise<T> {
+  if (signal?.aborted) return Promise.reject(new ScanAbortedError());
   if (pending >= MAX_QUEUE) {
     return Promise.reject(new OcrError('Lecture impossible pour le moment : le serveur lit déjà plusieurs images. Réessayez dans quelques secondes.', 'busy'));
   }
   pending++;
   const deadline = Date.now() + timeoutMs;
   const run = tail.then(async () => {
+    throwIfAborted(signal); // client gone while queued: give the worker to the next scan
     const remaining = deadline - Date.now();
     if (remaining <= 0) throw new OcrError('Lecture impossible pour le moment : le serveur est occupé. Réessayez dans un instant.', 'busy');
     const worker = await getWorker();
@@ -195,9 +216,18 @@ function runExclusive<T>(job: (w: Worker, remainingMs: number) => Promise<T>, ti
     });
   });
   tail = run.catch(() => undefined);
-  return run.finally(() => {
+  const done = run.finally(() => {
     pending--;
     scheduleIdleShutdown();
+  });
+  if (!signal) return done;
+  // Answer the caller as soon as the client leaves (the queued job is skipped when its turn
+  // comes, a running one stops after its current pass).
+  done.catch(() => {});
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(new ScanAbortedError());
+    signal.addEventListener('abort', onAbort, { once: true });
+    done.then(resolve, reject).finally(() => signal.removeEventListener('abort', onAbort));
   });
 }
 
@@ -259,6 +289,7 @@ function ocrPasses<T>(
   passes: PassSpec[],
   evaluate: (page: OcrPage) => { value: T; quality: number },
   goodEnough: number,
+  signal?: AbortSignal,
 ): Promise<PassResult<T>[]> {
   return runExclusive(async (worker) => {
     const started = Date.now();
@@ -267,6 +298,8 @@ function ocrPasses<T>(
     let bestRot: { deg: number; quality: number } | null = null;
     let blankPasses = 0;
     for (const pass of passes) {
+      // Client gone (back button): stop here, the worker goes to the next user's scan.
+      throwIfAborted(signal);
       // Keep headroom: never start a new pass after 60% of the budget.
       if (results.length && Date.now() - started > timeoutMs * 0.6) break;
       // Two binarizations (Otsu + Sauvola) read no usable text at all: rotations will not
@@ -298,6 +331,7 @@ function ocrPasses<T>(
         else if (!bestRot || quality > bestRot.quality) bestRot = { deg: rotate, quality };
         if (quality >= goodEnough) break;
       } catch (err) {
+        if (err instanceof ScanAbortedError) throw err;
         console.error('[OCR] recognize failed:', err);
         void resetWorker(); // start from a clean wasm heap next time
         if (results.length) break;
@@ -305,7 +339,7 @@ function ocrPasses<T>(
       }
     }
     return results;
-  }, timeoutMs);
+  }, timeoutMs, signal);
 }
 
 /** At least one confidently-read line holding a real word (3+ letters) or a number with a unit. */
@@ -832,9 +866,9 @@ function vote<T>(passes: PassResult<BottleRead>[], pick: (r: BottleRead) => T | 
  * Analyze a bottle / can label photo (free OCR, up to 7 passes, stops at the first good read).
  * The client sends a JPEG ~1024 px wide; 1280-1600 px gives better results on small text.
  */
-export async function analyzeBottleImage(imageBase64: string): Promise<ScanResult> {
+export async function analyzeBottleImage(imageBase64: string, signal?: AbortSignal): Promise<ScanResult> {
   const image = decodeImage(imageBase64, MAX_SIDE_BOTTLE);
-  const passes = await ocrPasses(image, PSM.SPARSE_TEXT, BOTTLE_TIMEOUT_MS, BOTTLE_PASSES, readBottle, 0.8);
+  const passes = await ocrPasses(image, PSM.SPARSE_TEXT, BOTTLE_TIMEOUT_MS, BOTTLE_PASSES, readBottle, 0.8, signal);
   const ranked = [...passes].sort((a, b) => b.quality - a.quality);
   const best = ranked[0].value;
   const volume = best.volume ?? vote(passes, (r) => r.volume);
@@ -1042,9 +1076,9 @@ function cleanProductName(designation: string): string {
  * Analyze a supplier invoice photo (free OCR). Extracts supplier, date and product rows.
  * Unit prices are HT per container: "x24" / "carton de 6" packs are divided down.
  */
-export async function analyzeInvoiceImage(imageBase64: string): Promise<InvoiceScanResult> {
+export async function analyzeInvoiceImage(imageBase64: string, signal?: AbortSignal): Promise<InvoiceScanResult> {
   const image = decodeImage(imageBase64, MAX_SIDE_INVOICE);
-  const passes = await ocrPasses(image, PSM.SINGLE_COLUMN, INVOICE_TIMEOUT_MS, INVOICE_PASSES, readInvoice, 0.75);
+  const passes = await ocrPasses(image, PSM.SINGLE_COLUMN, INVOICE_TIMEOUT_MS, INVOICE_PASSES, readInvoice, 0.75, signal);
   const best = [...passes].sort((a, b) => b.quality - a.quality)[0];
   const r = best.value;
   const totalMs = passes.reduce((a, p) => a + p.ms, 0);

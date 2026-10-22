@@ -2,7 +2,15 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 const isProd = process.env.NODE_ENV === 'production';
-const isDev = process.env.NODE_ENV === 'development' || !process.env.NODE_ENV;
+// Only an EXPLICIT development/test run may start without a real JWT_SECRET. A server started
+// without NODE_ENV (e.g. a PaaS where the variable was forgotten) is validated like production:
+// otherwise a missing JWT_SECRET would silently fall back to a public default and allow forged tokens.
+const isDev = (process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test')
+  && !process.env.RAILWAY_ENVIRONMENT;
+
+if (!isProd && !isDev) {
+  console.warn('WARNING: NODE_ENV is not "production": HTTPS redirect, CORS lock and production rate limits are OFF. Set NODE_ENV=production on the server.');
+}
 
 // Validate critical environment variables
 if (!isDev) {
@@ -32,6 +40,7 @@ if (isProd) {
 
 export const config = {
   port: parseInt(process.env.PORT || '3000', 10),
+  // The fallback is only reachable in an explicit development/test run (validated above otherwise).
   jwtSecret: process.env.JWT_SECRET || 'dev-secret-change-me',
   databaseUrl: process.env.DATABASE_URL || '',
   stripeSecretKey: process.env.STRIPE_SECRET_KEY || '',

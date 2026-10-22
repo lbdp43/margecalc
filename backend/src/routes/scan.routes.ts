@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { authenticate } from '../middleware/auth';
-import { analyzeBottleImage, analyzeInvoiceImage, OcrError } from '../services/scan.service';
+import { analyzeBottleImage, analyzeInvoiceImage, OcrError, ScanAbortedError } from '../services/scan.service';
 import { prisma } from '../config/database';
 import { isZodError, sendKnownError } from '../utils/validation';
 
@@ -94,6 +94,21 @@ async function oneScanAtATime(req: Request, res: Response, job: () => Promise<vo
   }
 }
 
+/**
+ * Aborted when the client goes away before the answer (back button during the OCR, closed tab,
+ * network drop): the queued OCR job is skipped, a running one stops after its current pass, and
+ * the scan is neither answered nor counted in the daily quota.
+ * `res` 'close' (not `req` 'close', which fires once the body is read) without a finished
+ * response means the connection was lost.
+ */
+function clientGoneSignal(res: Response): AbortSignal {
+  const ac = new AbortController();
+  res.on('close', () => {
+    if (!res.writableFinished) ac.abort();
+  });
+  return ac.signal;
+}
+
 /** Record one successful scan (never blocks the response on failure). */
 function countSuccess(userId: string): void {
   prisma.scanUsage.create({ data: { userId } }).catch((err) => {
@@ -141,6 +156,10 @@ function checkTimeoutCooldown(req: Request, res: Response): boolean {
 }
 
 function sendScanError(req: Request, res: Response, err: any, kind: 'bottle' | 'invoice'): void {
+  if (err instanceof ScanAbortedError) {
+    console.log(`[SCAN] ${kind} scan cancelled: the client left before the result (not counted)`);
+    return; // nobody to answer
+  }
   if (err instanceof OcrError) {
     if (err.code === 'timeout') recordTimeout(req.user!.userId);
     res.status(422).json({ error: err.message, code: err.code, retryable: err.retryable });
@@ -189,12 +208,15 @@ router.get('/quota', async (req: Request, res: Response) => {
 router.use(scanLimiter);
 
 async function scanBottle(req: Request, res: Response) {
+  const signal = clientGoneSignal(res);
   await oneScanAtATime(req, res, async () => {
     try {
       const { imageBase64 } = scanSchema.parse(req.body);
       if (!checkTimeoutCooldown(req, res)) return;
       if (!(await checkDailyLimit(req, res))) return;
-      const result = await analyzeBottleImage(imageBase64);
+      const result = await analyzeBottleImage(imageBase64, signal);
+      // Only a result the client actually receives counts toward the quota.
+      if (signal.aborted) throw new ScanAbortedError();
       countSuccess(req.user!.userId);
       res.json(result);
     } catch (err) {
@@ -207,12 +229,14 @@ router.post('/bottle', scanBottle);
 router.post('/product', scanBottle);
 
 router.post('/invoice', async (req: Request, res: Response) => {
+  const signal = clientGoneSignal(res);
   await oneScanAtATime(req, res, async () => {
     try {
       const { imageBase64 } = scanSchema.parse(req.body);
       if (!checkTimeoutCooldown(req, res)) return;
       if (!(await checkDailyLimit(req, res))) return;
-      const result = await analyzeInvoiceImage(imageBase64);
+      const result = await analyzeInvoiceImage(imageBase64, signal);
+      if (signal.aborted) throw new ScanAbortedError();
       countSuccess(req.user!.userId);
       res.json(result);
     } catch (err) {

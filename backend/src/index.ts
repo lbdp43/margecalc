@@ -124,6 +124,18 @@ app.use('/api/scan', express.json({ limit: '8mb' }));
 app.use('/api/tickets', express.json({ limit: '5mb' }));
 app.use(express.json({ limit: '2mb' }));
 
+// Health check with DB verification. Registered BEFORE the HTTPS/Host enforcement below: the
+// platform healthcheck (railway.json `healthcheckPath`) calls the container over plain HTTP
+// with its own Host (healthcheck.railway.app) and must get 200, not a 400/redirect.
+app.get('/health', async (_req, res) => {
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    res.json({ status: 'ok', db: 'connected', timestamp: new Date().toISOString() });
+  } catch {
+    res.status(503).json({ status: 'error', db: 'disconnected', timestamp: new Date().toISOString() });
+  }
+});
+
 // HTTPS enforcement in production — validate Host header to prevent injection
 if (config.isProd) {
   const trustedHost = new URL(config.appUrl).host;
@@ -138,16 +150,6 @@ if (config.isProd) {
     next();
   });
 }
-
-// Health check with DB verification
-app.get('/health', async (_req, res) => {
-  try {
-    await prisma.$queryRaw`SELECT 1`;
-    res.json({ status: 'ok', db: 'connected', timestamp: new Date().toISOString() });
-  } catch {
-    res.status(503).json({ status: 'error', db: 'disconnected', timestamp: new Date().toISOString() });
-  }
-});
 
 app.use('/api', routes);
 

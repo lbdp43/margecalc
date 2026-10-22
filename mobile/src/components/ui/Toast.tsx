@@ -273,7 +273,8 @@ export function ToastHost() {
         accessibilityRole="alert"
       >
         <Ionicons name={icon.name} size={20} color={icon.color} />
-        <Text style={styles.text} numberOfLines={2}>
+        {/* 3 lines: a full French sentence (« Session expirée : reconnectez-vous… ») is never cut. */}
+        <Text style={styles.text} numberOfLines={3}>
           {current.message}
         </Text>
         {current.action ? (

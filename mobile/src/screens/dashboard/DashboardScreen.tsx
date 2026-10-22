@@ -14,14 +14,15 @@
  *   data. The duty card keeps its position when the data arrives.
  * - empty (first run): the hero becomes a welcome block with the lime
  *   « Scanner une bouteille »; below it, the two other ways to add products
- *   and the duty card.
+ *   (led by « Reprendre votre calcul » when a calculation was kept from the
+ *   calculator before signing up, ./parts/savedCalcs) and the duty card.
  * - error: the backend message + Réessayer (network icon only for network
  *   failures). Offline without cache: the offline EmptyState.
  * Entrances are mount-only, so refetches never replay them.
  */
 import React, { useCallback, useMemo, useState } from 'react';
 import { StyleSheet, Text, useWindowDimensions, View } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import type { ProductWithMargin } from '@margebar/shared';
 import {
@@ -46,7 +47,7 @@ import * as productService from '../../services/product.service';
 import { useAuthStore } from '../../store/auth.store';
 import { useRatesStore } from '../../store/rates.store';
 import { useSystemParamsStore } from '../../store/systemParams.store';
-import { NBSP } from '../../utils/format';
+import { formatDegree, formatEuro, formatVolumeCl, NBSP } from '../../utils/format';
 import { useMarginThresholds } from '../../utils/marginThresholds';
 import { goToProduct, goToProductList, openDutyCalculator, openInvoiceScan, openProductForm } from '../../navigation/routes';
 import { DashboardHero, HeroKpi } from './parts/DashboardHero';
@@ -55,6 +56,8 @@ import { DutyActionCard } from './parts/DutyActionCard';
 import { CategoryMeters } from './parts/CategoryMeters';
 import { TopFlopCard } from './parts/TopFlopCard';
 import { averageMargin, byMargin, categoryStats, errorMessage, greeting as greetingFor, topFlop, withMargin } from './parts/dashboardData';
+import { calcPrefill, loadSavedCalcs } from './parts/savedCalcs';
+import type { SavedCalc } from '../products/form/SavedCalcsSheet';
 
 const OVERLAP = 28;
 
@@ -65,9 +68,23 @@ export function DashboardScreen() {
   const { width } = useWindowDimensions();
   const user = useAuthStore((s) => s.user);
   const thresholds = useMarginThresholds();
-  const rateCount = useRatesStore((s) => s.rates.length) || 13;
+  const rates = useRatesStore((s) => s.rates);
+  const rateCount = rates.length || 13;
   const year = useSystemParamsStore((s) => s.params.find((p) => p.key === 'tarif_annee')?.value || '2026');
   const [feedbackOpen, setFeedbackOpen] = useState(false);
+  // The calculation made before signing up (« Gardez ce calcul »), newest first.
+  const [savedCalc, setSavedCalc] = useState<SavedCalc | null>(null);
+  useFocusEffect(
+    useCallback(() => {
+      let alive = true;
+      loadSavedCalcs().then((list) => {
+        if (alive) setSavedCalc(list[0] ?? null);
+      });
+      return () => {
+        alive = false;
+      };
+    }, []),
+  );
 
   const query = useOfflineQuery<ProductWithMargin[]>(['products'], () => productService.getProducts());
   const products = query.data as ProductWithMargin[] | undefined;
@@ -111,6 +128,14 @@ export function DashboardScreen() {
   const scanBottle = useCallback(() => openProductForm(navigation, {}), [navigation]);
   const scanInvoice = useCallback(() => openInvoiceScan(navigation), [navigation]);
   const addManually = useCallback(() => openProductForm(navigation, { start: 'form' }), [navigation]);
+  const resumeCalc = useCallback(() => {
+    if (savedCalc) openProductForm(navigation, { scanData: calcPrefill(savedCalc) });
+  }, [navigation, savedCalc]);
+  const savedCalcLabel = savedCalc
+    ? [rates.find((r) => r.slug === savedCalc.fiscalCategory)?.label, formatVolumeCl(savedCalc.volumeCl), savedCalc.degree ? formatDegree(savedCalc.degree) : null]
+        .filter(Boolean)
+        .join(' · ')
+    : '';
   const { refetch } = query;
   const retry = useCallback(() => {
     refetch();
@@ -126,6 +151,16 @@ export function DashboardScreen() {
     ) : state === 'empty' ? (
       <FadeIn delay={120}>
         <ListGroup>
+          {savedCalc ? (
+            <ListRow
+              icon="calculator-outline"
+              title="Reprendre votre calcul"
+              subtitle={savedCalcLabel}
+              detail={`${formatEuro(savedCalc.prixHTAvecDroits)} HT avec droits`}
+              onPress={resumeCalc}
+              testID="dashboard-resume-calc"
+            />
+          ) : null}
           <ListRow
             icon="receipt-outline"
             title="Importer une facture"

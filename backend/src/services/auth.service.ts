@@ -1,30 +1,65 @@
 import bcrypt from 'bcrypt';
+import { Prisma } from '@prisma/client';
 import jwt from 'jsonwebtoken';
 import { prisma } from '../config/database';
 import { config } from '../config/env';
 import { AuthPayload } from '@margebar/shared';
 import { formatUser } from './user.service';
+import { HttpError } from '../utils/validation';
 
 const SALT_ROUNDS = 12;
 const ACCESS_TOKEN_EXPIRY = '1h';
 const REFRESH_TOKEN_EXPIRY = '30d';
 
-export async function register(email: string, password: string, businessName?: string, isAutoEntrepreneur = false) {
-  const existing = await prisma.user.findUnique({ where: { email } });
-  if (existing) {
-    throw new Error('Un compte existe déjà avec cet email');
-  }
+/** Canonical form of an e-mail address: trimmed, lower case. New accounts are stored like this. */
+export function normalizeEmail(email: string): string {
+  return email.trim().toLowerCase();
+}
+
+export const EMAIL_TAKEN = 'Un compte existe déjà avec cette adresse e-mail.';
+
+/**
+ * Accounts whose e-mail matches `email` regardless of case, the exact (lower-case) one first.
+ * Accounts created before e-mails were normalised keep their stored capitals (nothing is
+ * rewritten: production may hold « Bar@x.fr » and « bar@x.fr » as two accounts), so the lookup
+ * is case-insensitive instead. `email` must already be normalised.
+ */
+async function findAccountsByEmail(email: string) {
+  const rows = await prisma.$queryRaw<{ id: string }[]>`
+    SELECT id FROM "User" WHERE lower("email") = ${email}
+    ORDER BY ("email" = ${email}) DESC, "createdAt" ASC
+    LIMIT 10`;
+  if (!rows.length) return [];
+  const users = await prisma.user.findMany({ where: { id: { in: rows.map((r) => r.id) } } });
+  const rank = new Map(rows.map((r, i) => [r.id, i]));
+  return users.sort((a, b) => rank.get(a.id)! - rank.get(b.id)!);
+}
+
+export async function register(rawEmail: string, password: string, businessName?: string, isAutoEntrepreneur = false) {
+  const email = normalizeEmail(rawEmail);
+  // One mailbox = one account: « Bar@x.fr » is taken when « bar@x.fr » exists, and vice versa.
+  const existing = await prisma.$queryRaw<{ id: string }[]>`SELECT id FROM "User" WHERE lower("email") = ${email} LIMIT 1`;
+  if (existing.length) throw new HttpError(409, EMAIL_TAKEN, { code: 'email_taken' });
 
   const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
-  const user = await prisma.user.create({
-    data: {
-      email,
-      passwordHash,
-      businessName: businessName || null,
-      isAutoEntrepreneur,
-      defaultTvaRate: isAutoEntrepreneur ? 0 : 0.20,
-    },
-  });
+  let user;
+  try {
+    user = await prisma.user.create({
+      data: {
+        email,
+        passwordHash,
+        businessName: businessName?.trim() || null,
+        isAutoEntrepreneur,
+        defaultTvaRate: isAutoEntrepreneur ? 0 : 0.20,
+      },
+    });
+  } catch (err) {
+    // Same address registered concurrently (unique index on email).
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+      throw new HttpError(409, EMAIL_TAKEN, { code: 'email_taken' });
+    }
+    throw err;
+  }
 
   const payload: AuthPayload = { userId: user.id, email: user.email, role: user.role as 'user' | 'admin' };
   return {
@@ -41,15 +76,26 @@ export class BannedAccountError extends Error {
   }
 }
 
-export async function login(email: string, password: string) {
-  const user = await prisma.user.findUnique({ where: { email } });
-  if (!user) {
-    throw new Error('Email ou mot de passe incorrect');
+/** Wrong e-mail or password (the route answers 401 with this message). */
+export class InvalidCredentialsError extends Error {
+  constructor() {
+    super('E-mail ou mot de passe incorrect.');
+    this.name = 'InvalidCredentialsError';
   }
+}
 
-  const valid = await bcrypt.compare(password, user.passwordHash);
-  if (!valid) {
-    throw new Error('Email ou mot de passe incorrect');
+export async function login(rawEmail: string, password: string) {
+  const email = normalizeEmail(rawEmail);
+  // Usually one account (or none). With legacy case-duplicates, the one whose password matches.
+  let user = null;
+  for (const candidate of await findAccountsByEmail(email)) {
+    if (await bcrypt.compare(password, candidate.passwordHash)) {
+      user = candidate;
+      break;
+    }
+  }
+  if (!user) {
+    throw new InvalidCredentialsError();
   }
 
   if (user.bannedAt) {

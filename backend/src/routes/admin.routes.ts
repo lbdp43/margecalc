@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import { prisma } from '../config/database';
 import { authenticate, forgetAccountStatus, requireAdmin } from '../middleware/auth';
 import { Prisma } from '@prisma/client';
-import { computeMarginSafe } from '../services/product.service';
+import { productMargin } from '../services/product.service';
 
 /** Admin product lists never load the heavy imageUrl column. */
 const ADMIN_PRODUCT_FIELDS = {
@@ -142,7 +142,7 @@ router.get('/products', async (_req: Request, res: Response) => {
     });
 
     const enriched = products.map((p) => {
-      const computed = computeMarginSafe(p);
+      const computed = productMargin(p); // primary service first, like GET /api/products
 
       return {
         id: p.id,
@@ -183,7 +183,7 @@ router.get('/users/:userId/products', async (req: Request, res: Response) => {
     });
 
     const enriched = products.map((p) => {
-      const computed = computeMarginSafe(p);
+      const computed = productMargin(p); // primary service first, like GET /api/products
 
       return {
         id: p.id,

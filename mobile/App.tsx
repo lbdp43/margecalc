@@ -229,6 +229,9 @@ if (webLoc && webHist?.replaceState) {
     }
   });
 
+  // Dev only: lets Playwright check the remembered URL.
+  if (__DEV__) (globalThis as any).__mbPendingPath = () => ({ pendingPath, lastSignedInPath });
+
   (globalThis as any).addEventListener?.('popstate', () => {
     const auth = useAuthStore.getState();
     if (auth.isLoading || auth.isAuthenticated) return;
