@@ -94,10 +94,26 @@ const getSafePathFromState: typeof getPathFromState = (state, options) => getPat
  */
 const EDIT_PATH = /^\/?produits\/([^/?#]+)\/modifier\/?(?:\?(.*))?$/;
 
+/** The focused leaf of a (partial) navigation state. */
+function focusedLeaf(state: any): any {
+  let route: any;
+  let s = state;
+  for (let i = 0; s?.routes?.length && i < 8; i++) {
+    route = s.routes[s.index ?? s.routes.length - 1];
+    s = route?.state;
+  }
+  return route;
+}
+
 const getAppStateFromPath: typeof getStateFromPath = (path, options) => {
   const m = path.match(EDIT_PATH);
   if (m && m[1] !== 'nouveau') {
-    return getStateFromPath(`/produits/nouveau?productId=${m[1]}${m[2] ? `&${m[2]}` : ''}`, options);
+    const state = getStateFromPath(`/produits/nouveau?productId=${m[1]}${m[2] ? `&${m[2]}` : ''}`, options);
+    // React Navigation keeps the path it parsed on the leaf route and writes it
+    // back to the address bar: keep the edit URL there, not the rewritten one.
+    const leaf = focusedLeaf(state);
+    if (leaf) leaf.path = path;
+    return state;
   }
   return getStateFromPath(path, options);
 };

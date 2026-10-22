@@ -29,23 +29,22 @@ import Animated, {
 import { Ionicons } from '@expo/vector-icons';
 import { elevation, fontFamily, marginColors, MarginZone, motion, palette, radius, type } from '../../theme';
 import { haptics } from '../../theme/haptics';
+import { fitFontSize } from '../../utils/textFit';
 import { AnimatedNumber } from './AnimatedNumber';
 import { PressableScale } from './PressableScale';
 import { IconName } from './Icon';
 
 /**
  * Web: react-native-web ignores `adjustsFontSizeToFit`. Estimate the text width
- * (Jakarta, tabular digits ≈ 0.6 em per character) against the measured room
- * and return a smaller font size when it would not fit.
+ * (utils/textFit) against the measured room and return a smaller font size
+ * when it would not fit.
  */
 function useFitFont(text: string, baseSize: number, minSize: number, inset: number) {
   const [width, setWidth] = useState(0);
   const onLayout = (e: LayoutChangeEvent) => setWidth(e.nativeEvent.layout.width);
   if (Platform.OS !== 'web' || !width || !text) return { onLayout, fit: null as TextStyle | null };
-  const room = width - inset;
-  const needed = text.length * baseSize * 0.6;
-  if (needed <= room) return { onLayout, fit: null as TextStyle | null };
-  const size = Math.max(minSize, Math.floor(room / (text.length * 0.6)));
+  const size = fitFontSize(text, width - inset, baseSize, minSize);
+  if (size >= baseSize) return { onLayout, fit: null as TextStyle | null };
   return { onLayout, fit: { fontSize: size, lineHeight: Math.round(size * 1.25), letterSpacing: -0.02 * size } as TextStyle };
 }
 

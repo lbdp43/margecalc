@@ -146,6 +146,13 @@ let reloadedOnFormPending: boolean = (() => {
 /** A draft is kept once there is real work in it (a photo alone is not worth one). */
 const draftWorthy = (v: FormValues) => !!v.name.trim() || v.purchase !== null || Object.keys(v.services).length > 0;
 
+const isWeb = Platform.OS === 'web';
+const web = globalThis as any;
+const webPath = (): string | null => {
+  const loc = web.location;
+  return loc ? `${loc.pathname}${loc.search}` : null;
+};
+
 export function ProductFormScreen({ route, navigation }: Props) {
   const params = (route.params ?? {}) as ProductFormParams;
   const productId = params.productId;

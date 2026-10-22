@@ -28,6 +28,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { fontFamily, palette, radius, type } from '../../theme';
 import { haptics } from '../../theme/haptics';
 import { clamp, formatNumber, parseLocaleFloat, roundToStep, toInputString } from '../../utils/format';
+import { fitFontSize } from '../../utils/textFit';
 import { PressableScale } from './PressableScale';
 
 export interface NumberInputProps {
@@ -261,8 +262,8 @@ export function NumberInput({
     );
   };
 
-  // ── Fit long values: estimate the text width (Jakarta 800, tabular digits
-  // ≈ 0.62 em per character) against the measured room, and shrink the font.
+  // ── Fit long values: estimate the text width (utils/textFit) against the
+  // measured room, and shrink the font.
   const chars = Math.max(1, (shown || placeholder).length);
   const suffixRoom = editing && suffix ? suffix.length * (large ? 10 : 9) + 6 : 0;
   // md grows with its value up to MD_MAX_W (it often sits at the end of a row
@@ -271,8 +272,7 @@ export function NumberInput({
   const inputWidth = large ? undefined : Math.min(desiredMd, MD_MAX_W);
   const baseSize = large ? 30 : 24;
   const textRoom = large ? valueW - 8 - suffixRoom : (inputWidth as number) - 14 - suffixRoom;
-  const fitSize = textRoom > 0 && isFinite(textRoom) ? Math.floor(textRoom / (chars * 0.62)) : baseSize;
-  const fontSize = Math.max(large ? 16 : 13, Math.min(baseSize, fitSize));
+  const fontSize = fitFontSize(shown || placeholder, textRoom, baseSize, large ? 16 : 13);
   const fitted =
     fontSize < baseSize
       ? { fontSize, lineHeight: Math.round(fontSize * 1.2), letterSpacing: large ? -0.03 * fontSize : -0.025 * fontSize }
