@@ -21,7 +21,7 @@ import { Ionicons } from '@expo/vector-icons';
 import type { Category } from '@margebar/shared';
 import { Badge, Card, PressableScale, useReduceMotion } from '../../components/ui';
 import { marginColors, motion, palette, type } from '../../theme';
-import { formatDegree, formatEuro, formatPercent, formatVolumeCl } from '../../utils/format';
+import { NBSP, formatDegree, formatEuro, formatPercent, formatVolumeCl } from '../../utils/format';
 import { getMarginZone, useMarginThresholds } from '../../utils/marginThresholds';
 import {
   categoryName,
@@ -166,10 +166,11 @@ function LineCardBase({ line, category, ctx, preview, disabled, onToggle, onEdit
           <Animated.View style={[styles.prices, !line.selected && styles.pricesOff, bodyFade]}>
             <View style={styles.tile}>
               <Text style={styles.tileLabel}>Achat HT{qty ? ` · ${qty}` : ''}</Text>
-              <View style={styles.tileLine}>
+              {/* One Text: on a narrow phone it breaks after « · », never before it. */}
+              <Text style={styles.tileText}>
                 <Text style={[styles.tileValue, priceMissing && { color: palette.bad }]}>{purchaseText}</Text>
-                {lineTotal !== null ? <Text style={styles.tileAside}>{`· ${formatEuro(lineTotal)}`}</Text> : null}
-              </View>
+                {lineTotal !== null ? <Text style={styles.tileAside}>{`${NBSP}· ${formatEuro(lineTotal)}`}</Text> : null}
+              </Text>
             </View>
             <View style={styles.tileSep} />
             <View style={styles.tile}>
@@ -224,6 +225,7 @@ const styles = StyleSheet.create({
   tileLabel: { ...type.footnote, color: palette.text3 },
   // Value + caption wrap as whole pieces on narrow phones (never « calculé … »).
   tileLine: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'baseline', columnGap: 4, marginTop: 1 },
+  tileText: { ...type.footnote, color: palette.text3, marginTop: 1 },
   tileValue: { ...type.numS, color: palette.ink },
   tileAside: { ...type.footnote, color: palette.text3 },
   derived: { ...type.footnoteStrong, color: palette.em700 },

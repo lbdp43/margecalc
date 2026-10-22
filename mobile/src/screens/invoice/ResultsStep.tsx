@@ -169,7 +169,7 @@ export function ResultsStep({ summary, onOpenProduct, onFix, onSeeProducts, onNe
                 iconTone="bad"
                 title={result.name || line.name || 'Produit sans nom'}
                 subtitle={result.error}
-                subtitleLines={3}
+                subtitleLines={6}
                 right="none"
                 testID={`invoice-result-${i}`}
               />
