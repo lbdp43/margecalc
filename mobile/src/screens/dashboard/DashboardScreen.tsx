@@ -4,6 +4,7 @@
  *   HeroHeader  avatar · « Bonjour, » / « Bonsoir, » + établissement · Aide & retours
  *               « Marge moyenne » count-up · gap to the objective · distribution bar
  *   StatTiles   Produits · Meilleur produit (overlap the hero by 28)
+ *   Install     « Installer MargeBar Pro » (web only, while installable; InstallAppCardSlot)
  *   Card        « Calculer les droits d’alcool » → Calculateur (Tableau de bord stack)
  *   Meters      « Marge par catégorie » with objective ticks + legend
  *   Top & flop  SegmentedControl (split at the objective), rows open the product
@@ -31,6 +32,7 @@ import {
   EmptyState,
   ErrorBoundary,
   FadeIn,
+  InstallAppCardSlot,
   ListGroup,
   ListRow,
   Screen,
@@ -194,6 +196,9 @@ export function DashboardScreen() {
 
       <View style={styles.body}>
         {lead}
+        {/* « Installer MargeBar Pro » (web, installable, not snoozed): between the
+            tiles and the duty card; it expands / collapses with its own gap. */}
+        <InstallAppCardSlot topGap={lead ? 12 : 0} bottomGap={lead ? 0 : 12} delay={state === 'ready' ? 150 : 60} />
         {/* Same tree position in every state: it never remounts or jumps. */}
         <FadeIn delay={state === 'ready' ? 180 : 60} style={lead ? styles.gap12 : null}>
           <DutyActionCard onPress={openCalculator} categories={rateCount} year={year} />

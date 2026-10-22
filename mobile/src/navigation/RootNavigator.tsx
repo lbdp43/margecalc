@@ -12,6 +12,7 @@ import { WelcomeModal } from '../components/ui/WelcomeModal';
 import { initOfflineMode, cleanupOfflineMode } from '../services/offline';
 import { loadMarginThresholds } from '../utils/marginThresholds';
 import { getProducts } from '../services/product.service';
+import { setWelcomeGate } from '../utils/pwaInstall';
 import { palette } from '../theme';
 
 const WELCOME_SEEN_KEY = 'margebar_welcome_seen';
@@ -70,11 +71,22 @@ export function RootNavigator() {
     }
     (async () => {
       const seen = await AsyncStorage.getItem(WELCOME_SEEN_KEY).catch(() => '1');
-      if (seen || !mounted) return;
+      if (!mounted) return;
+      if (seen) {
+        setWelcomeGate('done');
+        return;
+      }
+      // The install card (dashboard) waits until the welcome sheet is decided and closed.
+      setWelcomeGate('pending');
       const welcome = await shouldWelcome();
       if (!mounted) return;
-      if (welcome) setWelcomeVisible(true);
-      else AsyncStorage.setItem(WELCOME_SEEN_KEY, '1').catch(() => {});
+      if (welcome) {
+        setWelcomeGate('open');
+        setWelcomeVisible(true);
+      } else {
+        setWelcomeGate('done');
+        AsyncStorage.setItem(WELCOME_SEEN_KEY, '1').catch(() => {});
+      }
     })();
     return () => { mounted = false; };
   }, [isAuthenticated]);
@@ -82,6 +94,8 @@ export function RootNavigator() {
   const handleCloseWelcome = () => {
     setWelcomeVisible(false);
     AsyncStorage.setItem(WELCOME_SEEN_KEY, '1').catch(() => {});
+    // Let the sheet slide away before the install card fades in.
+    setTimeout(() => setWelcomeGate('done'), 450);
   };
 
   if (isLoading) {

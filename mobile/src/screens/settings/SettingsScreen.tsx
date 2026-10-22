@@ -3,7 +3,7 @@
  *
  *   Mon établissement · Objectifs de marge · Catalogue (services, contenants,
  *   catégories) · Taxes & droits · Aide & retours · (Administration) ·
- *   Compte · À propos (footer)
+ *   Compte · Application (web: installer l’app) · À propos (footer)
  *
  * Each group lives in ./parts (one component per section, each owning its
  * sheets and data). This file only composes them and wires pull-to-refresh.
@@ -23,6 +23,7 @@ import { HelpSection } from './parts/HelpSection';
 import { AdminSection } from './parts/AdminSection';
 import { AboutFooter } from './parts/AboutSection';
 import { AccountSection } from './parts/AccountSection';
+import { ApplicationSection } from './parts/ApplicationSection';
 import { SETTINGS_KEYS } from './parts/data';
 
 export function SettingsScreen() {
@@ -70,6 +71,7 @@ export function SettingsScreen() {
       <HelpSection index={i++} />
       {isAdmin ? <AdminSection index={i++} navigation={navigation} /> : null}
       <AccountSection index={i++} />
+      <ApplicationSection index={i++} />
       <AboutFooter index={i++} />
     </Screen>
   );

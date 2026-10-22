@@ -6,12 +6,14 @@
 import { Linking } from 'react-native';
 import { isOnline } from '../../../services/offline';
 import { formatNumber, NBSP } from '../../../utils/format';
+import appConfig from '../../../../app.json';
 
 /** Official reference for the alcohol duties (service-public.fr). */
 export const OFFICIAL_RATES_URL = 'https://entreprendre.service-public.fr/vosdroits/F32101';
 export const BREWERY_URL = 'https://labrasseriedesplantes.fr/';
 export const CONTACT_EMAIL = 'labrasseriedesplantes@gmail.com';
-export const APP_VERSION = '3.14';
+/** « 4.0.0 » → « 4.0 » (app.json is the one source; same as the landing footer). */
+export const APP_VERSION = String((appConfig as any)?.expo?.version ?? '').replace(/\.0$/, '');
 
 const OFFLINE_MESSAGE = 'Hors ligne : vérifiez votre connexion puis réessayez.';
 

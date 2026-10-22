@@ -1,6 +1,6 @@
 {
   "name": "@margebar/backend",
-  "version": "3.14.0",
+  "version": "4.0.0",
   "main": "dist/index.js",
   "scripts": {
     "dev": "tsx watch src/index.ts",
@@ -13,7 +13,7 @@
     "db:push": "prisma db push"
   },
   "dependencies": {
-    "@margebar/shared": "3.14.0",
+    "@margebar/shared": "4.0.0",
     "@prisma/client": "^5.10.0",
     "@tesseract.js-data/eng": "^1.0.0",
     "@tesseract.js-data/fra": "^1.0.0",

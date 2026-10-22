@@ -52,6 +52,8 @@ export type { MarginLegendProps, ZoneCounts } from './MarginLegend';
 export { FiscalCategorySheet, fiscalRateLabel, groupFiscalRates, FISCAL_GROUPS } from './FiscalCategorySheet';
 export type { FiscalCategorySheetProps } from './FiscalCategorySheet';
 export { WelcomeModal } from './WelcomeModal';
+export { InstallAppCard, InstallAppCardSlot, IosInstallSheet, useInstallFlow } from './InstallAppCard';
+export type { InstallAppCardProps, InstallAppCardSlotProps, IosInstallSheetProps } from './InstallAppCard';
 export { BottomSheet } from './BottomSheet';
 export type { BottomSheetProps } from './BottomSheet';
 export { DialogHost, dialog } from './Dialog';

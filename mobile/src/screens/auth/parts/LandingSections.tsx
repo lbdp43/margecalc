@@ -20,7 +20,7 @@ import { useSystemParamsStore } from '../../../store/systemParams.store';
 import appConfig from '../../../../app.json';
 import { BREWERY_URL, openExternal, writeToUs } from './contact';
 
-/** « 3.14.0 » → « 3.14 » (same as Réglages › À propos). */
+/** « 4.0.0 » → « 4.0 » (same as Réglages › À propos). */
 const APP_VERSION = String((appConfig as any)?.expo?.version ?? '').replace(/\.0$/, '');
 
 // ─── Hero ──────────────────────────────────────────────────────────────────

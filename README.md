@@ -4,7 +4,7 @@
 > Application mobile et web pour piloter la rentabilité de chaque boisson —
 > du shot de spiritueux à la pinte de bière, en passant par les droits d'accise.
 
-[![Version](https://img.shields.io/badge/version-3.14-1B7A55)](https://github.com/lbdp43/margecalc)
+[![Version](https://img.shields.io/badge/version-4.0-1B7A55)](https://github.com/lbdp43/margecalc)
 [![Stack](https://img.shields.io/badge/stack-Expo%20%7C%20React%20Native%20%7C%20Node.js%20%7C%20Postgres-1B7A55)](#stack-technique)
 [![Production](https://img.shields.io/badge/production-margecalc--production.up.railway.app-0E4D34)](https://margecalc-production.up.railway.app/Landing)
 
@@ -83,7 +83,7 @@ margebar/
 │       ├── screens/         # auth, dashboard, products (liste, fiche, formulaire), invoice, settings
 │       ├── services/        # Clients API (axios), file hors ligne
 │       └── utils/           # Formats fr-FR, seuils de marge
-└── scripts/   # generate-icons.py (logo D1), patch-html.js (PWA meta)
+└── scripts/   # generate-icons.py (logo D1), patch-html.js (PWA : meta, manifest, service worker, version.json)
 ```
 
 Le monorepo utilise les **npm workspaces**.
@@ -184,7 +184,9 @@ Cette commande :
 2. Génère le client Prisma
 3. Compile le backend
 4. Exporte l'app Expo en bundle web → `backend/dist/public`
-5. Patche le HTML pour le support PWA (viewport, apple-touch-icon, theme-color émeraude)
+5. Patche le HTML pour la PWA (viewport, apple-touch-icon, theme-color, identifiant de build) et génère `manifest.json`, le service worker `sw.js` et `version.json`
+
+L'application web est **installable** (Chrome, Edge, Android : bouton « Installer » ; iPhone et iPad : « Comment faire ? » explique Partager › « Sur l'écran d'accueil »), depuis le tableau de bord ou Réglages › Application. Chaque build a son identifiant : quand une nouvelle version est déployée, l'application ouverte affiche « Nouvelle version disponible » et se met à jour en un geste.
 
 Tests unitaires des extracteurs du scan (sans image ni moteur OCR, ~1 s) :
 

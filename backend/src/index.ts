@@ -24,7 +24,8 @@ app.set('trust proxy', 1);
 
 // Security headers with basic CSP.
 // Product photos are data: URIs rendered in <img> (img-src data:), fonts are self-hosted
-// under /assets (font-src 'self').
+// under /assets (font-src 'self'). The PWA service worker is /sw.js (worker-src 'self') and the
+// manifest /manifest.json (manifest-src 'self').
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
@@ -36,6 +37,7 @@ app.use(helmet({
       fontSrc: ["'self'", 'data:'],
       frameSrc: ["'self'", 'https://js.stripe.com'],
       workerSrc: ["'self'", 'blob:'],
+      manifestSrc: ["'self'"],
       // Only meaningful behind HTTPS; on a plain-http local instance it would break assets.
       upgradeInsecureRequests: config.isProd ? [] : null,
     },
@@ -158,14 +160,24 @@ app.use('/api', (_req, res) => {
   res.status(404).json({ error: 'Route introuvable' });
 });
 
-// Serve Expo web build (static files)
+// Serve Expo web build (static files).
+// The app shell, the service worker and version.json must always be revalidated: a deploy is
+// then picked up at once (the hashed bundles under /_expo/static and /assets never change).
 const publicDir = path.join(__dirname, 'public');
-app.use(express.static(publicDir));
+const NO_CACHE_FILES = new Set(['index.html', 'sw.js', 'version.json', 'manifest.json']);
+app.use(express.static(publicDir, {
+  setHeaders: (res, filePath) => {
+    const name = path.basename(filePath);
+    if (!NO_CACHE_FILES.has(name)) return;
+    res.setHeader('Cache-Control', 'no-cache');
+    if (name === 'sw.js') res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+  },
+}));
 
 // SPA fallback: any non-API route serves index.html
 app.get('*', (_req, res, next) => {
   const indexPath = path.join(publicDir, 'index.html');
-  res.sendFile(indexPath, (err) => {
+  res.sendFile(indexPath, { headers: { 'Cache-Control': 'no-cache' } }, (err) => {
     if (err) next();
   });
 });

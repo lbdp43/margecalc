@@ -1,5 +1,6 @@
 {
   "name": "margebar",
+  "version": "4.0.0",
   "private": true,
   "workspaces": [
     "shared",

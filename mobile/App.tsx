@@ -1,3 +1,5 @@
+// First: listens for the browser's install prompt from the very first moment (web only).
+import './src/utils/pwaInstall';
 import React from 'react';
 import { Platform, StyleSheet, View } from 'react-native';
 import { NavigationContainer, DefaultTheme, LinkingOptions, Theme, getPathFromState, getStateFromPath } from '@react-navigation/native';
@@ -9,8 +11,10 @@ import { RootNavigator } from './src/navigation/RootNavigator';
 import { ErrorBoundary } from './src/components/ui/ErrorBoundary';
 import { ToastHost } from './src/components/ui/Toast';
 import { DialogHost } from './src/components/ui/Dialog';
+import { AppUpdatePrompt } from './src/components/ui/AppUpdatePrompt';
 import { YinYangSpinner } from './src/components/ui/YinYangSpinner';
 import { ROUTES } from './src/navigation/routes';
+import { navigationRef, syncCurrentRoute } from './src/navigation/currentRoute';
 import { useAuthStore } from './src/store/auth.store';
 import { clearAllOfflineData } from './src/services/offline';
 import { fontAssets, installWebFontAliases } from './src/theme/fonts';
@@ -280,6 +284,8 @@ export default function App() {
           {/* Global overlay hosts — available on auth screens too */}
           <ToastHost />
           <DialogHost />
+          {/* « Nouvelle version disponible » (web production builds only) */}
+          <AppUpdatePrompt />
         </QueryClientProvider>
       </SafeAreaProvider>
     </ErrorBoundary>
@@ -327,6 +333,9 @@ function Navigation() {
     // entry instead of pushing one (back never leads into the other session).
     <NavigationContainer
       key={isAuthenticated ? 'app' : 'auth'}
+      ref={navigationRef}
+      onReady={syncCurrentRoute}
+      onStateChange={syncCurrentRoute}
       linking={(isAuthenticated ? appLinking : authLinking) as LinkingOptions<any>}
       theme={navTheme}
     >
