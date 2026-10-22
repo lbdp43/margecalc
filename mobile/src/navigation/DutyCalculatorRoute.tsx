@@ -53,7 +53,8 @@ export function DutyCalculatorRoute() {
       header={
         <NavBar
           title="Calculateur de droits"
-          trailing={<Badge variant="brand" icon={width >= 380 ? 'shield-checkmark' : undefined} label={`Tarifs ${year}`} size="sm" />}
+          // Narrow phones keep the whole title; the year is also in the « Barème officiel » link.
+          trailing={width >= 360 ? <Badge variant="brand" icon={width >= 380 ? 'shield-checkmark' : undefined} label={`Tarifs ${year}`} size="sm" /> : undefined}
         />
       }
       testID="duty-calculator-screen"

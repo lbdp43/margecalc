@@ -10,20 +10,29 @@
  *
  * Every number goes through utils/format.ts. The selling price is never sent
  * as 0: left empty, the backend derives it (×4) and the screen shows it as
- * « calculé ×4 » beforehand.
+ * « calculé ×4 » beforehand. A line that matches a product already tracked
+ * only updates its purchase price: the review says so before the import.
+ *
+ * Leaving is guarded while there is something to lose:
+ *  - review with lines: NavBar / Android / browser back ask first; a browser
+ *    back that is cancelled puts this screen's history entry back, and a
+ *    reload or tab close gets the browser's own « leave the page? » prompt;
+ *  - import in flight: leaving is blocked (the request would still create
+ *    the products), with a short « Import en cours » toast.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Platform } from 'react-native';
+import { Platform, StyleSheet } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import type { Category } from '@margebar/shared';
-import { dialog, toast } from '../../components/ui';
+import { useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
+import type { Category, ProductWithMargin } from '@margebar/shared';
+import { SwapFade, dialog, toast } from '../../components/ui';
 import { haptics } from '../../theme/haptics';
 import { plural } from '../../utils/format';
 import { goToProduct, goToProductList, openProductForm } from '../../navigation/routes';
 import { useAuthStore } from '../../store/auth.store';
 import { useOfflineQuery } from '../../hooks/useOfflineQuery';
 import * as categoryService from '../../services/category.service';
+import * as productService from '../../services/product.service';
 import { getScanQuota, type ScanQuota } from '../../services/scan.service';
 import {
   describeImportError,
@@ -51,8 +60,10 @@ import {
 import {
   emptyLine,
   errorField,
+  findExisting,
   formatInvoiceDate,
   hasErrors,
+  indexProducts,
   linesFromScan,
   pairResults,
   toImportLine,
@@ -66,6 +77,23 @@ type Step = 'capture' | 'scanning' | 'error' | 'review' | 'results';
 
 const MIN_BUSY_MS = 400;
 const wait = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+const isWeb = Platform.OS === 'web';
+const web = globalThis as any;
+
+/** Everything an import can change: list, detail, services (margins), price history, admin list. */
+function invalidateProducts(qc: QueryClient) {
+  qc.invalidateQueries({ queryKey: ['products'] });
+  qc.invalidateQueries({ queryKey: ['product'] });
+  qc.invalidateQueries({ queryKey: ['productServings'] });
+  qc.invalidateQueries({ queryKey: ['priceHistory'] });
+  qc.invalidateQueries({ queryKey: ['admin', 'products'] });
+}
+
+const nextFrame = (cb: () => void) => {
+  const raf = web.requestAnimationFrame as ((f: () => void) => void) | undefined;
+  if (raf) raf(() => setTimeout(cb, 0));
+  else setTimeout(cb, 16);
+};
 
 export function InvoiceScanScreen({ navigation }: Props) {
   // Route helpers take a loose navigation type (they work from any navigator).
@@ -82,6 +110,9 @@ export function InvoiceScanScreen({ navigation }: Props) {
 
   const categoriesQ = useOfflineQuery<Category[]>(['categories'], categoryService.getCategories);
   const categories = useMemo(() => categoriesQ.data ?? [], [categoriesQ.data]);
+  // The user's products: a line with the same name + container updates one of them.
+  const productsQ = useOfflineQuery<ProductWithMargin[]>(['products'], () => productService.getProducts(), { refetchOnMount: 'always' });
+  const existing = useMemo(() => indexProducts(productsQ.data), [productsQ.data]);
   const quotaQ = useQuery<ScanQuota>({ queryKey: ['scanQuota'], queryFn: getScanQuota, staleTime: 60_000, retry: 0 });
 
   const [step, setStep] = useState<Step>('capture');
@@ -106,6 +137,7 @@ export function InvoiceScanScreen({ navigation }: Props) {
   const mounted = useRef(true);
   const abortRef = useRef<AbortController | null>(null);
   const runRef = useRef(0);
+  const lastPickRef = useRef(0);
   useEffect(
     () => () => {
       mounted.current = false;
@@ -148,9 +180,10 @@ export function InvoiceScanScreen({ navigation }: Props) {
           setScanError({
             kind: 'unreadable',
             title: 'Aucun produit reconnu',
-            message: 'La lecture n’a trouvé aucune ligne produit sur cette facture. Reprenez la photo à plat, en entier et bien éclairée.',
+            message: 'La lecture n’a trouvé aucune ligne produit sur cette facture.',
             resend: false,
             canRetry: true,
+            fromServer: false,
           });
           setStep('error');
           return;
@@ -204,6 +237,7 @@ export function InvoiceScanScreen({ navigation }: Props) {
           message: err instanceof PhotoError ? err.message : 'Impossible de lire cette image. Choisissez une photo JPEG ou PNG de la facture.',
           resend: false,
           canRetry: true,
+          fromServer: false,
         });
         setStep('error');
       }
@@ -214,8 +248,14 @@ export function InvoiceScanScreen({ navigation }: Props) {
   const onPick = useCallback(
     async (source: PickSource) => {
       if (picking) return;
+      if (isWeb) {
+        // A double click would open two file choosers (a cancelled one never resolves on web).
+        const now = Date.now();
+        if (now - lastPickRef.current < 1000) return;
+        lastPickRef.current = now;
+      }
       // Web: a cancelled file chooser never resolves, so only native tracks « busy ».
-      const track = Platform.OS !== 'web';
+      const track = !isWeb;
       if (track) setPicking(true);
       let picked: PickedImage | null = null;
       try {
@@ -282,25 +322,30 @@ export function InvoiceScanScreen({ navigation }: Props) {
 
   const editingLine = editing ? (editing.draft ?? lines.find((l) => l.id === editing.id) ?? null) : null;
 
-  const submitLine = useCallback(
-    (line: InvoiceLine) => {
-      setLines((prev) => (prev.some((l) => l.id === line.id) ? prev.map((l) => (l.id === line.id ? line : l)) : [...prev, line]));
-      setTimeout(() => setEditing(null), 0);
-    },
-    [],
-  );
+  const submitLine = useCallback((line: InvoiceLine) => {
+    setLines((prev) => (prev.some((l) => l.id === line.id) ? prev.map((l) => (l.id === line.id ? line : l)) : [...prev, line]));
+    setTimeout(() => setEditing(null), 0);
+  }, []);
 
-  const confirmDiscard = useCallback(
-    async () =>
-      dialog.confirm({
-        title: 'Abandonner cette facture ?',
-        message: 'Les lignes détectées et vos corrections ne seront pas importées.',
-        confirmLabel: 'Abandonner',
-        cancelLabel: 'Continuer la vérification',
-        destructive: true,
-      }),
-    [],
-  );
+  // Read by the (long-lived) back guard: always the current values.
+  const correctingRef = useRef(correcting);
+  correctingRef.current = correcting;
+  const lineCountRef = useRef(lines.length);
+  lineCountRef.current = lines.length;
+
+  const confirmDiscard = useCallback(() => {
+    const fixing = correctingRef.current;
+    const several = lineCountRef.current > 1;
+    return dialog.confirm({
+      title: fixing ? 'Abandonner ces corrections ?' : 'Abandonner cette facture ?',
+      message: fixing
+        ? `${several ? 'Ces lignes ne seront pas importées' : 'Cette ligne ne sera pas importée'}. Les produits déjà importés sont conservés.`
+        : 'Les lignes détectées et vos corrections ne seront pas importées.',
+      confirmLabel: 'Abandonner',
+      cancelLabel: fixing ? 'Continuer la correction' : 'Continuer la vérification',
+      destructive: true,
+    });
+  }, []);
 
   const resetAll = useCallback(() => {
     runRef.current++;
@@ -320,29 +365,105 @@ export function InvoiceScanScreen({ navigation }: Props) {
     resetAll();
   }, [lines.length, confirmDiscard, resetAll]);
 
-  // Leaving with lines not imported asks first (NavBar back, browser / Android back).
+  // ─── Leaving (NavBar, Android back, browser back, reload) ──────────────
+
   const guardRef = useRef(false);
   guardRef.current = step === 'review' && lines.length > 0;
+  const guardActive = (step === 'review' && lines.length > 0) || importing;
+  /** Set once the user chose to leave: the guard lets the removal through. */
+  const leavingRef = useRef(false);
+  const confirmingRef = useRef(false);
+  /** A browser back popped our history entry while the dialog decides. */
+  const restoredRef = useRef(false);
+  /** Web: this screen's history entry, to put back after a cancelled browser back. */
+  const ownEntryRef = useRef<{ state: unknown; path: string } | null>(null);
+
+  useEffect(() => {
+    if (!isWeb || !guardActive) return;
+    const loc = web.location;
+    const hist = web.history;
+    if (loc && hist) ownEntryRef.current = { state: hist.state, path: `${loc.pathname}${loc.search}` };
+    // Reload / tab close: the browser's own « leave this page? » prompt.
+    const onBeforeUnload = (ev: any) => {
+      ev.preventDefault();
+      ev.returnValue = '';
+      return '';
+    };
+    web.addEventListener?.('beforeunload', onBeforeUnload);
+    return () => web.removeEventListener?.('beforeunload', onBeforeUnload);
+  }, [guardActive]);
+
+  /** After a browser back was refused: push our entry back, so the URL matches the screen. */
+  const restoreEntry = useCallback((): boolean => {
+    if (!isWeb) return false;
+    const own = ownEntryRef.current;
+    const loc = web.location;
+    const hist = web.history;
+    if (!own || !loc || !hist) return false;
+    if (`${loc.pathname}${loc.search}` === own.path) return false;
+    hist.pushState(own.state, '', own.path);
+    return true;
+  }, []);
+
   useEffect(() => {
     const unsub = navigation.addListener('beforeRemove', (e: any) => {
+      if (leavingRef.current) return;
+      if (importingRef.current) {
+        // The request would still create the products: stay until it answers.
+        e.preventDefault();
+        restoreEntry();
+        toast.info('Import en cours : encore un instant.');
+        return;
+      }
       if (!guardRef.current) return;
       e.preventDefault();
+      if (restoreEntry()) restoredRef.current = true;
+      if (confirmingRef.current) return; // a second back while the dialog is open
+      confirmingRef.current = true;
       confirmDiscard().then((ok) => {
-        if (ok) {
-          guardRef.current = false;
-          navigation.dispatch(e.data.action);
-        }
+        confirmingRef.current = false;
+        const replay = restoredRef.current;
+        restoredRef.current = false;
+        if (!ok || !mounted.current || importingRef.current) return;
+        leavingRef.current = true;
+        // A browser back: let the router replay it from the restored entry (keeps the history clean).
+        if (replay) web.history.back();
+        else navigation.dispatch(e.data.action);
+        setTimeout(() => {
+          if (mounted.current) leavingRef.current = false;
+        }, 1500);
       });
     });
     return unsub;
-  }, [navigation, confirmDiscard]);
+  }, [navigation, confirmDiscard, restoreEntry]);
+
+  /**
+   * Leave this root-stack screen, THEN open a tab screen. On web this keeps
+   * the dashboard's history entry: /facture is popped, /produits is pushed,
+   * so browser back from the list returns to the Tableau de bord.
+   */
+  const leaveThen = useCallback(
+    (go: () => void) => {
+      leavingRef.current = true;
+      if (!isWeb || !nav.canGoBack?.()) {
+        go();
+        return;
+      }
+      nav.goBack();
+      nextFrame(go);
+    },
+    [nav],
+  );
 
   // ─── Import ─────────────────────────────────────────────────────────────
 
   const doImport = useCallback(async () => {
     if (importingRef.current) return;
     const selected = lines.filter((l) => l.selected);
-    if (!selected.length) return;
+    if (!selected.length) {
+      haptics.warning();
+      return;
+    }
     const invalid = selected.find((l) => hasErrors(validateLine(l)));
     if (invalid) {
       haptics.warning();
@@ -352,23 +473,28 @@ export function InvoiceScanScreen({ navigation }: Props) {
     importingRef.current = true;
     setImporting(true);
     const started = Date.now();
+    const snapshot = existing;
     try {
       const res = await importInvoiceLines({
         supplier: supplier.trim() || null,
-        lines: selected.map((l) => toImportLine(l, categories, supplier)),
+        lines: selected.map((l) => toImportLine(l, categories, supplier, findExisting(l, snapshot, ctx))),
       });
+      const okCount = res.createdCount + res.updatedCount;
+      // App-wide caches first: the dashboard and the list must be right even if this screen is gone.
+      if (okCount > 0) invalidateProducts(queryClient);
       const elapsed = Date.now() - started;
       if (elapsed < MIN_BUSY_MS) await wait(MIN_BUSY_MS - elapsed);
-      if (!mounted.current) return;
-
-      const okCount = res.createdCount + res.updatedCount;
-      if (okCount > 0) {
-        queryClient.invalidateQueries({ queryKey: ['products'] });
-        queryClient.invalidateQueries({ queryKey: ['product'] });
-        queryClient.invalidateQueries({ queryKey: ['priceHistory'] });
-        queryClient.invalidateQueries({ queryKey: ['admin', 'products'] });
+      if (!mounted.current) {
+        // Only reachable if the screen was torn down anyway: still say what happened.
+        if (okCount > 0) {
+          const label = plural(okCount, 'produit importé', 'produits importés');
+          if (res.failedCount > 0) toast.info(`${label} · ${res.failedCount} en échec`);
+          else toast.success(label);
+        }
+        return;
       }
-      const outcomes = pairResults(selected, res.results);
+
+      const outcomes = pairResults(selected, res.results, ctx, snapshot);
       setSummary({
         outcomes,
         createdCount: res.createdCount,
@@ -389,21 +515,16 @@ export function InvoiceScanScreen({ navigation }: Props) {
             return msg ? { ...l, selected: true, importError: { message: msg, field: errorField(msg) } } : l;
           }),
       );
-      guardRef.current = false;
       setStep('results');
-
-      if (okCount > 0) {
-        haptics.success();
-        const label = plural(okCount, 'produit importé', 'produits importés');
-        if (res.failedCount > 0) toast.info(`${label} · ${res.failedCount} en échec`);
-        else toast.success(label);
-      } else {
-        haptics.warning();
-        toast.error(res.error ?? 'Aucun produit n’a pu être importé');
-      }
+      // The results screen IS the feedback (no toast on top of it).
+      if (okCount > 0) haptics.success();
+      else haptics.warning();
     } catch (err: any) {
-      if (!mounted.current) return;
       const info = describeImportError(err);
+      if (!mounted.current) {
+        toast.error(info.title);
+        return;
+      }
       haptics.warning();
       importingRef.current = false;
       setImporting(false);
@@ -417,7 +538,7 @@ export function InvoiceScanScreen({ navigation }: Props) {
       importingRef.current = false;
       if (mounted.current) setImporting(false);
     }
-  }, [lines, supplier, categories, queryClient, dateLabel]);
+  }, [lines, supplier, categories, queryClient, dateLabel, existing, ctx]);
 
   const fixFailed = useCallback(() => {
     setCorrecting(true);
@@ -439,9 +560,9 @@ export function InvoiceScanScreen({ navigation }: Props) {
     body = (
       <ResultsStep
         summary={summary}
-        onOpenProduct={(id) => goToProduct(nav, id)}
+        onOpenProduct={(id) => leaveThen(() => goToProduct(nav, id))}
         onFix={fixFailed}
-        onSeeProducts={() => goToProductList(nav)}
+        onSeeProducts={() => leaveThen(() => goToProductList(nav))}
         onNewInvoice={resetAll}
       />
     );
@@ -454,6 +575,7 @@ export function InvoiceScanScreen({ navigation }: Props) {
         previewUri={photo?.previewUri ?? null}
         categories={categories}
         ctx={ctx}
+        existing={existing}
         importing={importing}
         correcting={correcting}
         onToggle={onToggle}
@@ -469,13 +591,17 @@ export function InvoiceScanScreen({ navigation }: Props) {
 
   return (
     <>
-      {body}
+      {/* Each step fades in (160 ms, 6 px rise; instant under reduce motion) instead of a hard cut. */}
+      <SwapFade value={step} style={styles.fill}>
+        {body}
+      </SwapFade>
       <LineEditSheet
         line={step === 'review' ? editingLine : null}
         isNew={editing?.isNew}
         showErrors={editing?.showErrors}
         categories={categories}
         ctx={ctx}
+        existing={existing}
         onSubmit={submitLine}
         onClose={() => setEditing(null)}
       />
@@ -492,3 +618,7 @@ export function InvoiceScanScreen({ navigation }: Props) {
     </>
   );
 }
+
+const styles = StyleSheet.create({
+  fill: { flex: 1 },
+});

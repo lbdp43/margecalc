@@ -40,6 +40,19 @@ export function frenchQuotes(message: string): string {
 }
 
 /**
+ * Same words as the form, same punctuation as the local messages: the backend
+ * says « Email ou mot de passe incorrect » / « …avec cet email », the labels say
+ * « Adresse e-mail ». The meaning is never changed.
+ */
+export function authTypography(message: string): string {
+  let m = frenchQuotes(message.trim());
+  if (!m) return m;
+  m = m.replace(/\bcet e-?mail\b/gi, 'cette adresse e-mail').replace(/\b([Ee])-?mail\b/g, '$1-mail');
+  if (!/[.!?…»)]$/.test(m)) m += '.';
+  return m;
+}
+
+/**
  * Drops the start of `message` when it repeats `title` (« Compte suspendu : ce compte… »
  * under the title « Compte suspendu » → « Ce compte… »). Returns the message unchanged otherwise.
  */
@@ -75,7 +88,7 @@ export function readAuthError(err: unknown, fallback: string): AuthErrorInfo {
 
   const status = e.response.status ?? 0;
   const data = e.response.data ?? {};
-  const backend = typeof data.error === 'string' && data.error.trim() ? frenchQuotes(data.error.trim()) : '';
+  const backend = typeof data.error === 'string' && data.error.trim() ? authTypography(data.error) : '';
   const fields: Partial<Record<AuthField, string>> = {};
   if (Array.isArray(data.details)) {
     for (const d of data.details) {
@@ -99,7 +112,7 @@ export function readAuthError(err: unknown, fallback: string): AuthErrorInfo {
     return { kind: 'banned', title: 'Compte suspendu', message: withoutTitleLead('Compte suspendu', backend) || 'Ce compte a été suspendu.', fields: {} };
   }
   if (status === 409) {
-    return { kind: 'conflict', message: '', fields: { email: backend || 'Un compte existe déjà avec cette adresse.' } };
+    return { kind: 'conflict', message: '', fields: { email: backend || 'Un compte existe déjà avec cette adresse e-mail.' } };
   }
   if (status === 429) {
     const title = 'Trop de tentatives';

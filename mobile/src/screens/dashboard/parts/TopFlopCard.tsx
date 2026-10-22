@@ -7,7 +7,7 @@
  * price · margin badge). The list cross-fades when the segment changes.
  */
 import React, { useCallback, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import type { ProductWithMargin } from '@margebar/shared';
 import { Badge, Card, PressableScale, SectionHeader, SegmentedControl, SwapFade, primaryPrice } from '../../../components/ui';
@@ -30,6 +30,8 @@ export interface TopFlopCardProps {
 }
 
 const THUMB = 40;
+/** Below this width the thumb is dropped so names and service prices do not truncate. */
+const THUMB_FROM = 375;
 const RANK_W = 14;
 const ROW_PAD = 12;
 const ROW_GAP = 12;
@@ -40,17 +42,20 @@ const Row = React.memo(function Row({
   last,
   thresholds,
   onOpen,
+  thumb,
 }: {
   product: ProductWithMargin;
   rank: number;
   last: boolean;
   thresholds: MarginThresholds;
   onOpen: (id: string) => void;
+  thumb: boolean;
 }) {
   const price = primaryPrice(product);
   const margin = product.computed.marginPercent;
   const zone = getMarginZone(margin, thresholds);
-  const meta = `${price.label}${NBSP}·${NBSP}${formatEuro(price.price)}`;
+  // The service label never breaks; on narrow rows the price goes to line 2.
+  const meta = `${price.label.replace(/ /g, NBSP)}${NBSP}· ${formatEuro(price.price)}`;
   const extra = price.extra > 0 ? `, et ${price.extra} autre${price.extra > 1 ? 's' : ''} service${price.extra > 1 ? 's' : ''}` : '';
   return (
     <View>
@@ -63,19 +68,19 @@ const Row = React.memo(function Row({
         testID={`topflop-row-${rank}`}
       >
         <Text style={styles.rank}>{rank}</Text>
-        <ProductThumb product={product} size={THUMB} radius={12} />
+        {thumb ? <ProductThumb product={product} size={THUMB} radius={12} /> : null}
         <View style={styles.texts}>
           <Text style={styles.name} numberOfLines={2}>
             {product.name}
           </Text>
-          <Text style={styles.meta} numberOfLines={1}>
+          <Text style={styles.meta} numberOfLines={2}>
             {meta}
             {price.extra > 0 ? <Text style={styles.extra}>{`${NBSP}${NBSP}+${price.extra}`}</Text> : null}
           </Text>
         </View>
         <Badge value={margin} thresholds={thresholds} size="sm" style={styles.badge} />
       </PressableScale>
-      {!last ? <View style={styles.divider} /> : null}
+      {!last ? <View style={[styles.divider, { marginLeft: ROW_PAD + RANK_W + ROW_GAP + (thumb ? THUMB + ROW_GAP : 0) }]} /> : null}
     </View>
   );
 });
@@ -84,8 +89,8 @@ const Row = React.memo(function Row({
 function NoneRow({ mode, objective }: { mode: Mode; objective: string }) {
   const good = mode === 'flop';
   const text = good
-    ? `Aucun produit sous votre objectif de ${objective}.`
-    : `Aucun produit n’atteint encore votre objectif de ${objective}.`;
+    ? `Aucun produit sous votre objectif de${NBSP}${objective}.`
+    : `Aucun produit n’atteint encore votre objectif de${NBSP}${objective}.`;
   return (
     <View style={styles.none} accessible accessibilityLabel={spoken(text)} testID={`topflop-none-${mode}`}>
       <View style={[styles.noneIcon, { backgroundColor: good ? palette.goodBg : palette.surface2 }]}>
@@ -97,6 +102,7 @@ function NoneRow({ mode, objective }: { mode: Mode; objective: string }) {
 }
 
 export const TopFlopCard = React.memo(function TopFlopCard({ top, flop, thresholds, onOpen, onSeeAll }: TopFlopCardProps) {
+  const thumb = useWindowDimensions().width >= THUMB_FROM;
   // Start on the side that has something to show.
   const [mode, setMode] = useState<Mode>(top.length === 0 && flop.length > 0 ? 'flop' : 'top');
   const list = mode === 'top' ? top : flop;
@@ -135,7 +141,7 @@ export const TopFlopCard = React.memo(function TopFlopCard({ top, flop, threshol
             <NoneRow mode={mode} objective={objective} />
           ) : (
             list.map((p, i) => (
-              <Row key={p.id} product={p} rank={i + 1} last={i === list.length - 1} thresholds={thresholds} onOpen={onOpen} />
+              <Row key={p.id} product={p} rank={i + 1} last={i === list.length - 1} thresholds={thresholds} onOpen={onOpen} thumb={thumb} />
             ))
           )}
         </SwapFade>
@@ -162,7 +168,7 @@ const styles = StyleSheet.create({
   meta: { ...type.footnote, color: palette.text3 },
   extra: { ...type.footnoteStrong, color: palette.em700 },
   badge: { alignSelf: 'center' },
-  divider: { height: 1, backgroundColor: palette.line, marginLeft: ROW_PAD + RANK_W + ROW_GAP + THUMB + ROW_GAP, marginRight: ROW_PAD },
+  divider: { height: 1, backgroundColor: palette.line, marginRight: ROW_PAD },
   none: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 64, paddingHorizontal: ROW_PAD, paddingVertical: 12 },
   noneIcon: { width: THUMB, height: THUMB, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   noneText: { ...type.callout, color: palette.text2, flex: 1 },

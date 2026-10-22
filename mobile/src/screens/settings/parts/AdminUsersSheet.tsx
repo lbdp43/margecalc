@@ -203,9 +203,9 @@ export function AdminUsersSheet({ visible, onClose }: { visible: boolean; onClos
     const name = user.businessName || user.email;
     const ok = await dialog.confirm(
       banned
-        ? { title: 'Réactiver ce compte ?', message: `${name} pourra de nouveau se connecter.`, confirmLabel: 'Réactiver', icon: 'lock-open-outline' }
+        ? { title: 'Réactiver ce compte ?', message: `${name} pourra de nouveau se connecter.`, confirmLabel: 'Réactiver', icon: 'lock-open-outline' }
         : {
-            title: 'Suspendre ce compte ?',
+            title: 'Suspendre ce compte ?',
             message: `${name} ne pourra plus se connecter. Ses données sont conservées et vous pourrez réactiver le compte à tout moment.`,
             confirmLabel: 'Suspendre',
             destructive: true,
@@ -231,7 +231,7 @@ export function AdminUsersSheet({ visible, onClose }: { visible: boolean; onClos
   const remove = async (user: AdminUser) => {
     const name = user.businessName || user.email;
     const ok = await dialog.confirm({
-      title: 'Supprimer définitivement ce compte ?',
+      title: 'Supprimer définitivement ce compte ?',
       message: `Le compte ${user.email} et toutes ses données (produits, services, demandes) seront supprimés. Cette action est irréversible.`,
       confirmLabel: 'Supprimer le compte',
       destructive: true,

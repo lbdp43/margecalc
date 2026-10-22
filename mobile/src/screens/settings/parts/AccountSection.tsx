@@ -29,7 +29,7 @@ export function AccountSection({ index }: { index: number }) {
 
   const signOut = async () => {
     const ok = await dialog.confirm({
-      title: 'Se déconnecter ?',
+      title: 'Se déconnecter ?',
       message: 'Vous pourrez vous reconnecter à tout moment avec votre e-mail et votre mot de passe.',
       confirmLabel: 'Se déconnecter',
       icon: 'log-out-outline',
@@ -45,7 +45,7 @@ export function AccountSection({ index }: { index: number }) {
 
   const deleteData = async () => {
     const ok = await dialog.confirm({
-      title: 'Supprimer toutes vos données ?',
+      title: 'Supprimer toutes vos données ?',
       message:
         'Vos produits, services, contenants, catégories personnelles et demandes d’aide seront supprimés. Votre compte (e-mail et nom) est conservé. Cette action est définitive.',
       confirmLabel: 'Tout supprimer',

@@ -80,7 +80,7 @@ export function TaxesSection({ index, isAdmin }: { index: number; isAdmin: boole
         <ListRow
           icon="shield-checkmark-outline"
           title={`Barème des droits ${year}`}
-          subtitle={isAdmin ? 'Modifiable · appliqué à tous les comptes' : `${plural(rates.length, 'catégorie', 'catégories')} · accise et sécu.`}
+          subtitle={isAdmin ? 'Modifiable · pour tous les comptes' : `${plural(rates.length, 'catégorie', 'catégories')} · accise et sécu.`}
           subtitleLines={1}
           onPress={() => setOpen(true)}
           testID="settings-rates"
@@ -217,7 +217,7 @@ function RatesEditorSheet({ visible, onClose, rates, year }: { visible: boolean;
 
   const reset = async () => {
     const ok = await dialog.confirm({
-      title: 'Rétablir les valeurs officielles ?',
+      title: 'Rétablir les valeurs officielles ?',
       message: `Les ${rates.length} tarifs reprennent les valeurs du barème officiel ${year} des douanes, pour tous les comptes. Vos modifications seront remplacées.`,
       confirmLabel: 'Rétablir',
       destructive: true,

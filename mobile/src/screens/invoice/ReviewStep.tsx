@@ -1,6 +1,7 @@
 /**
  * Step 3 — review what was read: supplier and date header, the detected lines
- * (tick / untick, tap to edit), « Ajouter une ligne », and the sticky
+ * (tick / untick, tap to edit, margin after import, « Déjà suivi » when the
+ * line updates a product), « Ajouter une ligne », and the sticky
  * « Importer N produits » with the selection total.
  */
 import React, { useCallback, useMemo } from 'react';
@@ -11,7 +12,7 @@ import { AnimatedNumber, Button, Card, FadeIn, NavBar, PressableScale, Screen, S
 import { palette, radius, type } from '../../theme';
 import { NBSP, formatEuro, plural } from '../../utils/format';
 import { LineCard } from './LineCard';
-import { effectivePrice, hasErrors, selectedTotalHT, validateLine, type InvoiceLine, type PricingContext } from './model';
+import { hasErrors, previewLine, selectedTotalHT, validateLine, type ExistingIndex, type InvoiceLine, type LinePreview, type PricingContext } from './model';
 
 export interface ReviewStepProps {
   lines: InvoiceLine[];
@@ -20,6 +21,7 @@ export interface ReviewStepProps {
   previewUri: string | null;
   categories: Category[];
   ctx: PricingContext;
+  existing: ExistingIndex;
   importing: boolean;
   /** True when these lines come back from a partial import (« Corriger »). */
   correcting: boolean;
@@ -35,12 +37,18 @@ export interface ReviewStepProps {
 const Separator = () => <View style={styles.sep} />;
 
 export function ReviewStep(props: ReviewStepProps) {
-  const { lines, ctx, categories, importing, onToggle, onEdit } = props;
+  const { lines, ctx, categories, importing, onToggle, onEdit, existing } = props;
   const selected = useMemo(() => lines.filter((l) => l.selected), [lines]);
   const n = selected.length;
   const total = useMemo(() => selectedTotalHT(lines), [lines]);
   const incomplete = useMemo(() => selected.filter((l) => hasErrors(validateLine(l))).length, [selected]);
-  const anyDerived = useMemo(() => lines.some((l) => effectivePrice(l, ctx).derived), [lines, ctx]);
+  const previews = useMemo(() => {
+    const m = new Map<string, LinePreview>();
+    for (const l of lines) m.set(l.id, previewLine(l, ctx, existing));
+    return m;
+  }, [lines, ctx, existing]);
+  const anyDerived = useMemo(() => lines.some((l) => previews.get(l.id)?.derived), [lines, previews]);
+  const anyManual = useMemo(() => lines.some((l) => l.source === 'manual'), [lines]);
   const allSelected = n === lines.length && lines.length > 0;
   const catById = useMemo(() => new Map(categories.map((c) => [c.id, c])), [categories]);
   const catOf = useCallback(
@@ -51,16 +59,26 @@ export function ReviewStep(props: ReviewStepProps) {
   const renderItem = useCallback(
     ({ item, index }: { item: InvoiceLine; index: number }) => (
       <FadeIn index={index}>
-        <LineCard line={item} category={catOf(item)} ctx={ctx} disabled={importing} onToggle={onToggle} onEdit={onEdit} />
+        <LineCard
+          line={item}
+          category={catOf(item)}
+          ctx={ctx}
+          preview={previews.get(item.id) ?? previewLine(item, ctx, existing)}
+          disabled={importing}
+          onToggle={onToggle}
+          onEdit={onEdit}
+        />
       </FadeIn>
     ),
-    [catOf, ctx, importing, onToggle, onEdit],
+    [catOf, ctx, previews, existing, importing, onToggle, onEdit],
   );
+
+  const supplierA11y = `Fournisseur ${props.supplier || 'non indiqué'}${props.dateLabel ? `, facture du ${props.dateLabel}` : ''}. Modifier`;
 
   const header = (
     <View>
       <FadeIn>
-        <Card onPress={props.onEditSupplier} padding={12} accessibilityLabel={`Fournisseur ${props.supplier || 'non lu'}${props.dateLabel ? `, facture du ${props.dateLabel}` : ''}. Modifier`} testID="invoice-supplier">
+        <Card onPress={props.onEditSupplier} padding={12} accessibilityLabel={supplierA11y} testID="invoice-supplier">
           <View style={styles.supplierRow}>
             {props.previewUri ? (
               <Image source={{ uri: props.previewUri }} style={styles.thumb} resizeMode="cover" accessibilityIgnoresInvertColors />
@@ -71,8 +89,8 @@ export function ReviewStep(props: ReviewStepProps) {
             )}
             <View style={styles.flex}>
               <Text style={styles.supplierLabel}>Fournisseur</Text>
-              <Text style={[styles.supplierName, !props.supplier && { color: palette.text3 }]} numberOfLines={1}>
-                {props.supplier || 'Non lu · à indiquer'}
+              <Text style={[styles.supplierName, !props.supplier && { color: palette.em700 }]} numberOfLines={1}>
+                {props.supplier || 'Aucun fournisseur · ajouter'}
               </Text>
               <Text style={styles.supplierMeta} numberOfLines={1}>
                 {props.dateLabel ? `Facture du ${props.dateLabel}` : 'Date non lue'}
@@ -88,7 +106,7 @@ export function ReviewStep(props: ReviewStepProps) {
       {props.correcting ? (
         <FadeIn delay={40}>
           <View style={[styles.note, styles.noteBad]}>
-            <Ionicons name="alert-circle-outline" size={18} color={palette.bad} />
+            <Ionicons name="alert-circle-outline" size={20} color={palette.bad} style={styles.noteIcon} />
             <Text style={[styles.noteText, { color: palette.bad }]}>
               {lines.length > 1 ? 'Ces lignes n’ont pas été importées. Corrigez-les, puis relancez l’import.' : 'Cette ligne n’a pas été importée. Corrigez-la, puis relancez l’import.'}
             </Text>
@@ -97,10 +115,25 @@ export function ReviewStep(props: ReviewStepProps) {
       ) : null}
 
       <SectionHeader
-        title={props.correcting ? plural(lines.length, 'ligne à corriger', 'lignes à corriger') : plural(lines.length, 'produit détecté', 'produits détectés')}
+        title={
+          props.correcting
+            ? plural(lines.length, 'ligne à corriger', 'lignes à corriger')
+            : anyManual
+              ? plural(lines.length, 'ligne')
+              : plural(lines.length, 'produit détecté', 'produits détectés')
+        }
         right={
           lines.length > 1 ? (
-            <PressableScale onPress={props.onToggleAll} disabled={importing} scaleTo="chip" haptic="select" hitSlop={8} style={styles.toggleAll} accessibilityRole="button" accessibilityLabel={allSelected ? 'Tout désélectionner' : 'Tout sélectionner'} testID="invoice-toggle-all">
+            <PressableScale
+              onPress={props.onToggleAll}
+              disabled={importing}
+              scaleTo="chip"
+              haptic="select"
+              style={styles.toggleAll}
+              accessibilityRole="button"
+              accessibilityLabel={allSelected ? 'Tout décocher' : 'Tout cocher'}
+              testID="invoice-toggle-all"
+            >
               <Text style={styles.toggleAllText}>{allSelected ? 'Tout décocher' : 'Tout cocher'}</Text>
             </PressableScale>
           ) : undefined
@@ -111,10 +144,8 @@ export function ReviewStep(props: ReviewStepProps) {
       {anyDerived && !props.correcting ? (
         <FadeIn delay={60}>
           <View style={styles.note}>
-            <Ionicons name="calculator-outline" size={18} color={palette.em700} />
-            <Text style={styles.noteText}>
-              Sans prix de vente, il est calculé ×4 sur le coût d’une dose, arrondi à 0,10 €. Modifiable ensuite dans chaque fiche.
-            </Text>
+            <Ionicons name="calculator-outline" size={20} color={palette.em700} style={styles.noteIcon} />
+            <Text style={styles.noteText}>Sans prix de vente indiqué, nous le calculons : coût d’une dose ×4, TVA comprise, arrondi à 0,10 €.</Text>
           </View>
         </FadeIn>
       ) : null}
@@ -130,7 +161,7 @@ export function ReviewStep(props: ReviewStepProps) {
 
   const summary =
     n === 0
-      ? 'Aucun produit sélectionné'
+      ? 'Cochez au moins un produit'
       : incomplete > 0
         ? plural(incomplete, 'ligne à compléter', 'lignes à compléter')
         : `${n} sur ${lines.length} sélectionné${n > 1 ? 's' : ''}`;
@@ -143,14 +174,14 @@ export function ReviewStep(props: ReviewStepProps) {
       stickyFooter={
         <StickyActionBar
           summary={summary}
-          summaryZone={incomplete > 0 ? 'red' : undefined}
+          summaryZone={incomplete > 0 && n > 0 ? 'red' : undefined}
           summaryRight={
             n > 0 && total > 0 ? (
               <AnimatedNumber value={total} from={null} format={(v) => formatEuro(v)} prefix="Achat " suffix={`${NBSP}HT`} style={styles.total} numberOfLines={1} testID="invoice-total" />
             ) : undefined
           }
           primary={{
-            title: n === 0 ? 'Sélectionnez un produit' : `Importer ${plural(n, 'produit')}`,
+            title: n === 0 ? 'Importer' : `Importer ${plural(n, 'produit')}`,
             icon: 'download-outline',
             onPress: props.onImport,
             loading: importing,
@@ -194,15 +225,16 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     gap: 10,
     marginBottom: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: radius.sm,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: radius.md,
     backgroundColor: palette.em50,
   },
+  noteIcon: { marginTop: 1 },
   noteBad: { backgroundColor: palette.badBg, marginTop: 12, marginBottom: 0 },
-  noteText: { ...type.footnoteStrong, color: palette.em800, flex: 1 },
+  noteText: { ...type.callout, color: palette.em800, flex: 1 },
   listFooter: { marginTop: 16, gap: 4 },
   total: { ...type.footnoteStrong, color: palette.ink },
-  toggleAll: { minHeight: 32, justifyContent: 'center', paddingLeft: 8 },
+  toggleAll: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 8, marginRight: -8 },
   toggleAllText: { ...type.calloutStrong, color: palette.em700 },
 });

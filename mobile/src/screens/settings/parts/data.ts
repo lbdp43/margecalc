@@ -3,6 +3,7 @@
  * the product form and the product list (['categories'], ['servingTypes'],
  * ['containers']) so a change made here shows up everywhere.
  */
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useQuery, QueryClient } from '@tanstack/react-query';
 import { Category, CustomContainer, ProductWithMargin, ServingType, TVA_RATES, User } from '@margebar/shared';
 import { useOfflineQuery } from '../../../hooks/useOfflineQuery';
@@ -101,43 +102,59 @@ export function invalidateProducts(qc: QueryClient) {
 
 // ─── TVA of the existing catalogue (auto-entrepreneur switch) ──────────────
 export interface TvaPlan {
-  /** Products whose TVA changes, with their new rate. */
-  changes: { id: string; tvaRate: number }[];
+  autoEntrepreneur: boolean;
+  /** Products whose TVA changes, with their new rate and the one they had. */
+  changes: { id: string; tvaRate: number; previous: number }[];
   total: number;
+}
+
+/** Each product's TVA before the auto-entrepreneur mode set it to 0 % (this device). */
+const tvaMemoryKey = (userId: string) => `margebar_tva_before_ae:${userId}`;
+
+async function readTvaMemory(userId: string): Promise<Record<string, number>> {
+  try {
+    const raw = await AsyncStorage.getItem(tvaMemoryKey(userId));
+    const data = raw ? JSON.parse(raw) : null;
+    return data && typeof data === 'object' ? data : {};
+  } catch {
+    return {};
+  }
 }
 
 /**
  * Which products change when the auto-entrepreneur mode changes:
- * - on: every product with a TVA becomes 0 %;
- * - off: the products at 0 % get the usual rate back (20 %, softs 10 %, the
- *   product form's defaults). Products at 5,5 % or 10 % are left alone.
+ * - on: every product with a TVA becomes 0 % (its rate is remembered);
+ * - off: the products at 0 % get back the rate they had, or the usual one
+ *   (20 %, softs 10 %, the product form's defaults). Other rates are left alone.
  */
-export async function planTvaChange(autoEntrepreneur: boolean, defaultRate: number): Promise<TvaPlan> {
-  const products: ProductWithMargin[] = await productService.getProducts();
+export async function planTvaChange(autoEntrepreneur: boolean, defaultRate: number, userId: string): Promise<TvaPlan> {
+  const [products, memory] = await Promise.all([productService.getProducts(), readTvaMemory(userId)]);
   const changes: TvaPlan['changes'] = [];
-  for (const p of products) {
+  for (const p of products as ProductWithMargin[]) {
     const current = Number(p.tvaRate) || 0;
     if (autoEntrepreneur) {
-      if (current > 0) changes.push({ id: p.id, tvaRate: 0 });
+      if (current > 0) changes.push({ id: p.id, tvaRate: 0, previous: current });
     } else if (current === 0) {
-      changes.push({ id: p.id, tvaRate: p.category?.slug === 'softs' ? TVA_RATES.RATE_10 : defaultRate });
+      const remembered = memory[p.id];
+      const rate = typeof remembered === 'number' && remembered > 0 ? remembered : p.category?.slug === 'softs' ? TVA_RATES.RATE_10 : defaultRate;
+      changes.push({ id: p.id, tvaRate: rate, previous: 0 });
     }
   }
-  return { changes, total: products.length };
+  return { autoEntrepreneur, changes, total: products.length };
 }
 
-/** Applies the plan (4 requests at a time). Returns how many products failed. */
-export async function applyTvaChange(qc: QueryClient, plan: TvaPlan): Promise<{ updated: number; failed: number; error?: unknown }> {
+/** Applies the plan (4 requests at a time). Returns how many products changed or failed. */
+export async function applyTvaChange(qc: QueryClient, plan: TvaPlan, userId: string): Promise<{ updated: number; failed: number; error?: unknown }> {
   let next = 0;
-  let updated = 0;
   let failed = 0;
   let error: unknown;
+  const done: TvaPlan['changes'] = [];
   const worker = async () => {
     while (next < plan.changes.length) {
       const c = plan.changes[next++];
       try {
         await productService.updateProduct(c.id, { tvaRate: c.tvaRate });
-        updated++;
+        done.push(c);
       } catch (err) {
         failed++;
         error = error ?? err;
@@ -145,6 +162,12 @@ export async function applyTvaChange(qc: QueryClient, plan: TvaPlan): Promise<{ 
     }
   };
   await Promise.all(Array.from({ length: Math.min(4, plan.changes.length) }, worker));
+  const memory = await readTvaMemory(userId);
+  for (const c of done) {
+    if (plan.autoEntrepreneur) memory[c.id] = c.previous;
+    else delete memory[c.id];
+  }
+  await AsyncStorage.setItem(tvaMemoryKey(userId), JSON.stringify(memory)).catch(() => {});
   invalidateProducts(qc);
-  return { updated, failed, error };
+  return { updated: done.length, failed, error };
 }

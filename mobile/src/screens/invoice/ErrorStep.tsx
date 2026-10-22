@@ -1,14 +1,15 @@
 /**
  * The reading failed (422 unreadable, 429 cooldown / quota, offline, timeout…):
- * a calm card with the backend's sentence as is, what to try, and two ways out:
- * « Réessayer » and « Saisir à la main ». A cooldown counts down before the
- * retry is offered again.
+ * a calm card with the backend's sentence as is (our own tips only when the
+ * server said nothing), and two ways out: « Réessayer » and « Saisir à la
+ * main ». A cooldown counts down in the bar summary (readable text), the
+ * button label never changes.
  */
 import React, { useEffect, useState } from 'react';
 import { StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Button, Card, FadeIn, NavBar, Screen, StickyActionBar } from '../../components/ui';
-import { palette, radius, type } from '../../theme';
+import { palette, type } from '../../theme';
 import { NBSP } from '../../utils/format';
 import type { InvoiceScanErrorInfo } from '../../services/invoice.service';
 import { InvoiceFrame } from './InvoiceFrame';
@@ -40,20 +41,18 @@ export function ErrorStep({ error, previewUri, onRetry, onManual }: ErrorStepPro
     return () => clearInterval(id);
   }, [error]);
 
+  const timeTone = error.kind === 'cooldown' || error.kind === 'busy' || error.kind === 'quota' || error.kind === 'timeout';
+  const noNetwork = error.kind === 'offline' || error.kind === 'unreachable';
   const tone =
-    error.kind === 'offline'
+    noNetwork
       ? { icon: 'cloud-offline-outline' as const, bg: palette.surface2, fg: palette.text2 }
-      : error.kind === 'cooldown' || error.kind === 'busy' || error.kind === 'quota' || error.kind === 'timeout'
+      : timeTone
         ? { icon: 'time-outline' as const, bg: palette.warnBg, fg: palette.warn }
         : { icon: 'alert-circle-outline' as const, bg: palette.badBg, fg: palette.bad };
 
-  const retryTitle = !error.canRetry
-    ? null
-    : wait > 0
-      ? `Réessayer dans ${countdownLabel(wait)}`
-      : error.resend
-        ? 'Réessayer'
-        : 'Reprendre une photo';
+  const retryTitle = !error.canRetry ? null : error.resend ? 'Réessayer' : 'Reprendre une photo';
+  // Our own how-to only when the backend did not already say what to do.
+  const showTips = error.kind === 'unreadable' && !error.fromServer;
 
   return (
     <Screen
@@ -62,6 +61,7 @@ export function ErrorStep({ error, previewUri, onRetry, onManual }: ErrorStepPro
       stickyFooter={
         retryTitle ? (
           <StickyActionBar
+            summary={wait > 0 ? `Nouvel essai possible dans ${countdownLabel(wait)}` : undefined}
             primary={{ title: retryTitle, icon: error.resend ? 'refresh' : 'camera-outline', onPress: onRetry, disabled: wait > 0, testID: 'invoice-retry' }}
           >
             <Button title="Saisir à la main" variant="secondary" size="sm" icon="create-outline" onPress={onManual} testID="invoice-error-manual" />
@@ -72,7 +72,13 @@ export function ErrorStep({ error, previewUri, onRetry, onManual }: ErrorStepPro
       }
     >
       <FadeIn offset={8}>
-        <InvoiceFrame uri={previewUri} status={previewUri ? 'error' : 'idle'} height={frameH} style={styles.frameGap} />
+        <InvoiceFrame
+          uri={previewUri}
+          status={previewUri && !noNetwork ? 'error' : 'idle'}
+          errorTone={timeTone ? 'warn' : 'bad'}
+          height={frameH}
+          style={styles.frameGap}
+        />
       </FadeIn>
       <FadeIn delay={60} offset={8}>
         <View accessibilityLiveRegion="polite">
@@ -86,7 +92,7 @@ export function ErrorStep({ error, previewUri, onRetry, onManual }: ErrorStepPro
             <Text style={styles.text} testID="invoice-error-message">
               {error.message}
             </Text>
-            {error.kind === 'unreadable' ? (
+            {showTips ? (
               <View style={styles.tips}>
                 {TIPS.map((t) => (
                   <View key={t} style={styles.tipRow}>
@@ -96,10 +102,6 @@ export function ErrorStep({ error, previewUri, onRetry, onManual }: ErrorStepPro
                 ))}
               </View>
             ) : null}
-            <View style={styles.note}>
-              <Ionicons name="create-outline" size={16} color={palette.em700} />
-              <Text style={styles.noteText}>Vous pouvez aussi ajouter vos produits à la main, un par un.</Text>
-            </View>
           </Card>
         </View>
       </FadeIn>
@@ -116,15 +118,4 @@ const styles = StyleSheet.create({
   tips: { marginTop: 14, gap: 8 },
   tipRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   tipText: { ...type.callout, color: palette.ink, flexShrink: 1 },
-  note: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginTop: 16,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: radius.sm,
-    backgroundColor: palette.em50,
-  },
-  noteText: { ...type.footnoteStrong, color: palette.em800, flexShrink: 1 },
 });

@@ -1,12 +1,17 @@
 /**
- * Connexion — NavBar back, BrandMark header, e-mail + password with inline
- * validation, readable backend errors (wrong password, « Compte suspendu… »,
- * too many attempts, offline), « Se connecter » in the sticky bar so it rides
- * above the keyboard. Enter goes to the next field, then submits.
+ * Connexion — NavBar (back only: the large title is the one heading), BrandMark
+ * header, e-mail + password with inline validation, readable backend errors
+ * (wrong password, « Compte suspendu… » with « Nous écrire », too many attempts,
+ * offline), « Se connecter » in the sticky bar so it rides above the keyboard.
+ * Enter goes to the next field, then submits.
+ *
+ * On success the query cache is emptied BEFORE the session is set, so the
+ * dashboard and the products are always fetched for the account that signs in.
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { StyleSheet, TextInput, View } from 'react-native';
 import type { StackScreenProps } from '@react-navigation/stack';
+import { useQueryClient } from '@tanstack/react-query';
 import { FadeIn, NavBar, Screen, StickyActionBar, TextField, toast } from '../../components/ui';
 import { haptics } from '../../theme/haptics';
 import { useAuthStore } from '../../store/auth.store';
@@ -15,13 +20,12 @@ import { ROUTES } from '../../navigation/routes';
 import { AUTH_COLUMN, AuthHeader, FormBanner, PasswordField, ServerErrorBanner, SwitchLink, useColumnInset, useOnline } from './parts/AuthBits';
 import { AuthErrorInfo, readAuthError } from './parts/authErrors';
 import { emailError, passwordError } from './parts/validation';
+import { holdSpinner, useDraftEmail } from './parts/session';
 
 type Props = StackScreenProps<any, 'Login'>;
 
-const MIN_SPINNER_MS = 400;
-
 export function LoginScreen({ navigation, route }: Props) {
-  const initialEmail = typeof route.params?.email === 'string' ? route.params.email : '';
+  const initialEmail = useDraftEmail(navigation, route);
   const [email, setEmail] = useState(initialEmail);
   const [password, setPassword] = useState('');
   const [errors, setErrors] = useState<{ email?: string | null; password?: string | null }>({});
@@ -29,6 +33,7 @@ export function LoginScreen({ navigation, route }: Props) {
   const [loading, setLoading] = useState(false);
   const [offlineNudge, setOfflineNudge] = useState(0);
   const setAuth = useAuthStore((s) => s.setAuth);
+  const queryClient = useQueryClient();
   const online = useOnline();
   const side = useColumnInset();
   const emailRef = useRef<TextInput>(null);
@@ -74,13 +79,16 @@ export function LoginScreen({ navigation, route }: Props) {
     const started = Date.now();
     try {
       const result = await authService.login({ email: email.trim(), password });
-      const wait = MIN_SPINNER_MS - (Date.now() - started);
-      if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+      await holdSpinner(started);
       haptics.success();
       const name = result.user?.businessName?.trim();
       toast.success(name ? `Ravi de vous revoir, ${name}` : 'Connexion réussie');
+      // Nothing cached for a previous account may reach this one.
+      queryClient.clear();
       setAuth(result.token, result.user, result.refreshToken);
     } catch (err) {
+      // Same minimum as on success: a fast « wrong password » never flickers the spinner.
+      await holdSpinner(started);
       if (!mounted.current) return;
       const info = readAuthError(err, 'Connexion impossible pour le moment.');
       haptics.warning();
@@ -90,13 +98,17 @@ export function LoginScreen({ navigation, route }: Props) {
       else if (info.fields.email) emailRef.current?.focus();
       setLoading(false);
     }
-  }, [email, password, loading, online, setAuth]);
+  }, [email, password, loading, online, setAuth, queryClient]);
 
-  const goRegister = () => navigation.replace(ROUTES.register, email.trim() ? { email: email.trim() } : undefined);
+  // The address travels in memory, never in the URL (/inscription?email=…).
+  const goRegister = () => {
+    useAuthStore.getState().setDraftEmail(email.trim());
+    navigation.replace(ROUTES.register);
+  };
 
   return (
     <Screen
-      header={<NavBar title="Connexion" />}
+      header={<NavBar />}
       stickyFooter={
         <StickyActionBar
           style={{ paddingHorizontal: side }}

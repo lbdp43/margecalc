@@ -141,7 +141,10 @@ export function DutyCalculator({ onSaveAsProduct, footer, bleed = true }: DutyCa
   const priceOver = priceRaw > PRICE_MAX;
   const degreeOver = degreeRaw > DEGREE_MAX;
   const hint = degreeOver
-    ? { text: `Maximum ${formatDegree(DEGREE_MAX)} : le calcul utilise ${formatDegree(DEGREE_MAX)}.`, tone: 'warn' as const }
+    ? {
+        text: `Maximum ${formatDegree(DEGREE_MAX)} : c’est la valeur utilisée pour le calcul.`,
+        tone: 'warn' as const,
+      }
     : degreeHint(rate, degree, seuilSS);
   const draft: DutyDraft = { rate, price, degree, volumeCl, result };
   const formatDeg = width < SHORT_DEGREE_BELOW ? (n: number) => `${formatNumber(n, Number.isInteger(n) ? 0 : 1)}${NBSP}%` : formatDegree;
@@ -153,12 +156,7 @@ export function DutyCalculator({ onSaveAsProduct, footer, bleed = true }: DutyCa
         <Text style={styles.label}>Catégorie fiscale</Text>
         <Text style={styles.meta}>{`${rates.length} catégories`}</Text>
       </View>
-      <Card
-        onPress={openSheet}
-        padding={0}
-        accessibilityLabel={`Catégorie fiscale : ${rate.label}. Changer de catégorie`}
-        testID="duty-category"
-      >
+      <Card onPress={openSheet} padding={0} accessibilityLabel={`Catégorie fiscale : ${rate.label}. Changer de catégorie`} testID="duty-category">
         <View style={styles.picker}>
           <View style={styles.pickerIcon}>
             <Ionicons name={rateIcon(rate)} size={21} color={palette.em700} />
@@ -179,23 +177,24 @@ export function DutyCalculator({ onSaveAsProduct, footer, bleed = true }: DutyCa
       </Card>
 
       {/* Prix d’achat */}
-      <TextField
-        label="Prix d’achat HT"
-        meta="hors droits"
-        value={priceText}
-        onChangeText={changePriceText}
-        onFocus={focusPrice}
-        onBlur={blurPrice}
-        keyboardType="decimal-pad"
-        inputMode="decimal"
-        selectTextOnFocus
-        maxLength={10}
-        suffix="€"
-        accessibilityLabel="Prix d’achat hors taxes, hors droits, en euros"
-        error={priceOver ? `Maximum ${formatEuro(PRICE_MAX, { trimZeros: true })} : le calcul utilise ${formatEuro(PRICE_MAX)}.` : null}
-        containerStyle={styles.section}
-        testID="duty-price"
-      />
+      <View style={styles.section} testID="duty-price">
+        <TextField
+          label="Prix d’achat HT"
+          meta="hors droits"
+          value={priceText}
+          onChangeText={changePriceText}
+          onFocus={focusPrice}
+          onBlur={blurPrice}
+          keyboardType="decimal-pad"
+          inputMode="decimal"
+          selectTextOnFocus
+          maxLength={10}
+          suffix="€"
+          accessibilityLabel="Prix d’achat hors taxes, hors droits, en euros"
+          error={priceOver ? `Maximum ${formatEuro(PRICE_MAX, { trimZeros: true })} : c’est la valeur utilisée pour le calcul.` : null}
+          testID="duty-price-input"
+        />
+      </View>
 
       {/* Degré d’alcool */}
       <NumberInput
@@ -257,9 +256,7 @@ export function DutyCalculator({ onSaveAsProduct, footer, bleed = true }: DutyCa
             fullWidth
             testID="duty-save-product"
           />
-          <Text style={styles.saveNote}>
-            {`Le prix HT avec droits (${formatEuro(result.prixHTAvecDroits)}) devient votre prix d’achat.`}
-          </Text>
+          <Text style={styles.saveNote}>{`Le prix HT avec droits (${formatEuro(result.prixHTAvecDroits)}) devient votre prix${NBSP}d’achat.`}</Text>
         </View>
       ) : null}
 
@@ -287,10 +284,16 @@ export function DutyCalculator({ onSaveAsProduct, footer, bleed = true }: DutyCa
 function degreeHint(rate: Rate, degree: number, seuilSS: number): { text: string; tone: 'info' | 'warn' } | null {
   const seuil = `${formatNumber(seuilSS)}${NBSP}%${NBSP}vol.`;
   if (rate.slug === 'biere_legere' && degree > 2.8) {
-    return { text: `Au-delà de 2,8${NBSP}%${NBSP}vol., choisissez la catégorie « Bière ».`, tone: 'warn' };
+    return {
+      text: `Au-delà de 2,8${NBSP}%${NBSP}vol., choisissez la catégorie « Bière ».`,
+      tone: 'warn',
+    };
   }
   if ((rate.slug === 'biere' || rate.slug === 'petite_brasserie') && degree > 0 && degree <= 2.8) {
-    return { text: `Jusqu’à 2,8${NBSP}%${NBSP}vol., choisissez la catégorie « Bière légère ».`, tone: 'warn' };
+    return {
+      text: `Jusqu’à 2,8${NBSP}%${NBSP}vol., choisissez la catégorie « Bière légère ».`,
+      tone: 'warn',
+    };
   }
   if (rate.calcType === 'A') {
     const cotisation = rate.cotisationRate > 0 && !!rate.cotisationCond;
@@ -305,23 +308,71 @@ function degreeHint(rate: Rate, degree: number, seuilSS: number): { text: string
 }
 
 const styles = StyleSheet.create({
-  labelRow: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, marginBottom: 8, marginTop: 4 },
+  labelRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
+    gap: 12,
+    marginBottom: 8,
+    marginTop: 4,
+  },
   label: { ...type.label, color: palette.text2 },
   meta: { ...type.footnoteStrong, color: palette.text3 },
   section: { marginTop: 20 },
   degree: { marginTop: 16 },
-  picker: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 68, paddingLeft: 12, paddingRight: 8, paddingVertical: 10 },
-  pickerIcon: { width: 44, height: 44, borderRadius: radius.icon, backgroundColor: palette.em50, alignItems: 'center', justifyContent: 'center' },
+  picker: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    minHeight: 68,
+    paddingLeft: 12,
+    paddingRight: 8,
+    paddingVertical: 10,
+  },
+  pickerIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: radius.icon,
+    backgroundColor: palette.em50,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   pickerTexts: { flex: 1, minWidth: 0 },
   pickerTitle: { ...type.headline, color: palette.ink },
   pickerSub: { ...type.footnote, color: palette.text3, marginTop: 1 },
-  change: { flexDirection: 'row', alignItems: 'center', gap: 2, height: 44, paddingHorizontal: 8, borderRadius: radius.sm },
+  change: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    height: 44,
+    paddingHorizontal: 8,
+    borderRadius: radius.sm,
+  },
   changeText: { ...type.calloutStrong, color: palette.em700 },
-  hint: { flexDirection: 'row', alignItems: 'flex-start', gap: 6, marginTop: 10 },
+  hint: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 6,
+    marginTop: 10,
+  },
   hintIcon: { marginTop: 1 },
   hintText: { ...type.footnote, color: palette.text3, flex: 1 },
   hintWarn: { color: palette.warn },
-  saveNote: { ...type.footnote, color: palette.text3, textAlign: 'center', marginTop: 10 },
-  source: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', alignSelf: 'center', gap: 6, minHeight: 44, marginTop: 12, paddingHorizontal: 8 },
+  saveNote: {
+    ...type.footnote,
+    color: palette.text3,
+    textAlign: 'center',
+    marginTop: 10,
+  },
+  source: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    alignSelf: 'center',
+    gap: 6,
+    minHeight: 44,
+    marginTop: 12,
+    paddingHorizontal: 8,
+  },
   sourceText: { ...type.footnoteStrong, color: palette.em700 },
 });

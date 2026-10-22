@@ -1,14 +1,18 @@
 /**
- * Inscription — establishment name, e-mail, password (live length helper,
- * show / hide), auto-entrepreneur switch. Inline validation, readable backend
- * errors (an address already used offers « Se connecter avec cette adresse »),
- * « Créer mon compte » in the sticky bar. After sign-up the foundation's
- * WelcomeModal opens by itself (RootNavigator).
+ * Inscription — NavBar (back only), establishment name, e-mail, password
+ * (live length helper, show / hide), auto-entrepreneur switch. Inline
+ * validation, readable backend errors (an address already used offers « Se
+ * connecter avec cette adresse »), « Créer mon compte » in the sticky bar.
+ * After sign-up the foundation's WelcomeModal opens by itself (RootNavigator).
+ *
+ * On success the query cache is emptied BEFORE the session is set (a new
+ * account never sees what a previous one left in memory).
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { StyleSheet, Text, TextInput, View } from 'react-native';
 import type { StackScreenProps } from '@react-navigation/stack';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useQueryClient } from '@tanstack/react-query';
 import { Button, FadeIn, ListGroup, ListRow, NavBar, Screen, StickyActionBar, TextField, toast } from '../../components/ui';
 import { palette, type } from '../../theme';
 import { haptics } from '../../theme/haptics';
@@ -18,17 +22,17 @@ import { ROUTES } from '../../navigation/routes';
 import { AUTH_COLUMN, AuthHeader, FormBanner, PasswordField, ServerErrorBanner, SwitchLink, useColumnInset, useOnline } from './parts/AuthBits';
 import { AuthErrorInfo, AuthField, readAuthError } from './parts/authErrors';
 import { BUSINESS_NAME_MAX, businessNameError, emailError, passwordError, passwordHelper } from './parts/validation';
+import { holdSpinner, useDraftEmail } from './parts/session';
 
 type Props = StackScreenProps<any, 'Register'>;
 
 /** RootNavigator shows the WelcomeModal while this key is unset. */
 const WELCOME_SEEN_KEY = 'margebar_welcome_seen';
-const MIN_SPINNER_MS = 400;
 
 type Errors = Partial<Record<AuthField, string | null>>;
 
 export function RegisterScreen({ navigation, route }: Props) {
-  const initialEmail = typeof route.params?.email === 'string' ? route.params.email : '';
+  const initialEmail = useDraftEmail(navigation, route);
   const [businessName, setBusinessName] = useState('');
   const [email, setEmail] = useState(initialEmail);
   const [password, setPassword] = useState('');
@@ -39,6 +43,7 @@ export function RegisterScreen({ navigation, route }: Props) {
   const [loading, setLoading] = useState(false);
   const [offlineNudge, setOfflineNudge] = useState(0);
   const setAuth = useAuthStore((s) => s.setAuth);
+  const queryClient = useQueryClient();
   const online = useOnline();
   const side = useColumnInset();
   const nameRef = useRef<TextInput>(null);
@@ -110,16 +115,18 @@ export function RegisterScreen({ navigation, route }: Props) {
         businessName: businessName.trim(),
         isAutoEntrepreneur,
       });
-      const wait = MIN_SPINNER_MS - (Date.now() - started);
-      if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+      await holdSpinner(started);
       // A brand-new account always gets the welcome sheet, even on a device
       // where someone else already saw it.
       await AsyncStorage.removeItem(WELCOME_SEEN_KEY).catch(() => {});
       haptics.success();
       // Queued behind the welcome sheet (toasts never cover an open sheet).
       toast.success('Compte créé, bienvenue !');
+      queryClient.clear();
       setAuth(result.token, result.user, result.refreshToken);
     } catch (err) {
+      // Same minimum as on success: a fast error never flickers the spinner.
+      await holdSpinner(started);
       if (!mounted.current) return;
       const info = readAuthError(err, 'Inscription impossible pour le moment.');
       haptics.warning();
@@ -130,13 +137,17 @@ export function RegisterScreen({ navigation, route }: Props) {
       (f.businessName ? nameRef : f.email ? emailRef : f.password ? passwordRef : null)?.current?.focus();
       setLoading(false);
     }
-  }, [businessName, email, password, isAutoEntrepreneur, loading, online, setAuth]);
+  }, [businessName, email, password, isAutoEntrepreneur, loading, online, setAuth, queryClient]);
 
-  const goLogin = () => navigation.replace(ROUTES.login, email.trim() ? { email: email.trim() } : undefined);
+  // The address travels in memory, never in the URL (/connexion?email=…).
+  const goLogin = () => {
+    useAuthStore.getState().setDraftEmail(email.trim());
+    navigation.replace(ROUTES.login);
+  };
 
   return (
     <Screen
-      header={<NavBar title="Inscription" />}
+      header={<NavBar />}
       stickyFooter={
         <StickyActionBar
           style={{ paddingHorizontal: side }}
@@ -251,9 +262,7 @@ export function RegisterScreen({ navigation, route }: Props) {
           </ListGroup>
         </FadeIn>
         <FadeIn index={5}>
-          <Text style={styles.note}>
-            Vos produits, vos prix et vos marges ne sont visibles que par vous. Rien n’est partagé ni revendu.
-          </Text>
+          <Text style={styles.note}>Vos produits et vos marges restent dans votre compte. Rien n’est partagé ni revendu.</Text>
           <SwitchLink lead="Déjà un compte ?" action="Se connecter" onPress={goLogin} testID="register-to-login" />
         </FadeIn>
       </View>
@@ -267,5 +276,5 @@ const styles = StyleSheet.create({
   bannerSlot: { marginBottom: 20 },
   field: { marginBottom: 20 },
   inlineAction: { alignSelf: 'flex-start', marginTop: 4, marginLeft: -12 },
-  note: { ...type.footnote, color: palette.text3, textAlign: 'center', marginBottom: 4, paddingHorizontal: 8 },
+  note: { ...type.footnote, color: palette.text2, textAlign: 'center', marginBottom: 4, paddingHorizontal: 8 },
 });

@@ -1,6 +1,7 @@
 /**
  * Full-width action card « Calculer les droits d’alcool » (spec §4.2):
  * gradient icon tile, title + « 13 catégories · Tarifs 2026 », chevron disc.
+ * It needs no product data, so it also shows while the dashboard loads.
  */
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
@@ -8,6 +9,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { Card } from '../../../components/ui';
 import { elevation, gradients, palette, type } from '../../../theme';
+import { NBSP } from '../../../utils/format';
 
 export const DutyActionCard = React.memo(function DutyActionCard({ onPress, categories, year }: { onPress: () => void; categories: number; year: string }) {
   return (
@@ -29,8 +31,8 @@ export const DutyActionCard = React.memo(function DutyActionCard({ onPress, cate
           <Text style={styles.title} numberOfLines={2}>
             Calculer les droits d’alcool
           </Text>
-          <Text style={styles.meta} numberOfLines={1}>
-            {`${categories} catégories · Tarifs ${year}`}
+          <Text style={styles.meta} numberOfLines={2}>
+            {`${categories} catégories · Tarifs${NBSP}${year}`}
           </Text>
         </View>
         <View style={styles.go}>

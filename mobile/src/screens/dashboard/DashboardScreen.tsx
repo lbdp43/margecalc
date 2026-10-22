@@ -6,14 +6,21 @@
  *   StatTiles   Produits · Meilleur produit (overlap the hero by 28)
  *   Card        « Calculer les droits d’alcool » → Calculateur (Tableau de bord stack)
  *   Meters      « Marge par catégorie » with objective ticks + legend
- *   Top & flop  SegmentedControl, rows open the product
+ *   Top & flop  SegmentedControl (split at the objective), rows open the product
  *
- * States: skeletons on first load (never for cached data), empty account
- * (three entry points), error (backend message + Réessayer), offline without
- * cache. Entrances are mount-only, so refetches never replay them.
+ * States:
+ * - loading: skeleton tiles with the real tiles' height, then the real duty
+ *   card (it needs no product data), then a meters skeleton. Never for cached
+ *   data. The duty card keeps its position when the data arrives.
+ * - empty (first run): the hero becomes a welcome block with the lime
+ *   « Scanner une bouteille »; below it, the two other ways to add products
+ *   and the duty card.
+ * - error: the backend message + Réessayer (network icon only for network
+ *   failures). Offline without cache: the offline EmptyState.
+ * Entrances are mount-only, so refetches never replay them.
  */
 import React, { useCallback, useMemo, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import type { ProductWithMargin } from '@margebar/shared';
@@ -23,6 +30,8 @@ import {
   EmptyState,
   ErrorBoundary,
   FadeIn,
+  ListGroup,
+  ListRow,
   Screen,
   Skeleton,
   SkeletonStatTile,
@@ -30,25 +39,30 @@ import {
   useDelayedLoading,
 } from '../../components/ui';
 import { FeedbackModal } from '../../components/ui/FeedbackModal';
-import { palette, type } from '../../theme';
+import { palette, radius, type } from '../../theme';
 import { useOfflineQuery } from '../../hooks/useOfflineQuery';
+import { isNetworkError } from '../../services/offline';
 import * as productService from '../../services/product.service';
 import { useAuthStore } from '../../store/auth.store';
 import { useRatesStore } from '../../store/rates.store';
 import { useSystemParamsStore } from '../../store/systemParams.store';
+import { NBSP } from '../../utils/format';
 import { useMarginThresholds } from '../../utils/marginThresholds';
 import { goToProduct, goToProductList, openDutyCalculator, openInvoiceScan, openProductForm } from '../../navigation/routes';
 import { DashboardHero, HeroKpi } from './parts/DashboardHero';
-import { KpiTiles } from './parts/KpiTiles';
+import { KpiTiles, kpiTileLayout } from './parts/KpiTiles';
 import { DutyActionCard } from './parts/DutyActionCard';
 import { CategoryMeters } from './parts/CategoryMeters';
 import { TopFlopCard } from './parts/TopFlopCard';
-import { averageMargin, categoryStats, errorMessage, greeting as greetingFor, topFlop, withMargin } from './parts/dashboardData';
+import { averageMargin, byMargin, categoryStats, errorMessage, greeting as greetingFor, topFlop, withMargin } from './parts/dashboardData';
 
 const OVERLAP = 28;
 
+type DashState = 'ready' | 'loading' | 'empty' | 'error' | 'offline';
+
 export function DashboardScreen() {
   const navigation = useNavigation<any>();
+  const { width } = useWindowDimensions();
   const user = useAuthStore((s) => s.user);
   const thresholds = useMarginThresholds();
   const rateCount = useRatesStore((s) => s.rates.length) || 13;
@@ -68,19 +82,18 @@ export function DashboardScreen() {
     const list = hasData ? withMargin(products as ProductWithMargin[]) : [];
     const avg = averageMargin(list);
     const counts = countByZone(list, thresholds);
-    const { top, flop } = topFlop(list, 5);
+    const { top, flop } = topFlop(list, thresholds.good, 5);
     return {
       list,
-      counts,
       kpi: avg !== null ? ({ avg, total: list.length, counts } as HeroKpi) : null,
       stats: categoryStats(list),
       top,
       flop,
-      best: top[0] ?? null,
+      best: byMargin(list)[0] ?? null,
     };
   }, [hasData, products, thresholds]);
 
-  const state: 'ready' | 'loading' | 'empty' | 'error' | 'offline' = hasData
+  const state: DashState = hasData
     ? view.list.length > 0
       ? 'ready'
       : 'empty'
@@ -103,6 +116,34 @@ export function DashboardScreen() {
     refetch();
   }, [refetch]);
 
+  const tiles = kpiTileLayout(width);
+  // What overlaps the hero, above the duty card (null: the duty card does).
+  const lead =
+    state === 'ready' ? (
+      <KpiTiles count={view.list.length} categories={view.stats.length} best={view.best} onProducts={openList} onBest={openProduct} />
+    ) : state === 'loading' ? (
+      <View style={{ height: tiles.height }}>{showSkeleton ? <SkeletonTiles height={tiles.height} flexBest={tiles.flexBest} /> : null}</View>
+    ) : state === 'empty' ? (
+      <FadeIn delay={120}>
+        <ListGroup>
+          <ListRow
+            icon="receipt-outline"
+            title="Importer une facture"
+            subtitle={`Plusieurs produits d’un${NBSP}coup`}
+            onPress={scanInvoice}
+            testID="dashboard-add-invoice"
+          />
+          <ListRow
+            icon="create-outline"
+            title="Saisir à la main"
+            subtitle={`Nom, prix d’achat et prix de${NBSP}vente`}
+            onPress={addManually}
+            testID="dashboard-add-manual"
+          />
+        </ListGroup>
+      </FadeIn>
+    ) : null;
+
   return (
     <Screen safeTop={false} padded={false} refreshing={query.isRefetching} onRefresh={retry} testID="dashboard-screen">
       <DashboardHero
@@ -112,19 +153,21 @@ export function DashboardScreen() {
         kpi={state === 'ready' ? view.kpi : null}
         state={state === 'offline' ? 'error' : state}
         onFeedback={openFeedback}
+        onScan={scanBottle}
         paddingBottom={OVERLAP + 20}
       />
 
       <View style={styles.body}>
+        {lead}
+        {/* Same tree position in every state: it never remounts or jumps. */}
+        <FadeIn delay={state === 'ready' ? 180 : 60} style={lead ? styles.gap12 : null}>
+          <DutyActionCard onPress={openCalculator} categories={rateCount} year={year} />
+        </FadeIn>
         {state === 'ready' ? (
           <>
-            <KpiTiles count={view.list.length} best={view.best} onProducts={openList} onBest={openProduct} />
-            <FadeIn delay={180} style={styles.gap12}>
-              <DutyActionCard onPress={openCalculator} categories={rateCount} year={year} />
-            </FadeIn>
             <ErrorBoundary fallbackMessage="La marge par catégorie n’a pas pu s’afficher.">
               <FadeIn delay={240} style={styles.section}>
-                <CategoryMeters stats={view.stats} thresholds={thresholds} counts={view.counts} delay={300} onDetails={openList} />
+                <CategoryMeters stats={view.stats} thresholds={thresholds} delay={300} onDetails={openList} />
               </FadeIn>
             </ErrorBoundary>
             <ErrorBoundary fallbackMessage="Le classement n’a pas pu s’afficher.">
@@ -134,37 +177,27 @@ export function DashboardScreen() {
             </ErrorBoundary>
           </>
         ) : state === 'loading' ? (
-          showSkeleton ? <DashboardSkeleton /> : <View style={styles.loadingSpacer} />
-        ) : (
-          <>
-            <FadeIn delay={60}>
-              <DutyActionCard onPress={openCalculator} categories={rateCount} year={year} />
-            </FadeIn>
-            {state === 'empty' ? (
-              <EmptyState
-                marquee
-                style={styles.empty}
-                title="Aucun produit pour l’instant"
-                text="Scannez une bouteille ou une facture : vos marges apparaîtront ici."
-                primary={{ label: 'Scanner une bouteille', icon: 'scan', onPress: scanBottle }}
-                secondary={[
-                  { label: 'Facture', icon: 'receipt-outline', onPress: scanInvoice },
-                  { label: 'À la main', icon: 'create-outline', onPress: addManually },
-                ]}
-              />
-            ) : state === 'offline' ? (
-              <EmptyState variant="offline" style={styles.empty} primary={{ label: 'Réessayer', icon: 'refresh', onPress: retry }} />
-            ) : (
-              <FadeIn delay={120} style={styles.section}>
-                <ErrorCard
-                  message={errorMessage(query.error, 'Le serveur ne répond pas pour le moment. Réessayez dans un instant.')}
-                  onRetry={retry}
-                  retrying={query.isFetching}
-                />
-              </FadeIn>
-            )}
-          </>
-        )}
+          showSkeleton ? <MetersSkeleton /> : null
+        ) : state === 'offline' ? (
+          // The banner says « Hors ligne · vos données restent consultables »: say
+          // why nothing shows here (never loaded on this device) instead of repeating it.
+          <EmptyState
+            variant="offline"
+            title="Pas encore de données hors ligne"
+            text="Vos produits s’afficheront dès le retour du réseau, puis resteront consultables sans connexion."
+            style={styles.empty}
+            primary={{ label: 'Réessayer', icon: 'refresh', onPress: retry }}
+          />
+        ) : state === 'error' ? (
+          <FadeIn delay={120} style={styles.section}>
+            <ErrorCard
+              message={errorMessage(query.error, 'Le serveur ne répond pas pour le moment. Réessayez dans un instant.')}
+              network={isNetworkError(query.error)}
+              onRetry={retry}
+              retrying={query.isFetching}
+            />
+          </FadeIn>
+        ) : null}
       </View>
 
       <FeedbackModal visible={feedbackOpen} onClose={() => setFeedbackOpen(false)} screenName="Tableau de bord" />
@@ -172,14 +205,14 @@ export function DashboardScreen() {
   );
 }
 
-function ErrorCard({ message, onRetry, retrying }: { message: string; onRetry: () => void; retrying: boolean }) {
+function ErrorCard({ message, network, onRetry, retrying }: { message: string; network: boolean; onRetry: () => void; retrying: boolean }) {
   return (
     <Card accessibilityLabel={`Impossible de charger vos produits. ${message}`}>
       <View style={styles.errorHead}>
         <View style={styles.errorIcon}>
-          <Ionicons name="cloud-offline-outline" size={20} color={palette.bad} />
+          <Ionicons name={network ? 'cloud-offline-outline' : 'alert-circle-outline'} size={20} color={palette.bad} />
         </View>
-        <View style={{ flex: 1, minWidth: 0 }}>
+        <View style={styles.errorTexts}>
           <Text style={styles.errorTitle}>Impossible de charger vos produits</Text>
           <Text style={styles.errorText}>{message}</Text>
         </View>
@@ -189,31 +222,31 @@ function ErrorCard({ message, onRetry, retrying }: { message: string; onRetry: (
   );
 }
 
-function DashboardSkeleton() {
+/** Mirrors KpiTiles: same height and flex ratio, so nothing moves when the data arrives. */
+function SkeletonTiles({ height, flexBest }: { height: number; flexBest: number }) {
   return (
-    <View accessibilityLabel="Chargement du tableau de bord">
-      <View style={styles.skeletonTiles}>
-        <SkeletonStatTile style={{ flex: 1 }} />
-        <SkeletonStatTile style={{ flex: 1.25 }} />
+    <View style={styles.skeletonTiles} accessibilityLabel="Chargement du tableau de bord">
+      <SkeletonStatTile style={{ flex: 1, height }} />
+      <SkeletonStatTile style={{ flex: flexBest, height }} />
+    </View>
+  );
+}
+
+/** Mirrors CategoryMeters (header + 48 px rows). */
+function MetersSkeleton() {
+  return (
+    <View style={styles.section}>
+      <View style={styles.skeletonHeader}>
+        <Skeleton height={18} width={180} radius={6} />
       </View>
-      <View style={[styles.skeletonCard, styles.gap12]}>
-        <Skeleton width={48} height={48} radius={14} />
-        <View style={{ flex: 1, gap: 8 }}>
-          <Skeleton height={14} width="70%" />
-          <Skeleton height={10} width="45%" />
-        </View>
-      </View>
-      <View style={styles.section}>
-        <Skeleton height={18} width={180} radius={6} style={{ marginBottom: 14 }} />
-        <View style={[styles.skeletonCard, { flexDirection: 'column', alignItems: 'stretch', gap: 18 }]}>
-          {[0, 1, 2, 3].map((i) => (
-            <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-              <Skeleton height={14} width={100} />
-              <Skeleton height={6} style={{ flex: 1 }} radius={3} />
-              <Skeleton height={14} width={52} />
-            </View>
-          ))}
-        </View>
+      <View style={styles.skeletonCard}>
+        {[0, 1, 2, 3].map((i) => (
+          <View key={i} style={styles.skeletonRow}>
+            <Skeleton height={14} width={100} />
+            <Skeleton height={6} style={styles.skeletonMeter} radius={3} />
+            <Skeleton height={14} width={52} />
+          </View>
+        ))}
       </View>
     </View>
   );
@@ -224,21 +257,22 @@ const styles = StyleSheet.create({
   gap12: { marginTop: 12 },
   section: { marginTop: 24 },
   empty: { marginTop: 8 },
-  loadingSpacer: { height: 120 },
   errorHead: { flexDirection: 'row', gap: 14, alignItems: 'flex-start' },
   errorIcon: { width: 40, height: 40, borderRadius: 20, backgroundColor: palette.badBg, alignItems: 'center', justifyContent: 'center' },
+  errorTexts: { flex: 1, minWidth: 0 },
   errorTitle: { ...type.headline, color: palette.ink },
   errorText: { ...type.callout, color: palette.text2, marginTop: 4 },
   errorBtn: { marginTop: 16, alignSelf: 'flex-start' },
   skeletonTiles: { flexDirection: 'row', gap: 12 },
+  skeletonHeader: { height: 40, justifyContent: 'center', marginBottom: 4 },
   skeletonCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14,
-    padding: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 4,
     backgroundColor: palette.surface,
-    borderRadius: 20,
+    borderRadius: radius.lg,
     borderWidth: 1,
     borderColor: palette.line,
   },
+  skeletonRow: { flexDirection: 'row', alignItems: 'center', gap: 12, height: 48 },
+  skeletonMeter: { flex: 1 },
 });

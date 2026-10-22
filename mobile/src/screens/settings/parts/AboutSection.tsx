@@ -20,7 +20,7 @@ export function AboutFooter({ index }: { index: number }) {
         <Text style={styles.name}>
           MargeBar Pro {APP_VERSION} <Text style={styles.by}>· par La Brasserie des Plantes</Text>
         </Text>
-        <Text style={styles.free}>Gratuit pour tous, sans abonnement ni carte bancaire</Text>
+        <Text style={styles.free}>Gratuit pour tous, sans abonnement</Text>
       </View>
       <View style={styles.links}>
         <Button title="labrasseriedesplantes.fr" variant="text" size="sm" onPress={() => open(BREWERY_URL)} testID="about-site" />

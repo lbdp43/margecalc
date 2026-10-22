@@ -186,6 +186,8 @@ export function SwitchRow({ value, onChange, disabled, accessibilityLabel, testI
       scaleTo="card"
       accessibilityRole="switch"
       accessibilityState={{ checked: value, disabled: !!disabled }}
+      // react-native-web 0.19 ignores accessibilityState: give the DOM its aria-checked.
+      aria-checked={value}
       accessibilityLabel={accessibilityLabel ?? [row.title, row.subtitle].filter(Boolean).join(', ')}
       testID={testID}
       style={styles.switchPress}

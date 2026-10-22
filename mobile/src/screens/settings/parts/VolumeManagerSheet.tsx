@@ -334,7 +334,7 @@ export const SERVING_COPY: VolumeManagerCopy = {
   updated: (n) => `« ${n} » enregistré`,
   deleted: (n) => `« ${n} » supprimé`,
   confirmDelete: (item) => ({
-    title: `Supprimer « ${item.name} » ?`,
+    title: `Supprimer « ${item.name} » ?`,
     message: `Les produits servis en « ${item.name} » perdront ce service ; leur prix de référence passera au service suivant. Cette action est définitive.`,
   }),
 };
@@ -357,7 +357,7 @@ export const CONTAINER_COPY: VolumeManagerCopy = {
   updated: (n) => `« ${n} » enregistré`,
   deleted: (n) => `« ${n} » supprimé`,
   confirmDelete: (item) => ({
-    title: `Supprimer « ${item.name} » ?`,
+    title: `Supprimer « ${item.name} » ?`,
     message: 'Ce contenant ne sera plus proposé à l’ajout d’un produit. Vos produits existants ne changent pas.',
   }),
 };

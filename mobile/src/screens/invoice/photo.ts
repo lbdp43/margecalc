@@ -4,9 +4,12 @@
  *   prepareInvoicePhoto(img)               → ONE decode of the original:
  *     - ocrBase64: JPEG, long side ≤ 2 000 px, q 0.82 (the API rejects > 3 500 px),
  *     - previewUri: ~720 px JPEG for the screen (frame + header thumb).
- * On web the browser's canvas scaler is used (milliseconds, instead of seconds
- * for expo-image-manipulator's JavaScript resampler on the main thread); any
- * failure falls back to expo-image-manipulator.
+ * On web the browser does the work: `HTMLImageElement.decode()` decodes off
+ * the main thread and `canvas.toBlob` encodes asynchronously, so the
+ * « Préparation » sweep keeps moving even for a 12 MP photo (measured at 6×
+ * CPU: 0,8 s and no long task, against 1,5 s with a 1,2 s freeze for
+ * onload + toDataURL; createImageBitmap was slower). Any failure falls back
+ * to expo-image-manipulator.
  */
 import { Platform } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
@@ -102,7 +105,13 @@ export function nextPaint(): Promise<void> {
 
 // ─── Web fast path (canvas) ────────────────────────────────────────────────
 
-type WebCanvas = { width: number; height: number; getContext: (k: '2d') => any; toDataURL: (t: string, q: number) => string };
+type WebCanvas = {
+  width: number;
+  height: number;
+  getContext: (k: '2d') => any;
+  toDataURL: (t: string, q: number) => string;
+  toBlob?: (cb: (b: any) => void, t: string, q: number) => void;
+};
 
 function webCanvas(w: number, h: number): WebCanvas {
   const c = (globalThis as any).document.createElement('canvas') as WebCanvas;
@@ -111,14 +120,26 @@ function webCanvas(w: number, h: number): WebCanvas {
   return c;
 }
 
-function webLoad(uri: string): Promise<any> {
-  return new Promise((resolve, reject) => {
-    const ImageCtor = (globalThis as any).Image;
-    const el = new ImageCtor();
-    el.onload = () => resolve(el);
+/** Loads and decodes an image; `decode()` does the decoding off the main thread. */
+async function webLoad(uri: string): Promise<any> {
+  const ImageCtor = (globalThis as any).Image;
+  const el = new ImageCtor();
+  el.decoding = 'async';
+  el.src = uri;
+  if (typeof el.decode === 'function') {
+    try {
+      await el.decode();
+      return el;
+    } catch {
+      /* fall back to the load events (they report the real error) */
+    }
+  }
+  await new Promise<void>((resolve, reject) => {
+    if (el.complete && el.naturalWidth > 0) return resolve();
+    el.onload = () => resolve();
     el.onerror = () => reject(new Error('decode'));
-    el.src = uri;
   });
+  return el;
 }
 
 /** `src` scaled so its long side is ≤ max (never upscaled), on white (transparent PNGs). */
@@ -136,14 +157,39 @@ function webFit(src: any, sw: number, sh: number, max: number): WebCanvas {
 
 const stripPrefix = (dataUrl: string) => dataUrl.slice(dataUrl.indexOf(',') + 1);
 
+function blobToDataUrl(blob: any): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new (globalThis as any).FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(new Error('read'));
+    reader.readAsDataURL(blob);
+  });
+}
+
+/** Asynchronous JPEG encode (toBlob runs off the main thread), toDataURL when toBlob is missing. */
+function canvasToJpeg(c: WebCanvas, quality: number): Promise<string> {
+  if (typeof c.toBlob !== 'function') return Promise.resolve(c.toDataURL('image/jpeg', quality));
+  return new Promise((resolve, reject) => {
+    c.toBlob!(
+      (b) => {
+        if (!b) reject(new Error('encode'));
+        else blobToDataUrl(b).then(resolve, reject);
+      },
+      'image/jpeg',
+      quality,
+    );
+  });
+}
+
 async function prepareOnWeb(img: PickedImage): Promise<PreparedInvoicePhoto> {
+  // EXIF orientation is applied by the <img> decode and by drawImage.
   const el = await webLoad(img.uri);
   const w = el.naturalWidth || img.width;
   const h = el.naturalHeight || img.height;
   if (!(w > 0 && h > 0)) throw new Error('size');
   const ocr = webFit(el, w, h, OCR_MAX_SIDE);
-  const ocrUrl = ocr.toDataURL('image/jpeg', 0.82);
-  const preview = webFit(ocr, ocr.width, ocr.height, PREVIEW_MAX_SIDE).toDataURL('image/jpeg', 0.72);
+  const ocrUrl = await canvasToJpeg(ocr, 0.82);
+  const preview = await canvasToJpeg(webFit(ocr, ocr.width, ocr.height, PREVIEW_MAX_SIDE), 0.72);
   if (!ocrUrl.startsWith('data:image/jpeg') || ocrUrl.length < 200) throw new Error('encode');
   return { ocrBase64: stripPrefix(ocrUrl), previewUri: preview, width: ocr.width, height: ocr.height };
 }

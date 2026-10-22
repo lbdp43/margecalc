@@ -27,7 +27,7 @@ import { palette, radius, type } from '../../theme';
 import { haptics } from '../../theme/haptics';
 import { formatNumber } from '../../utils/format';
 import { SETTINGS_KEYS, useMyTickets } from '../../screens/settings/parts/data';
-import { formatLongDate, readableError } from '../../screens/settings/parts/helpers';
+import { formatCompactDate, formatLongDate, readableError } from '../../screens/settings/parts/helpers';
 import { ErrorLine, Sheet } from '../../screens/settings/parts/ui';
 import { Button, IconButton } from './Button';
 import { Chip } from './Chip';
@@ -54,14 +54,14 @@ type Tab = 'new' | 'mine';
 const TYPES: TicketType[] = ['bug', 'suggestion', 'question'];
 
 const PLACEHOLDERS: Record<TicketType, string> = {
-  bug: 'Que s’est-il passé ? Sur quel écran, après quelle action ?',
-  suggestion: 'Quelle fonction vous ferait gagner du temps ?',
+  bug: 'Que s’est-il passé ? Sur quel écran, après quelle action ?',
+  suggestion: 'Quelle fonction vous ferait gagner du temps ?',
   question: 'Posez votre question, nous répondons dans l’app.',
 };
 
 const MINE_KEY = [...SETTINGS_KEYS.mine];
 const UNREAD_KEY = [...SETTINGS_KEYS.unread];
-const shortDate = formatLongDate;
+const shortDate = formatCompactDate;
 
 export const FeedbackModal = React.memo(function FeedbackModal({ visible, onClose, screenName, initialTab = 'new' }: FeedbackModalProps) {
   const qc = useQueryClient();
@@ -199,7 +199,7 @@ export const FeedbackModal = React.memo(function FeedbackModal({ visible, onClos
       visible={visible}
       onClose={close}
       title="Aide & retours"
-      subline="Un bug, une idée, une question ? L’équipe vous répond ici."
+      subline="L’équipe vous répond ici, dans l’app."
       snap="full"
       footer={footer}
       testID="feedback-sheet"
@@ -359,7 +359,7 @@ const TicketCard = React.memo(function TicketCard({ ticket, isNew }: { ticket: M
     <PressableScale
       onPress={toggle}
       scaleTo="card"
-      accessibilityLabel={`${meta.label}, ${shortDate(ticket.createdAt)}, ${ticket.status === 'resolved' ? 'résolu' : 'en cours'}${unread ? ', nouvelle réponse' : ''}. ${expanded ? 'Réduire' : 'Afficher le détail'}`}
+      accessibilityLabel={`${meta.label}, ${formatLongDate(ticket.createdAt)}, ${ticket.status === 'resolved' ? 'résolu' : 'en cours'}${unread ? ', nouvelle réponse' : ''}. ${expanded ? 'Réduire' : 'Afficher le détail'}`}
       accessibilityState={{ expanded }}
       style={[styles.ticket, unread && styles.ticketUnread]}
       testID="my-ticket"

@@ -30,20 +30,26 @@ export function CaptureStep({ quota, busy, onPick, onManual }: CaptureStepProps)
   const { height: winH, width: winW } = useWindowDimensions();
   const icons = winW >= 380; // narrow phones: labels only, so they never touch the border
   const frameH = Math.max(168, Math.min(232, winH - 640));
+  // No reading left today: the photo would only be uploaded to get a refusal.
+  const exhausted = !!quota && quota.remaining <= 0;
 
   return (
     <Screen
       header={<NavBar title="Scanner une facture" />}
       testID="invoice-capture"
       stickyFooter={
-        <StickyActionBar
-          primary={{ title: 'Prendre une photo', icon: 'camera-outline', onPress: () => onPick('camera'), haptic: 'tap', disabled: busy, testID: 'invoice-camera' }}
-        >
-          <View style={styles.footRow}>
-            <Button title="Choisir une image" variant="secondary" size="sm" icon={icons ? 'images-outline' : undefined} onPress={() => onPick('library')} disabled={busy} style={styles.flex} testID="invoice-library" />
-            <Button title="Saisir à la main" variant="tonal" size="sm" icon={icons ? 'create-outline' : undefined} onPress={onManual} style={styles.flex} testID="invoice-manual" />
-          </View>
-        </StickyActionBar>
+        exhausted ? (
+          <StickyActionBar primary={{ title: 'Saisir à la main', icon: 'create-outline', onPress: onManual, testID: 'invoice-manual' }} />
+        ) : (
+          <StickyActionBar
+            primary={{ title: 'Prendre une photo', icon: 'camera-outline', onPress: () => onPick('camera'), haptic: 'tap', disabled: busy, testID: 'invoice-camera' }}
+          >
+            <View style={styles.footRow}>
+              <Button title="Choisir une image" variant="secondary" size="sm" icon={icons ? 'images-outline' : undefined} onPress={() => onPick('library')} disabled={busy} style={styles.flex} testID="invoice-library" />
+              <Button title="Saisir à la main" variant="tonal" size="sm" icon={icons ? 'create-outline' : undefined} onPress={onManual} style={styles.flex} testID="invoice-manual" />
+            </View>
+          </StickyActionBar>
+        )
       }
     >
       <FadeIn index={0}>
@@ -76,12 +82,12 @@ export function CaptureStep({ quota, busy, onPick, onManual }: CaptureStepProps)
 
       <FadeIn index={3}>
         <View style={styles.quota}>
-          <Ionicons name="shield-checkmark-outline" size={16} color={palette.text3} />
+          <Ionicons name={exhausted ? 'time-outline' : 'shield-checkmark-outline'} size={16} color={palette.text3} />
           <Text style={styles.quotaText}>
             {quota
               ? quota.remaining > 0
                 ? `${plural(quota.remaining, 'lecture gratuite restante', 'lectures gratuites restantes')} aujourd’hui`
-                : 'Limite de lectures du jour atteinte · saisie à la main possible'
+                : `Les ${quota.limit} lectures gratuites du jour sont utilisées · de nouveau possible demain`
               : 'Lecture gratuite · la photo n’est pas conservée'}
           </Text>
         </View>

@@ -61,6 +61,8 @@ const ZONE_ON_EMERALD = {
 
 /** Below this window width the gap pill reads « +3,4 pts vs obj. ». */
 const SHORT_PILL_BELOW = 380;
+/** Rendered widths of the pill (« +3,4 pts vs objectif » / « … vs obj. »), for its skeleton. */
+const PILL_W = { full: 175, short: 148 };
 
 export const DashboardHero = React.memo(function DashboardHero({
   greeting,
@@ -138,6 +140,9 @@ export const DashboardHero = React.memo(function DashboardHero({
                   style={styles.pill}
                 />
               </FadeIn>
+            ) : state === 'loading' ? (
+              // Same footprint as the pill, so it wraps (or not) exactly like it.
+              <OnEmeraldSkeleton width={width < SHORT_PILL_BELOW ? PILL_W.short : PILL_W.full} height={30} radius={15} />
             ) : null}
           </View>
 
@@ -234,7 +239,9 @@ const styles = StyleSheet.create({
   pill: { maxWidth: '100%' },
   value: { ...type.displayXL, color: palette.onEmerald, marginTop: 4 },
   valueEmpty: { color: palette.onEmerald3 },
-  unit: { fontFamily: fontFamily.extrabold, fontSize: 30, letterSpacing: -0.6, color: palette.onEmerald2 },
+  // A line height under the parent's keeps the mixed-size line at exactly 60
+  // (otherwise the baseline shift makes it 71 and the skeleton would not match).
+  unit: { fontFamily: fontFamily.extrabold, fontSize: 30, lineHeight: 36, letterSpacing: -0.6, color: palette.onEmerald2 },
   unitEmpty: { color: palette.onEmerald3 },
   skeletonValue: { height: 60, marginTop: 4, justifyContent: 'center' },
   onEmeraldSkeleton: { opacity: 0.14 },

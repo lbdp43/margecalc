@@ -59,9 +59,9 @@ export type InvoiceScanErrorKind =
   | 'busy' // 429 burst limit
   | 'quota' // 429 daily quota: no retry today
   | 'too_big' // 413
-  | 'offline'
+  | 'offline' // no connection on this device
+  | 'unreachable' // online, but the server did not answer
   | 'timeout'
-  | 'cancelled'
   | 'server';
 
 export interface InvoiceScanErrorInfo {
@@ -75,6 +75,10 @@ export interface InvoiceScanErrorInfo {
   canRetry: boolean;
   /** Seconds to wait before retrying (cooldown / busy), when the API says so. */
   retryAfterSec?: number;
+  /** True when `message` is the backend's own sentence (it already says what to do). */
+  fromServer: boolean;
+  /** The backend's `code` (empty, bad_image, timeout, busy, engine, quota, cooldown…). */
+  code?: string;
 }
 
 function serverError(err: any): string | null {
@@ -92,23 +96,22 @@ export function isCancelled(err: any): boolean {
   return !!err && (err.name === 'CanceledError' || err.code === 'ERR_CANCELED' || err.name === 'AbortError');
 }
 
-/** Any scan failure → a readable card (never raw JSON). */
+/** Any scan failure → a readable card (never raw JSON). The caller handles cancellation first (`isCancelled`). */
 export function describeInvoiceScanError(err: any): InvoiceScanErrorInfo {
-  if (isCancelled(err)) {
-    return { kind: 'cancelled', title: 'Lecture annulée', message: 'La lecture a été interrompue.', resend: true, canRetry: true };
-  }
   const status: number | undefined = err?.response?.status;
-  const code: string | undefined = err?.response?.data?.code;
+  const code: string | undefined = typeof err?.response?.data?.code === 'string' ? err.response.data.code : undefined;
   const msg = serverError(err);
+  const fromServer = !!msg;
 
   if (!err?.response) {
-    if (err instanceof OfflineError || !isOnline() || isNetworkError(err)) {
+    if (err instanceof OfflineError || !isOnline()) {
       return {
         kind: 'offline',
         title: 'Pas de connexion',
         message: 'La lecture de la facture a besoin d’internet. Vérifiez votre connexion, puis réessayez : la photo est gardée.',
         resend: true,
         canRetry: true,
+        fromServer: false,
       };
     }
     if (isTimeoutError(err)) {
@@ -118,12 +121,23 @@ export function describeInvoiceScanError(err: any): InvoiceScanErrorInfo {
         message: 'Le serveur n’a pas répondu à temps. Réessayez, ou reprenez une photo plus nette de la facture.',
         resend: true,
         canRetry: true,
+        fromServer: false,
+      };
+    }
+    if (isNetworkError(err)) {
+      return {
+        kind: 'unreachable',
+        title: 'Serveur injoignable',
+        message: 'Le serveur de lecture ne répond pas. Réessayez dans un instant : la photo est gardée.',
+        resend: true,
+        canRetry: true,
+        fromServer: false,
       };
     }
   }
   if (status === 429) {
     if (code === 'quota') {
-      return { kind: 'quota', title: 'Limite du jour atteinte', message: msg ?? 'Limite de lectures du jour atteinte. Vous pouvez saisir vos produits à la main.', resend: false, canRetry: false };
+      return { kind: 'quota', title: 'Limite du jour atteinte', message: msg ?? 'Limite de lectures du jour atteinte. Vous pouvez saisir vos produits à la main.', resend: false, canRetry: false, fromServer, code };
     }
     if (code === 'cooldown') {
       return {
@@ -133,21 +147,25 @@ export function describeInvoiceScanError(err: any): InvoiceScanErrorInfo {
         resend: true,
         canRetry: true,
         retryAfterSec: retryAfter(err),
+        fromServer,
+        code,
       };
     }
-    return { kind: 'busy', title: 'Un instant', message: msg ?? 'Trop de lectures d’affilée. Réessayez dans une minute.', resend: true, canRetry: true, retryAfterSec: retryAfter(err) };
+    return { kind: 'busy', title: 'Un instant', message: msg ?? 'Trop de lectures d’affilée. Réessayez dans une minute.', resend: true, canRetry: true, retryAfterSec: retryAfter(err), fromServer, code };
   }
   if (status === 413) {
-    return { kind: 'too_big', title: 'Photo trop volumineuse', message: msg ?? 'Photo trop volumineuse. Choisissez une autre image.', resend: false, canRetry: true };
+    return { kind: 'too_big', title: 'Photo trop volumineuse', message: msg ?? 'Photo trop volumineuse. Choisissez une autre image.', resend: false, canRetry: true, fromServer, code };
   }
   if (status === 422 || status === 400) {
     const sameImage = code === 'timeout' || code === 'busy' || code === 'engine';
     return {
       kind: sameImage ? 'engine' : 'unreadable',
       title: sameImage ? 'Lecture interrompue' : 'Facture illisible',
-      message: msg ?? 'Lecture impossible : photographiez la facture à plat, en entier et bien éclairée.',
+      message: msg ?? 'La lecture n’a pas pu exploiter cette photo.',
       resend: sameImage,
       canRetry: true,
+      fromServer,
+      code,
     };
   }
   return {
@@ -156,6 +174,8 @@ export function describeInvoiceScanError(err: any): InvoiceScanErrorInfo {
     message: msg ?? 'Le service de lecture ne répond pas pour le moment. Réessayez dans un instant.',
     resend: true,
     canRetry: true,
+    fromServer,
+    code,
   };
 }
 
@@ -196,7 +216,7 @@ export interface ImportErrorInfo {
 
 /** Whole-request import failure → dialog copy (the backend's sentence as is). */
 export function describeImportError(err: any): ImportErrorInfo {
-  if (err instanceof OfflineError || (!err?.response && (!isOnline() || isNetworkError(err)))) {
+  if (err instanceof OfflineError || (!err?.response && !isOnline())) {
     return {
       title: 'Pas de connexion',
       message: 'Rien n’a été importé. Vérifiez votre connexion, puis réessayez : vos lignes et vos corrections sont gardées.',
@@ -208,6 +228,13 @@ export function describeImportError(err: any): ImportErrorInfo {
       title: 'Le serveur ne répond pas',
       message: 'L’import a pris trop de temps. Réessayez : un produit déjà importé ne sera pas créé en double.',
       offline: false,
+    };
+  }
+  if (!err?.response && isNetworkError(err)) {
+    return {
+      title: 'Serveur injoignable',
+      message: 'Le serveur ne répond pas. Réessayez dans un instant : vos lignes et vos corrections sont gardées, et un produit déjà importé ne sera pas créé en double.',
+      offline: true,
     };
   }
   const status: number | undefined = err?.response?.status;

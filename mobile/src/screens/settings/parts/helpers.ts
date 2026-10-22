@@ -105,6 +105,15 @@ export function formatLongDate(iso: string | null | undefined): string {
   return isNaN(d.getTime()) ? '–' : d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
 }
 
+/** « 22 oct. » this year, « 22 oct. 2025 » before. */
+export function formatCompactDate(iso: string | null | undefined): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '';
+  const sameYear = d.getFullYear() === new Date().getFullYear();
+  return d.toLocaleDateString('fr-FR', sameYear ? { day: 'numeric', month: 'short' } : { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
 /** « 22 oct. à 09:12 » */
 export function formatShortDateTime(iso: string | null | undefined): string {
   if (!iso) return '';

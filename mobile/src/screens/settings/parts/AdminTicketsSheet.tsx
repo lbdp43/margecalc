@@ -141,7 +141,7 @@ export function AdminTicketsSheet({ visible, onClose }: { visible: boolean; onCl
   const remove = async () => {
     if (!selected) return;
     const ok = await dialog.confirm({
-      title: 'Supprimer cette demande ?',
+      title: 'Supprimer cette demande ?',
       message: `La demande de ${selected.user.businessName || selected.user.email} et sa réponse seront supprimées. Cette action est définitive.`,
       confirmLabel: 'Supprimer',
       destructive: true,

@@ -20,19 +20,23 @@ import Svg, { Circle, Path, Rect } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
 import { useReduceMotion } from '../../components/ui';
 import { palette, radius } from '../../theme';
+import { withAlpha } from './colors';
 
 export type FrameStatus = 'idle' | 'working' | 'done' | 'error';
 
 interface InvoiceFrameProps {
   uri?: string | null;
   status?: FrameStatus;
+  /** Colour of the error badge: bad (unreadable) or warn (wait, then retry). */
+  errorTone?: 'bad' | 'warn';
   height: number;
   style?: StyleProp<ViewStyle>;
 }
 
 const SWEEP_H = 110;
+const SWEEP_COLORS = [withAlpha(palette.em300, 0), withAlpha(palette.em300, 0.42), withAlpha(palette.em300, 0)];
 
-export function InvoiceFrame({ uri, status = 'idle', height, style }: InvoiceFrameProps) {
+export function InvoiceFrame({ uri, status = 'idle', errorTone = 'bad', height, style }: InvoiceFrameProps) {
   const reduce = useReduceMotion();
   const [h, setH] = useState(height);
   const y = useSharedValue(0.5);
@@ -83,7 +87,7 @@ export function InvoiceFrame({ uri, status = 'idle', height, style }: InvoiceFra
           <View style={[StyleSheet.absoluteFill, styles.tint, styles.noTouch]} />
           <Animated.View style={[styles.sweep, styles.noTouch, sweep]}>
             <LinearGradient
-              colors={['rgba(111,211,168,0)', 'rgba(111,211,168,0.42)', 'rgba(111,211,168,0)']}
+              colors={SWEEP_COLORS}
               locations={[0, 0.5, 1]}
               style={StyleSheet.absoluteFill}
             />
@@ -96,8 +100,8 @@ export function InvoiceFrame({ uri, status = 'idle', height, style }: InvoiceFra
 
       {status === 'done' || status === 'error' ? (
         <View style={[styles.badgeRow, styles.noTouch]}>
-          <View style={[styles.badge, { backgroundColor: status === 'done' ? palette.em700 : palette.badSolid }]}>
-            <Ionicons name={status === 'done' ? 'checkmark' : 'alert'} size={18} color={palette.onEmerald} />
+          <View style={[styles.badge, { backgroundColor: status === 'done' ? palette.em700 : errorTone === 'warn' ? palette.warnSolid : palette.badSolid }]}>
+            <Ionicons name={status === 'done' ? 'checkmark' : errorTone === 'warn' ? 'time-outline' : 'alert'} size={18} color={palette.onEmerald} />
           </View>
         </View>
       ) : null}
@@ -164,7 +168,7 @@ const styles = StyleSheet.create({
   center: { alignItems: 'center', justifyContent: 'center' },
   noTouch: { pointerEvents: 'none' },
   dim: { backgroundColor: palette.scrim },
-  tint: { backgroundColor: 'rgba(4,64,46,0.16)' },
+  tint: { backgroundColor: withAlpha(palette.em900, 0.16) },
   sweep: { position: 'absolute', left: 0, right: 0, top: 0, height: SWEEP_H, justifyContent: 'center' },
   sweepLine: { height: 2, backgroundColor: palette.em300, opacity: 0.95 },
   corner: { position: 'absolute', width: 30, height: 30 },

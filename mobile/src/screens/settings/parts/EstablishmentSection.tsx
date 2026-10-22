@@ -47,22 +47,23 @@ export function EstablishmentSection({ index }: { index: number }) {
       return;
     }
     try {
-      const plan = await planTvaChange(value, defaultRate).catch(() => null);
+      const userId = useAuthStore.getState().user?.id ?? 'anonymous';
+      const plan = await planTvaChange(value, defaultRate, userId).catch(() => null);
       const n = plan?.changes.length ?? 0;
       let applied: { updated: number; failed: number; error?: unknown } | null = null;
       if (plan && n > 0) {
         const choice = await dialog.show({
-          title: `Appliquer aux ${plural(n, 'produit existant', 'produits existants')} ?`,
+          title: n > 1 ? `Appliquer aux ${n} produits ?` : 'Appliquer au produit existant ?',
           message: value
             ? `Vos produits enregistrés gardent leur TVA actuelle tant que vous ne l’appliquez pas. Avec « Appliquer », ${n > 1 ? 'leurs marges sont recalculées' : 'sa marge est recalculée'} sans TVA.`
-            : `${n > 1 ? 'Ces produits sont' : 'Ce produit est'} à ${formatPercent(0, 0)}. Avec « Appliquer », ${n > 1 ? 'ils reprennent' : 'il reprend'} la TVA habituelle (${formatPercent(20, 0)}, softs ${formatPercent(10, 0)}).`,
+            : `${n > 1 ? 'Ces produits sont' : 'Ce produit est'} à ${formatPercent(0, 0)}. Avec « Appliquer », ${n > 1 ? 'ils reprennent' : 'il reprend'} leur TVA d’avant, sinon ${formatPercent(20, 0)} (softs ${formatPercent(10, 0)}).`,
           icon: 'receipt-outline',
           actions: [
             { label: n > 1 ? `Appliquer aux ${n} produits` : 'Appliquer au produit', value: 'apply', style: 'primary' },
             { label: 'Seulement les nouveaux', value: 'new', style: 'cancel' },
           ],
         });
-        if (choice === 'apply') applied = await applyTvaChange(qc, plan);
+        if (choice === 'apply') applied = await applyTvaChange(qc, plan, userId);
       }
       haptics.success();
       const head = value ? `Auto-entrepreneur · TVA ${formatPercent(0, 0)}` : `TVA ${formatPercent(20, 0)} rétablie`;
