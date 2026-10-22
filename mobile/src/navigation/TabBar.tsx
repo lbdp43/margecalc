@@ -39,7 +39,7 @@ const ITEM_W = 68;
 const WIDE_W = 112;
 const PILL_W = 56;
 const PILL_H = 30;
-const RAISE = 18; // the scan circle rises above the bar
+const RAISE = layout.tabBarRaise; // the scan circle rises above the bar
 
 const TABS: Record<string, { label: string; icon: IconName; iconActive: IconName; wide?: boolean }> = {
   [ROUTES.settingsTab]: { label: 'Réglages', icon: 'settings-outline', iconActive: 'settings' },

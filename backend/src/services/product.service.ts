@@ -11,7 +11,7 @@ import {
   ImportProductsResult,
 } from '@margebar/shared';
 import { HttpError } from '../utils/validation';
-import { ensureServingTypes, replaceServings, ServingInput, validateServings } from './productServing.service';
+import { ensureServingTypes, lockProduct, replaceServings, resyncPrimary, ServingInput, validateServings } from './productServing.service';
 
 const EMPTY_MARGIN: MarginResult = {
   sellingPriceTTC: 0, sellingPriceHT: 0, marginPercent: 0, coefficient: 0, glassesPerContainer: 0,
@@ -204,8 +204,12 @@ export async function updateProduct(id: string, userId: string, data: ProductWri
   };
   if (rest.categoryId && rest.categoryId !== existing.categoryId) await assertCategory(rest.categoryId);
   const servings = servingsInput ? await validateServings(userId, servingsInput) : null;
-  if (servings?.length) {
-    assertMarginInputs({ ...merged, marginMode: MarginMode.FIX_SELLING_PRICE, sellingPriceTTC: servings[0].sellingPriceTTC, doseVolumeCl: servings[0].volumeCl });
+  // Without `servings` in the body, a product that has servings keeps its headline price/dose
+  // synced to its primary serving (contract §3): validate against that serving, not the body.
+  const currentPrimary = servings ? null : await currentPrimaryServing(id);
+  const primary = servings?.length ? { sellingPriceTTC: servings[0].sellingPriceTTC, volumeCl: servings[0].volumeCl } : currentPrimary;
+  if (primary) {
+    assertMarginInputs({ ...merged, marginMode: MarginMode.FIX_SELLING_PRICE, sellingPriceTTC: primary.sellingPriceTTC, doseVolumeCl: primary.volumeCl });
   } else {
     assertMarginInputs(merged);
   }
@@ -222,13 +226,18 @@ export async function updateProduct(id: string, userId: string, data: ProductWri
     targetMarginPercent: rest.targetMarginPercent,
     coefficient: rest.coefficient,
     tvaRate: rest.tvaRate,
-    alcoholDegree: rest.alcoholDegree,
+    // Non-null column: null (= "cleared") is stored as 0, like on create.
+    alcoholDegree: rest.alcoholDegree === null ? 0 : rest.alcoholDegree,
     supplier: rest.supplier === undefined ? undefined : (rest.supplier || null),
     imageUrl: rest.imageUrl,
-    thumbnailUrl: rest.thumbnailUrl,
+    // A new photo sent without its thumbnail must not keep the previous photo's thumbnail.
+    thumbnailUrl: rest.thumbnailUrl !== undefined
+      ? rest.thumbnailUrl
+      : (rest.imageUrl !== undefined && rest.imageUrl !== existing.imageUrl ? null : undefined),
   };
 
   await prisma.$transaction(async (tx) => {
+    await lockProduct(tx, id);
     // Track price history
     if (rest.purchasePriceHT !== undefined && rest.purchasePriceHT !== existing.purchasePriceHT) {
       await tx.priceHistory.create({
@@ -237,9 +246,18 @@ export async function updateProduct(id: string, userId: string, data: ProductWri
     }
     await tx.product.update({ where: { id }, data: update });
     if (servings) await replaceServings(tx, id, servings);
+    else await resyncPrimary(tx, id); // no-op when the product has no servings
   });
 
   return getProduct(id, userId);
+}
+
+/** Primary serving (lowest sortOrder, then smallest volume) of a product, or null. */
+async function currentPrimaryServing(productId: string): Promise<{ sellingPriceTTC: number; volumeCl: number } | null> {
+  const rows = await prisma.productServing.findMany({ where: { productId }, include: { servingType: true } });
+  if (!rows.length) return null;
+  rows.sort((a, b) => a.servingType.sortOrder - b.servingType.sortOrder || a.servingType.volumeCl - b.servingType.volumeCl);
+  return { sellingPriceTTC: rows[0].sellingPriceTTC, volumeCl: rows[0].servingType.volumeCl };
 }
 
 export async function getPriceHistory(productId: string, userId: string) {
@@ -268,6 +286,9 @@ const DEFAULT_DOSE_BY_SLUG: Record<string, number> = {
   bieres: 25,
   softs: 25,
 };
+
+/** Categories whose small containers (can, bottle ≤ 50 cl) are served whole. */
+const UNIT_SOLD_SLUGS = new Set(['bieres', 'softs']);
 
 const round3 = (n: number) => Math.round(n * 1000) / 1000;
 const normName = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
@@ -332,7 +353,11 @@ export async function importProducts(
 
       const purchasePriceHT = line.purchasePriceHT && line.purchasePriceHT > 0 ? round3(line.purchasePriceHT) : 0;
       const containerVolumeCl = line.containerVolumeCl && line.containerVolumeCl > 0 ? line.containerVolumeCl : userContainer;
-      const doseRaw = line.doseVolumeCl && line.doseVolumeCl > 0 ? line.doseVolumeCl : (DEFAULT_DOSE_BY_SLUG[cat.slug] ?? 5);
+      // Beers/softs in a can or bottle (≤ 50 cl) are sold as the whole unit: 33 cl can → 33 cl dose.
+      const soldByUnit = UNIT_SOLD_SLUGS.has(cat.slug) && containerVolumeCl <= 50;
+      const doseRaw = line.doseVolumeCl && line.doseVolumeCl > 0
+        ? line.doseVolumeCl
+        : (soldByUnit ? containerVolumeCl : (DEFAULT_DOSE_BY_SLUG[cat.slug] ?? 5));
       const doseVolumeCl = Math.min(doseRaw, containerVolumeCl);
       const tvaRate = typeof line.tvaRate === 'number' && line.tvaRate >= 0 && line.tvaRate < 1 ? line.tvaRate : userTva;
       const lineSupplier = (line.supplier || supplier || '').trim().slice(0, 200) || null;

@@ -96,6 +96,7 @@ export function DashboardScreen() {
     navigation.navigate('Produits', {
       screen: 'ProductDetail',
       params: { productId },
+      initial: false, // keep ProductList under the detail (RC5)
     });
   }, [navigation]);
 

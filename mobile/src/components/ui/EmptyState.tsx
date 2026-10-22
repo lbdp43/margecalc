@@ -99,7 +99,10 @@ export function EmptyState({ variant = 'default', title, text, query, icon, prim
   const secondaries = secondary ? (Array.isArray(secondary) ? secondary : [secondary]) : [];
 
   return (
-    <View style={[styles.wrap, style]} onLayout={(e: LayoutChangeEvent) => setH(e.nativeEvent.layout.height)}>
+    <View
+      style={[styles.wrap, marquee ? styles.wrapMarquee : null, style]}
+      onLayout={(e: LayoutChangeEvent) => setH(e.nativeEvent.layout.height)}
+    >
       {marquee && h > 0 ? <Marquee surface={surface === 'surface' ? palette.surface : palette.bg} /> : null}
       <FadeIn style={styles.inner}>
         <View style={styles.circle}>
@@ -127,7 +130,9 @@ export function EmptyState({ variant = 'default', title, text, query, icon, prim
 }
 
 const styles = StyleSheet.create({
-  wrap: { paddingVertical: 32, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  wrap: { paddingVertical: 32, alignItems: 'center', justifyContent: 'center' },
+  // The marquee must be clipped; leave room so the button glow is not cut.
+  wrapMarquee: { overflow: 'hidden', paddingBottom: 44 },
   marquee: { ...StyleSheet.absoluteFillObject, paddingTop: 8, overflow: 'hidden' },
   inner: { alignItems: 'center', maxWidth: 340, width: '100%', paddingHorizontal: 8 },
   circle: {

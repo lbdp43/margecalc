@@ -169,7 +169,9 @@ export function Screen({
       contentContainerStyle={[{ paddingHorizontal: gutter, paddingBottom: computedBottom, flexGrow: 1 }, contentContainerStyle]}
       showsVerticalScrollIndicator={false}
       keyboardShouldPersistTaps="handled"
-      keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+      // Never 'on-drag' on web: RNW dismisses the keyboard on EVERY scroll
+      // event, including the browser scrolling a focused input into view.
+      keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : Platform.OS === 'android' ? 'on-drag' : 'none'}
       onScroll={handleScroll}
       scrollEventThrottle={16}
       refreshControl={refreshControl}

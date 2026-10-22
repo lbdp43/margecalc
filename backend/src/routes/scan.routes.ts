@@ -4,7 +4,7 @@ import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { authenticate } from '../middleware/auth';
 import { analyzeBottleImage, analyzeInvoiceImage, OcrError } from '../services/scan.service';
 import { prisma } from '../config/database';
-import { sendKnownError } from '../utils/validation';
+import { isZodError, sendKnownError } from '../utils/validation';
 
 /**
  * Free OCR scan (Tesseract.js on this server — no API key, no external AI service).
@@ -14,20 +14,25 @@ import { sendKnownError } from '../utils/validation';
  *
  * A failed read answers 422 { error: 'Lecture impossible : …', code, retryable } and is NOT
  * counted in the daily quota: only successful scans are recorded.
+ *
+ * Fair use of the single shared OCR worker: every scan request (failed or not) counts toward
+ * the 10/min burst limit, and one user can only have ONE scan in flight at a time (429 busy).
  */
 const router = Router();
+
+const PHOTO_TOO_BIG = 'Photo trop volumineuse';
 
 const scanSchema = z.object({
   imageBase64: z.string({ required_error: 'Aucune image reçue.' })
     .min(200, 'Lecture impossible : l’image reçue est vide.')
-    .max(8_000_000, 'Photo trop volumineuse'),
+    .max(8_000_000, PHOTO_TOO_BIG),
 });
 
-// Per-minute burst protection, per user. Failed scans (4xx/5xx) do not count.
+// Per-minute burst protection, per user. EVERY request counts, failed ones included: a failed
+// read still occupies the shared OCR worker (the daily quota, below, counts successes only).
 const scanLimiter = rateLimit({
   windowMs: 60 * 1000,
   limit: 10,
-  skipFailedRequests: true,
   standardHeaders: true,
   legacyHeaders: false,
   keyGenerator: (req: Request) => (req.user?.userId ? `user:${req.user.userId}` : `ip:${ipKeyGenerator(req.ip || '0.0.0.0')}`),
@@ -65,6 +70,28 @@ async function checkDailyLimit(req: Request, res: Response): Promise<boolean> {
   return true;
 }
 
+/** Users with a scan in progress: one at a time each, so nobody can monopolise the OCR queue. */
+const inFlight = new Set<string>();
+
+/** Runs `job` as the user's only in-flight scan; a second concurrent scan gets 429 busy. */
+async function oneScanAtATime(req: Request, res: Response, job: () => Promise<void>): Promise<void> {
+  const uid = req.user!.userId;
+  if (inFlight.has(uid)) {
+    res.status(429).json({
+      error: 'Un scan est déjà en cours. Attendez son résultat avant d’en lancer un autre.',
+      code: 'busy',
+      retryable: true,
+    });
+    return;
+  }
+  inFlight.add(uid);
+  try {
+    await job();
+  } finally {
+    inFlight.delete(uid);
+  }
+}
+
 /** Record one successful scan (never blocks the response on failure). */
 function countSuccess(userId: string): void {
   prisma.scanUsage.create({ data: { userId } }).catch((err) => {
@@ -75,6 +102,11 @@ function countSuccess(userId: string): void {
 function sendScanError(res: Response, err: any, kind: 'bottle' | 'invoice'): void {
   if (err instanceof OcrError) {
     res.status(422).json({ error: err.message, code: err.code, retryable: err.retryable });
+    return;
+  }
+  // Same contract as the body-size limit: an oversized image is a 413, not a validation 400.
+  if (isZodError(err) && err.issues.some((i) => i.message === PHOTO_TOO_BIG)) {
+    res.status(413).json({ error: PHOTO_TOO_BIG });
     return;
   }
   if (sendKnownError(res, err)) return;
@@ -105,30 +137,34 @@ router.get('/quota', async (req: Request, res: Response) => {
 router.use(scanLimiter);
 
 async function scanBottle(req: Request, res: Response) {
-  try {
-    const { imageBase64 } = scanSchema.parse(req.body);
-    if (!(await checkDailyLimit(req, res))) return;
-    const result = await analyzeBottleImage(imageBase64);
-    countSuccess(req.user!.userId);
-    res.json(result);
-  } catch (err) {
-    sendScanError(res, err, 'bottle');
-  }
+  await oneScanAtATime(req, res, async () => {
+    try {
+      const { imageBase64 } = scanSchema.parse(req.body);
+      if (!(await checkDailyLimit(req, res))) return;
+      const result = await analyzeBottleImage(imageBase64);
+      countSuccess(req.user!.userId);
+      res.json(result);
+    } catch (err) {
+      sendScanError(res, err, 'bottle');
+    }
+  });
 }
 
 router.post('/bottle', scanBottle);
 router.post('/product', scanBottle);
 
 router.post('/invoice', async (req: Request, res: Response) => {
-  try {
-    const { imageBase64 } = scanSchema.parse(req.body);
-    if (!(await checkDailyLimit(req, res))) return;
-    const result = await analyzeInvoiceImage(imageBase64);
-    countSuccess(req.user!.userId);
-    res.json(result);
-  } catch (err) {
-    sendScanError(res, err, 'invoice');
-  }
+  await oneScanAtATime(req, res, async () => {
+    try {
+      const { imageBase64 } = scanSchema.parse(req.body);
+      if (!(await checkDailyLimit(req, res))) return;
+      const result = await analyzeInvoiceImage(imageBase64);
+      countSuccess(req.user!.userId);
+      res.json(result);
+    } catch (err) {
+      sendScanError(res, err, 'invoice');
+    }
+  });
 });
 
 export default router;

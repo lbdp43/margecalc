@@ -65,8 +65,14 @@ function findFiles(dir, test, out = []) {
 }
 const fontFiles = findFiles(path.join(PUBLIC_DIR, 'assets'), (n) => /^PlusJakartaSans_(400Regular|500Medium|600SemiBold|700Bold|800ExtraBold)\..*\.ttf$/.test(n))
   .map((f) => '/' + path.relative(PUBLIC_DIR, f).split(path.sep).join('/'));
+// expo-font requests `<file>?platform=web&hash=<hash>`: preload that exact URL
+// so the browser reuses the preloaded response.
 const fontPreloads = fontFiles
-  .map((href) => `    <link rel="preload" href="${encodeURI(href)}" as="font" type="font/ttf" crossorigin />`)
+  .map((href) => {
+    const m = href.match(/\.([0-9a-f]{32})\.ttf$/);
+    const query = m ? `?platform=web&amp;hash=${m[1]}` : '';
+    return `    <link rel="preload" href="${encodeURI(href)}${query}" as="font" type="font/ttf" crossorigin />`;
+  })
   .join('\n');
 
 // 4) Patch index.html.

@@ -68,6 +68,9 @@ export const toast = {
   },
 };
 
+// Dev only: lets Playwright / the console fire toasts (`__mbToast.success('…')`).
+if (__DEV__ && Platform.OS === 'web') (globalThis as any).__mbToast = toast;
+
 const ICONS: Record<ToastKind, { name: IconName; color: string }> = {
   success: { name: 'checkmark-circle', color: palette.em300 },
   error: { name: 'alert-circle', color: '#FF8B78' },
@@ -165,7 +168,7 @@ export function ToastHost() {
   const bottom = sticky
     ? sticky + 12
     : tabBarVisible
-      ? layout.tabBarBottom(insets.bottom) + layout.tabBarHeight + 12
+      ? layout.floatingBottom(insets.bottom)
       : insets.bottom + 16;
   const icon = current.icon ? { name: current.icon, color: palette.em300 } : ICONS[current.kind];
 

@@ -52,7 +52,9 @@ const envInt = (name: string, def: number) => {
 const OCR_LANGS = (process.env.OCR_LANGS || 'fra+eng').split('+').filter(Boolean);
 const TESSDATA_DIR = process.env.TESSDATA_DIR || path.join(os.tmpdir(), 'margebar-tessdata');
 const INIT_TIMEOUT_MS = envInt('OCR_INIT_TIMEOUT_MS', 30_000);
-const BOTTLE_TIMEOUT_MS = envInt('OCR_BOTTLE_TIMEOUT_MS', 30_000);
+// A legible label reads in 0.3–4 s; noisy / textless photos are the ones that run long, so a
+// short budget keeps the single shared worker available for everyone.
+const BOTTLE_TIMEOUT_MS = envInt('OCR_BOTTLE_TIMEOUT_MS', 15_000);
 const INVOICE_TIMEOUT_MS = envInt('OCR_INVOICE_TIMEOUT_MS', 60_000);
 const IDLE_MS = envInt('OCR_IDLE_MS', 10 * 60_000);
 const MAX_QUEUE = envInt('OCR_MAX_QUEUE', 6);
@@ -259,9 +261,13 @@ function ocrPasses<T>(
     const results: PassResult<T>[] = [];
     let baseQuality = 0;
     let bestRot: { deg: number; quality: number } | null = null;
+    let blankPasses = 0;
     for (const pass of passes) {
       // Keep headroom: never start a new pass after 60% of the budget.
       if (results.length && Date.now() - started > timeoutMs * 0.6) break;
+      // Two binarizations (Otsu + Sauvola) read no usable text at all: rotations will not
+      // help either — give the worker back instead of burning the whole budget on junk.
+      if (blankPasses >= 2) break;
       let rotate: number | 'auto';
       if (pass.rotate === 'follow') {
         if (!bestRot || bestRot.quality <= baseQuality) continue;
@@ -280,6 +286,7 @@ function ocrPasses<T>(
         const opts = rotate === 'auto' ? { rotateAuto: true } : { rotateRadians: (rotate * Math.PI) / 180 };
         const { data } = await worker.recognize(image, opts, { text: true, blocks: true, hocr: false, tsv: false });
         const page = toOcrPage(data, Date.now() - t0);
+        if (!hasUsableText(page)) blankPasses++;
         const { value, quality } = evaluate(page);
         const label = pass.rotate === 'follow' && typeof rotate === 'number' ? `rot${rotate > 0 ? '+' : ''}${rotate}` : pass.label;
         results.push({ pass: label, value, quality, ms: page.ms });
@@ -295,6 +302,12 @@ function ocrPasses<T>(
     }
     return results;
   }, timeoutMs);
+}
+
+/** At least one confidently-read line holding a real word (3+ letters) or a number with a unit. */
+function hasUsableText(page: OcrPage): boolean {
+  return page.lines.some((l) => l.conf >= 45
+    && (/[A-Za-zÀ-ÿ]{3,}/.test(l.text) || /\d\s?(?:cl|ml|l|%|°|€)/i.test(l.text)));
 }
 
 function toOcrPage(data: Page, ms: number): OcrPage {
@@ -426,6 +439,15 @@ const ABV_RE = /(?:alc\.?\s*|abv\s*)?(?<![\d.,])(\d{1,2}(?:[.,]\d{1,2})?)\s?(%|�
 
 /** Alcohol by volume ("40% vol", "12,5°", "alc. 5.5%"), ignoring VAT/discount percentages. */
 export function extractAbv(text: string): number | null {
+  return extractAbvScored(text, 0);
+}
+
+/** Same, but only an ABV printed with its context ("% vol", "alc.", "abv", "°"). */
+export function extractAbvStrict(text: string): number | null {
+  return extractAbvScored(text, 1);
+}
+
+function extractAbvScored(text: string, minScore: number): number | null {
   const t = fixDigits(text);
   let best: { v: number; score: number } | null = null;
   for (const line of t.split('\n')) {
@@ -440,6 +462,7 @@ export function extractAbv(text: string): number | null {
       if (m[3]) score += 2;
       if (/alc|abv/i.test(m[0])) score += 2;
       if (m[2] === '°') score += 1;
+      if (score < minScore) continue;
       if (!best || score > best.score) best = { v, score };
     }
   }
@@ -690,10 +713,19 @@ export async function analyzeBottleImage(imageBase64: string): Promise<ScanResul
   const ranked = [...passes].sort((a, b) => b.quality - a.quality);
   const best = ranked[0].value;
   const volume = best.volume ?? vote(passes, (r) => r.volume);
-  const abv = best.abv ?? vote(passes, (r) => r.abv);
+  const name = best.name || ranked.find((p) => p.value.name)?.value.name || '';
+  // An ABV on its own is not a usable read (one OCR noise token such as "2%" is enough to
+  // produce it): without a name or a volume the scan is a failure (422, quota not counted).
+  if (!name && volume === null) {
+    console.log(`[SCAN] OCR ${passes.length} pass(es) ${passes.reduce((a, p) => a + p.ms, 0)} ms [${passes.map((p) => `${p.pass}:${round2(p.quality)}`).join(' ')}] -> nothing usable`);
+    throw new OcrError('Lecture impossible : aucun texte lisible sur la photo. Cadrez l’étiquette de face, bien éclairée et nette, puis réessayez — ou remplissez la fiche à la main.', 'empty');
+  }
+  // Without a name, a bare "N %" is too likely to be noise: keep only an ABV printed with its
+  // context ("% vol", "alc", "°"), and never guess the category from a noise percentage.
+  let abv = best.abv ?? vote(passes, (r) => r.abv);
+  if (!name && abv !== null && extractAbvStrict(passes.map((p) => p.value.text).join('\n')) === null) abv = null;
   const price = best.price ?? vote(passes, (r) => r.price);
   const cat = detectCategory(passes.map((p) => p.value.text).join('\n'), abv, volume);
-  const name = best.name || ranked.find((p) => p.value.name)?.value.name || '';
 
   let confidence = 0;
   if (name) {
@@ -703,10 +735,6 @@ export async function analyzeBottleImage(imageBase64: string): Promise<ScanResul
   confidence = round2(Math.min(0.95, confidence));
   const totalMs = passes.reduce((a, p) => a + p.ms, 0);
   console.log(`[SCAN] OCR ${passes.length} pass(es) ${totalMs} ms [${passes.map((p) => `${p.pass}:${round2(p.quality)}`).join(' ')}] -> "${name}" ${cat.slug} ${volume ?? '?'}cl ${abv ?? '?'}% conf=${confidence}`);
-
-  if (!name && volume === null && abv === null) {
-    throw new OcrError('Lecture impossible : aucun texte lisible sur la photo. Cadrez l’étiquette de face, bien éclairée et nette, puis réessayez — ou remplissez la fiche à la main.', 'empty');
-  }
 
   return {
     name,

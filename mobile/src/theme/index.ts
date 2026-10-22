@@ -437,6 +437,13 @@ export const layout = {
   tabBarBottom: (insetBottom: number) => Math.max(12, insetBottom - 10),
   /** Bottom padding for scroll content when the floating tab bar is visible. */
   contentBottomInset: (insetBottom: number) => 68 + Math.max(12, insetBottom - 10) + 24,
+  /** The raised Scanner circle rises this much above the tab bar. */
+  tabBarRaise: 18,
+  /**
+   * Bottom offset for floating elements (toast, local FABs) when the tab bar
+   * is visible: clears the bar AND the raised Scanner circle.
+   */
+  floatingBottom: (insetBottom: number) => Math.max(12, insetBottom - 10) + 68 + 18 + 10,
   /** Height of the fadeBottom gradient behind the tab bar. */
   fadeBottomHeight: (insetBottom: number) => 68 + Math.max(12, insetBottom - 10) + 44,
   minTouch: 44,

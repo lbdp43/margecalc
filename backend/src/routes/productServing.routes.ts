@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { authenticate } from '../middleware/auth';
 import { prisma } from '../config/database';
 import { sendKnownError } from '../utils/validation';
-import { getServingResults, replaceServings, resyncPrimary, validateServings } from '../services/productServing.service';
+import { getServingResults, lockProduct, replaceServings, resyncPrimary, validateServings } from '../services/productServing.service';
 
 const router = Router();
 
@@ -73,6 +73,7 @@ router.delete('/:productId/servings/:servingTypeId', async (req: Request, res: R
     }
 
     await prisma.$transaction(async (tx) => {
+      await lockProduct(tx, product.id);
       await tx.productServing.deleteMany({
         where: { productId: product.id, servingTypeId: req.params.servingTypeId },
       });

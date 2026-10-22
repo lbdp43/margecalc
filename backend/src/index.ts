@@ -10,6 +10,12 @@ import { prisma } from './config/database';
 import routes from './routes';
 import { errorHandler } from './middleware/errorHandler';
 
+// Safety net: an async route that forgets its try/catch must never take the whole process down
+// (Express 4 does not catch rejected promises). Log and keep serving.
+process.on('unhandledRejection', (reason) => {
+  console.error('[unhandledRejection]', reason);
+});
+
 const app = express();
 
 // Railway (and most PaaS) put exactly one reverse proxy in front of the app: trust it so that
@@ -79,17 +85,29 @@ app.use('/api', rateLimit({
   message: { error: 'Trop de requêtes, réessayez dans quelques minutes.' },
 }));
 
-// Brute-force protection on credentials: only FAILED login/register attempts count.
-const credentialsLimiter = rateLimit({
+// Brute-force protection on login: only FAILED attempts count.
+app.use('/api/auth/login', rateLimit({
   windowMs: API_WINDOW_MS,
   limit: 20,
   skipSuccessfulRequests: true,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Trop de tentatives, réessayez dans 15 minutes.' },
-});
-app.use('/api/auth/login', credentialsLimiter);
-app.use('/api/auth/register', credentialsLimiter);
+}));
+// Account creation: EVERY attempt counts (unlimited free accounts per IP would also get
+// around the per-user daily scan quota). 10 per hour per IP in production; local dev/test
+// tooling registers many accounts from 127.0.0.1, so it gets more (REGISTER_LIMIT_PER_HOUR overrides).
+const REGISTER_LIMIT_PER_HOUR = (() => {
+  const v = parseInt(process.env.REGISTER_LIMIT_PER_HOUR || '', 10);
+  return Number.isFinite(v) && v > 0 ? v : (config.isProd ? 10 : 100);
+})();
+app.use('/api/auth/register', rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: REGISTER_LIMIT_PER_HOUR,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Trop de créations de compte depuis cette connexion, réessayez plus tard.' },
+}));
 app.use('/api/auth/refresh', rateLimit({
   windowMs: API_WINDOW_MS,
   limit: 60,

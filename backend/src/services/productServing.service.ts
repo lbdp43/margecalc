@@ -20,14 +20,34 @@ export interface ValidatedServing {
 
 const fmtPrice = (n: number) => `${n.toFixed(2).replace('.', ',')} €`;
 
-/** Create the default serving types the first time a user needs them. */
+/**
+ * Serialize the writes of one product (servings replace / primary re-sync): concurrent
+ * transactions on the same product wait for each other instead of interleaving their
+ * delete/upsert/sync statements (READ COMMITTED would otherwise leave the union of both sets
+ * and a headline price synced to a non-primary serving).
+ */
+export async function lockProduct(tx: Tx, productId: string): Promise<void> {
+  await tx.$queryRaw`SELECT id FROM "Product" WHERE id = ${productId} FOR UPDATE`;
+}
+
+async function createDefaultServingTypes(tx: Tx, userId: string) {
+  // Per-user advisory lock (released at commit): concurrent first calls on a new account
+  // create the defaults once instead of once per request.
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${userId}))`;
+  const existing = await tx.servingType.findMany({ where: { userId }, orderBy: { sortOrder: 'asc' } });
+  if (existing.length) return existing;
+  await tx.servingType.createMany({
+    data: DEFAULT_SERVING_TYPES.map((st) => ({ userId, name: st.name, volumeCl: st.volumeCl, icon: st.icon, sortOrder: st.sortOrder })),
+  });
+  return tx.servingType.findMany({ where: { userId }, orderBy: { sortOrder: 'asc' } });
+}
+
+/** Create the default serving types the first time a user needs them (race-free). */
 export async function ensureServingTypes(userId: string, db: Tx | typeof prisma = prisma) {
   const existing = await db.servingType.findMany({ where: { userId }, orderBy: { sortOrder: 'asc' } });
   if (existing.length) return existing;
-  await db.servingType.createMany({
-    data: DEFAULT_SERVING_TYPES.map((st) => ({ userId, name: st.name, volumeCl: st.volumeCl, icon: st.icon, sortOrder: st.sortOrder })),
-  });
-  return db.servingType.findMany({ where: { userId }, orderBy: { sortOrder: 'asc' } });
+  if (db === prisma) return prisma.$transaction((tx) => createDefaultServingTypes(tx, userId));
+  return createDefaultServingTypes(db as Tx, userId);
 }
 
 /**
@@ -81,6 +101,7 @@ export async function validateServings(userId: string, servings: ServingInput[],
  * An empty list removes every serving and leaves the product price unchanged.
  */
 export async function replaceServings(tx: Tx, productId: string, servings: ValidatedServing[]): Promise<void> {
+  await lockProduct(tx, productId);
   await tx.productServing.deleteMany({
     where: { productId, servingTypeId: { notIn: servings.map((s) => s.servingTypeId) } },
   });
@@ -100,8 +121,9 @@ export async function replaceServings(tx: Tx, productId: string, servings: Valid
   }
 }
 
-/** After a single serving was removed: re-sync the product price on the new primary serving. */
+/** Re-sync the product's headline price/dose on its current primary serving (no-op without servings). */
 export async function resyncPrimary(tx: Tx, productId: string): Promise<void> {
+  await lockProduct(tx, productId);
   const rest = await tx.productServing.findMany({ where: { productId }, include: { servingType: true } });
   if (!rest.length) return;
   rest.sort((a, b) => a.servingType.sortOrder - b.servingType.sortOrder || a.servingType.volumeCl - b.servingType.volumeCl);

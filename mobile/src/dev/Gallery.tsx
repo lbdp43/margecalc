@@ -49,6 +49,7 @@ import {
   Wordmark,
   YinYangSpinner,
 } from '../components/ui';
+import { ErrorBoundary } from '../components/ui/ErrorBoundary';
 import { fontFamily, palette, type } from '../theme';
 import { haptics } from '../theme/haptics';
 import { alert, confirm } from '../utils/alert';
@@ -61,6 +62,11 @@ function marginFromPrice(ttc: number) {
   const ht = ttc / 1.2;
   const cost = PURCHASE_HT / DOSES;
   return { ht, cost, gain: ht - cost, margin: ht > 0 ? ((ht - cost) / ht) * 100 : 0, coeff: ht / cost };
+}
+
+function Boom({ crash }: { crash: boolean }) {
+  if (crash) throw new Error('Erreur simulée (galerie)');
+  return <Text style={[type.callout, { color: palette.text2 }]}>Contenu protégé par ErrorBoundary.</Text>;
 }
 
 function Section({ title, children, meta }: { title: string; children: React.ReactNode; meta?: string }) {
@@ -88,6 +94,7 @@ export function Gallery() {
   const [buy, setBuy] = useState('11,00');
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [crash, setCrash] = useState(false);
 
   const m = useMemo(() => marginFromPrice(price), [price]);
   const zone = getMarginColor(m.margin);
@@ -514,6 +521,13 @@ export function Gallery() {
         <Card padding={0} style={{ overflow: 'hidden' }}>
           <StickyActionBar summary="2 services tarifés sur 5" summaryRight={`Coeff ${formatCoeff(m.coeff)}`} primary={{ title: 'Enregistrer', icon: 'checkmark-circle', onPress: save }} style={{ borderTopWidth: 0 }} />
         </Card>
+      </Section>
+
+      <Section title="Erreur">
+        <ErrorBoundary key={crash ? 'crashed' : 'ok'} fallbackMessage="Le tableau de bord n’a pas pu s’afficher.">
+          <Boom crash={crash} />
+        </ErrorBoundary>
+        <Button title={crash ? 'Réinitialiser' : 'Simuler une erreur'} size="sm" variant="secondary" onPress={() => setCrash((c) => !c)} testID="simulate-crash" />
       </Section>
 
       <Section title="Animations">
