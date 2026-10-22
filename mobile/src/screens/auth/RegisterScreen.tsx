@@ -15,7 +15,7 @@ import { haptics } from '../../theme/haptics';
 import { useAuthStore } from '../../store/auth.store';
 import * as authService from '../../services/auth.service';
 import { ROUTES } from '../../navigation/routes';
-import { AuthHeader, FormBanner, PasswordField, SwitchLink, useOnline } from './parts/AuthBits';
+import { AUTH_COLUMN, AuthHeader, FormBanner, PasswordField, ServerErrorBanner, SwitchLink, useColumnInset, useOnline } from './parts/AuthBits';
 import { AuthErrorInfo, AuthField, readAuthError } from './parts/authErrors';
 import { BUSINESS_NAME_MAX, businessNameError, emailError, passwordError, passwordHelper } from './parts/validation';
 
@@ -37,8 +37,10 @@ export function RegisterScreen({ navigation, route }: Props) {
   const [emailTaken, setEmailTaken] = useState(false);
   const [serverError, setServerError] = useState<AuthErrorInfo | null>(null);
   const [loading, setLoading] = useState(false);
+  const [offlineNudge, setOfflineNudge] = useState(0);
   const setAuth = useAuthStore((s) => s.setAuth);
   const online = useOnline();
+  const side = useColumnInset();
   const nameRef = useRef<TextInput>(null);
   const emailRef = useRef<TextInput>(null);
   const passwordRef = useRef<TextInput>(null);
@@ -49,6 +51,15 @@ export function RegisterScreen({ navigation, route }: Props) {
     if (!errors[field]) return;
     const fn = field === 'email' ? emailError : field === 'password' ? (v: string) => passwordError(v, 'register') : businessNameError;
     setErrors((e) => ({ ...e, [field]: fn(value) }));
+  };
+
+  // Blur only ADDS a local error (typing clears errors): clearing here would
+  // move the layout under a pointer that is pressing the next control
+  // (e.g. « Se connecter avec cette adresse »).
+  const blurCheck = (field: 'businessName' | 'email', value: string) => {
+    if (!value.trim()) return;
+    const err = field === 'email' ? emailError(value) : businessNameError(value);
+    if (err) setErrors((e) => ({ ...e, [field]: err }));
   };
 
   const onNameChange = (v: string) => {
@@ -84,6 +95,12 @@ export function RegisterScreen({ navigation, route }: Props) {
       firstInvalid.current?.focus();
       return;
     }
+    if (!online) {
+      // The offline banner already explains it: replay it instead of a doomed request.
+      haptics.warning();
+      setOfflineNudge((n) => n + 1);
+      return;
+    }
     setLoading(true);
     const started = Date.now();
     try {
@@ -113,7 +130,7 @@ export function RegisterScreen({ navigation, route }: Props) {
       (f.businessName ? nameRef : f.email ? emailRef : f.password ? passwordRef : null)?.current?.focus();
       setLoading(false);
     }
-  }, [businessName, email, password, isAutoEntrepreneur, loading, setAuth]);
+  }, [businessName, email, password, isAutoEntrepreneur, loading, online, setAuth]);
 
   const goLogin = () => navigation.replace(ROUTES.login, email.trim() ? { email: email.trim() } : undefined);
 
@@ -122,6 +139,7 @@ export function RegisterScreen({ navigation, route }: Props) {
       header={<NavBar title="Inscription" />}
       stickyFooter={
         <StickyActionBar
+          style={{ paddingHorizontal: side }}
           primary={{ title: 'Créer mon compte', onPress: submit, loading, trailingIcon: 'arrow-forward', testID: 'register-submit' }}
         />
       }
@@ -136,21 +154,11 @@ export function RegisterScreen({ navigation, route }: Props) {
         {!online ? (
           <View style={styles.bannerSlot}>
             <FormBanner
+              key={offlineNudge}
               tone="neutral"
               title="Vous êtes hors ligne"
               message="L’inscription a besoin d’internet. Réessayez dès le retour du réseau."
               testID="register-offline"
-            />
-          </View>
-        ) : null}
-        {serverError ? (
-          <View style={styles.bannerSlot}>
-            <FormBanner
-              key={`${serverError.kind}-${serverError.message}`}
-              tone={serverError.kind === 'rate' ? 'warn' : serverError.kind === 'offline' || serverError.kind === 'timeout' ? 'neutral' : 'bad'}
-              title={serverError.title}
-              message={serverError.message}
-              testID="register-error"
             />
           </View>
         ) : null}
@@ -161,7 +169,7 @@ export function RegisterScreen({ navigation, route }: Props) {
             label="Nom de l’établissement"
             value={businessName}
             onChangeText={onNameChange}
-            onBlur={() => businessName.trim() && setErrors((e) => ({ ...e, businessName: businessNameError(businessName) }))}
+            onBlur={() => blurCheck('businessName', businessName)}
             placeholder="Le Comptoir des Plantes"
             autoCapitalize="words"
             autoComplete="organization"
@@ -180,7 +188,7 @@ export function RegisterScreen({ navigation, route }: Props) {
             label="Adresse e-mail"
             value={email}
             onChangeText={onEmailChange}
-            onBlur={() => email.trim() && setErrors((e) => ({ ...e, email: emailError(email) }))}
+            onBlur={() => blurCheck('email', email)}
             placeholder="nom@etablissement.fr"
             keyboardType="email-address"
             autoCapitalize="none"
@@ -222,6 +230,12 @@ export function RegisterScreen({ navigation, route }: Props) {
             testID="register-password"
           />
         </FadeIn>
+        {/* Right under the fields: still in view with the keyboard open. */}
+        {serverError && !(serverError.kind === 'offline' && !online) ? (
+          <View style={styles.bannerSlot}>
+            <ServerErrorBanner error={serverError} testID="register-error" />
+          </View>
+        ) : null}
         <FadeIn index={4} style={styles.field}>
           <ListGroup>
             <ListRow
@@ -249,7 +263,7 @@ export function RegisterScreen({ navigation, route }: Props) {
 
 const styles = StyleSheet.create({
   content: { paddingTop: 8 },
-  column: { width: '100%', maxWidth: 480, alignSelf: 'center' },
+  column: { width: '100%', maxWidth: AUTH_COLUMN, alignSelf: 'center' },
   bannerSlot: { marginBottom: 20 },
   field: { marginBottom: 20 },
   inlineAction: { alignSelf: 'flex-start', marginTop: 4, marginLeft: -12 },

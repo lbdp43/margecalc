@@ -7,9 +7,9 @@ import React, { useCallback, useMemo } from 'react';
 import { Image, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import type { Category } from '@margebar/shared';
-import { Button, Card, FadeIn, NavBar, PressableScale, Screen, ScreenList, SectionHeader, StickyActionBar } from '../../components/ui';
+import { AnimatedNumber, Button, Card, FadeIn, NavBar, PressableScale, Screen, ScreenList, SectionHeader, StickyActionBar } from '../../components/ui';
 import { palette, radius, type } from '../../theme';
-import { formatEuro, plural } from '../../utils/format';
+import { NBSP, formatEuro, plural } from '../../utils/format';
 import { LineCard } from './LineCard';
 import { effectivePrice, hasErrors, selectedTotalHT, validateLine, type InvoiceLine, type PricingContext } from './model';
 
@@ -90,7 +90,7 @@ export function ReviewStep(props: ReviewStepProps) {
           <View style={[styles.note, styles.noteBad]}>
             <Ionicons name="alert-circle-outline" size={18} color={palette.bad} />
             <Text style={[styles.noteText, { color: palette.bad }]}>
-              {lines.length > 1 ? 'Ces lignes n’ont pas été importées.' : 'Cette ligne n’a pas été importée.'} Corrigez-les, puis relancez l’import.
+              {lines.length > 1 ? 'Ces lignes n’ont pas été importées. Corrigez-les, puis relancez l’import.' : 'Cette ligne n’a pas été importée. Corrigez-la, puis relancez l’import.'}
             </Text>
           </View>
         </FadeIn>
@@ -101,7 +101,7 @@ export function ReviewStep(props: ReviewStepProps) {
         right={
           lines.length > 1 ? (
             <PressableScale onPress={props.onToggleAll} disabled={importing} scaleTo="chip" haptic="select" hitSlop={8} style={styles.toggleAll} accessibilityRole="button" accessibilityLabel={allSelected ? 'Tout désélectionner' : 'Tout sélectionner'} testID="invoice-toggle-all">
-              <Text style={styles.toggleAllText}>{allSelected ? 'Tout désélectionner' : 'Tout sélectionner'}</Text>
+              <Text style={styles.toggleAllText}>{allSelected ? 'Tout décocher' : 'Tout cocher'}</Text>
             </PressableScale>
           ) : undefined
         }
@@ -113,7 +113,7 @@ export function ReviewStep(props: ReviewStepProps) {
           <View style={styles.note}>
             <Ionicons name="calculator-outline" size={18} color={palette.em700} />
             <Text style={styles.noteText}>
-              Sans prix de vente, il est calculé ×4 sur le coût d’une dose, arrondi à 0,10 €. Vous l’ajusterez ensuite dans chaque fiche.
+              Sans prix de vente, il est calculé ×4 sur le coût d’une dose, arrondi à 0,10 €. Modifiable ensuite dans chaque fiche.
             </Text>
           </View>
         </FadeIn>
@@ -144,7 +144,11 @@ export function ReviewStep(props: ReviewStepProps) {
         <StickyActionBar
           summary={summary}
           summaryZone={incomplete > 0 ? 'red' : undefined}
-          summaryRight={n > 0 && total > 0 ? `Achat ${formatEuro(total)} HT` : undefined}
+          summaryRight={
+            n > 0 && total > 0 ? (
+              <AnimatedNumber value={total} from={null} format={(v) => formatEuro(v)} prefix="Achat " suffix={`${NBSP}HT`} style={styles.total} numberOfLines={1} testID="invoice-total" />
+            ) : undefined
+          }
           primary={{
             title: n === 0 ? 'Sélectionnez un produit' : `Importer ${plural(n, 'produit')}`,
             icon: 'download-outline',
@@ -198,6 +202,7 @@ const styles = StyleSheet.create({
   noteBad: { backgroundColor: palette.badBg, marginTop: 12, marginBottom: 0 },
   noteText: { ...type.footnoteStrong, color: palette.em800, flex: 1 },
   listFooter: { marginTop: 16, gap: 4 },
+  total: { ...type.footnoteStrong, color: palette.ink },
   toggleAll: { minHeight: 32, justifyContent: 'center', paddingLeft: 8 },
   toggleAllText: { ...type.calloutStrong, color: palette.em700 },
 });

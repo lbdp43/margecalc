@@ -2,17 +2,20 @@
  * Small building blocks shared by Connexion and Inscription:
  *   <AuthHeader title subtitle />       BrandMark + title1 + callout
  *   <FormBanner tone title message />   readable server / network error (alert role)
+ *   <ServerErrorBanner error />         FormBanner for a failed request (AuthErrorInfo)
+ *   useColumnInset()                    sticky-bar side padding matching the 480 column
  *   <PasswordField … />                 TextField with show / hide
  *   <SwitchLink lead action onPress />  « Pas encore de compte ? Créer un compte »
  *   useOnline()                         live connectivity
  */
 import React, { forwardRef, useEffect, useState } from 'react';
-import { Platform, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Platform, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { BrandMark, FadeIn, IconButton, PressableScale, TextField } from '../../../components/ui';
 import type { IconName, TextFieldProps } from '../../../components/ui';
 import { fontFamily, palette, radius, type } from '../../../theme';
 import { isOnline, onConnectivityChange } from '../../../services/offline';
+import type { AuthErrorInfo } from './authErrors';
 
 // ─── useOnline ─────────────────────────────────────────────────────────────
 export function useOnline(): boolean {
@@ -88,6 +91,30 @@ export function FormBanner({ tone = 'bad', icon, title, message, testID }: FormB
       </View>
     </FadeIn>
   );
+}
+
+/** The banner for a failed sign-in / sign-up (tone and icon from the kind of failure). */
+export function ServerErrorBanner({ error, testID }: { error: AuthErrorInfo; testID?: string }) {
+  const tone: BannerTone = error.kind === 'rate' ? 'warn' : error.kind === 'offline' || error.kind === 'timeout' ? 'neutral' : 'bad';
+  const icon: IconName | undefined =
+    error.kind === 'banned'
+      ? 'lock-closed'
+      : error.kind === 'offline'
+        ? 'cloud-offline-outline'
+        : error.kind === 'timeout'
+          ? 'hourglass-outline'
+          : undefined;
+  return <FormBanner key={`${error.kind}-${error.message}`} tone={tone} icon={icon} title={error.title} message={error.message} testID={testID} />;
+}
+
+// ─── Layout ────────────────────────────────────────────────────────────────
+/** Width of the auth form column (phones use the full width). */
+export const AUTH_COLUMN = 480;
+
+/** Side padding that keeps the sticky button on the form column on wide screens. */
+export function useColumnInset(): number {
+  const { width } = useWindowDimensions();
+  return Math.max(20, Math.round((width - AUTH_COLUMN) / 2));
 }
 
 // ─── PasswordField ─────────────────────────────────────────────────────────

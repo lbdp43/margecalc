@@ -7,7 +7,7 @@
 import React, { useEffect, useState } from 'react';
 import { StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { Card, FadeIn, NavBar, Screen, StickyActionBar } from '../../components/ui';
+import { Button, Card, FadeIn, NavBar, Screen, StickyActionBar } from '../../components/ui';
 import { palette, radius, type } from '../../theme';
 import { NBSP } from '../../utils/format';
 import type { InvoiceScanErrorInfo } from '../../services/invoice.service';
@@ -23,7 +23,7 @@ export interface ErrorStepProps {
 function countdownLabel(sec: number): string {
   const m = Math.floor(sec / 60);
   const s = sec % 60;
-  return m > 0 ? `${m}${NBSP}min${NBSP}${String(s).padStart(2, '0')}` : `${s}${NBSP}s`;
+  return m > 0 ? `${m}${NBSP}min${NBSP}${String(s).padStart(2, '0')}${NBSP}s` : `${s}${NBSP}s`;
 }
 
 const TIPS = ['Posez la facture à plat, sur une table', 'Cadrez la page entière, sans couper le tableau', 'Évitez les reflets et le contre-jour'];
@@ -62,9 +62,10 @@ export function ErrorStep({ error, previewUri, onRetry, onManual }: ErrorStepPro
       stickyFooter={
         retryTitle ? (
           <StickyActionBar
-            secondary={{ title: 'Saisir à la main', icon: 'create-outline', onPress: onManual, testID: 'invoice-error-manual' }}
             primary={{ title: retryTitle, icon: error.resend ? 'refresh' : 'camera-outline', onPress: onRetry, disabled: wait > 0, testID: 'invoice-retry' }}
-          />
+          >
+            <Button title="Saisir à la main" variant="secondary" size="sm" icon="create-outline" onPress={onManual} testID="invoice-error-manual" />
+          </StickyActionBar>
         ) : (
           <StickyActionBar primary={{ title: 'Saisir à la main', icon: 'create-outline', onPress: onManual, testID: 'invoice-error-manual' }} />
         )

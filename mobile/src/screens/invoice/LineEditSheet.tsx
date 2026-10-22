@@ -59,6 +59,9 @@ const numOrNull = (s: string): number | null => {
   return Number.isFinite(n) ? n : null;
 };
 
+/** « 17,90 », or « 0,467 » for a per-bottle price from a pack (never rounds it away). */
+const priceInput = (n: number) => toInputString(n, Math.abs(n * 100 - Math.round(n * 100)) > 1e-6 ? 3 : 2);
+
 function toDraft(line: InvoiceLine): Draft {
   return {
     name: line.name,
@@ -66,8 +69,8 @@ function toDraft(line: InvoiceLine): Draft {
     categorySlug: line.categorySlug,
     quantity: line.quantity !== null ? toInputString(line.quantity, line.quantity % 1 ? 1 : 0) : '',
     container: line.containerVolumeCl !== null ? toInputString(line.containerVolumeCl, line.containerVolumeCl % 1 ? 1 : 0) : '',
-    purchase: line.purchasePriceHT !== null ? toInputString(line.purchasePriceHT, 2) : '',
-    selling: line.sellingPriceTTC !== null ? toInputString(line.sellingPriceTTC, 2) : '',
+    purchase: line.purchasePriceHT !== null && Number.isFinite(line.purchasePriceHT) ? priceInput(line.purchasePriceHT) : '',
+    selling: line.sellingPriceTTC !== null && Number.isFinite(line.sellingPriceTTC) ? priceInput(line.sellingPriceTTC) : '',
   };
 }
 

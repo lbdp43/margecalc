@@ -8,7 +8,7 @@ import { StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Button, Card, FadeIn, NavBar, Screen, StickyActionBar } from '../../components/ui';
 import { palette, type } from '../../theme';
-import { NBSP } from '../../utils/format';
+import { plural } from '../../utils/format';
 import { InvoiceFrame } from './InvoiceFrame';
 import type { PickSource } from './photo';
 
@@ -27,7 +27,8 @@ const TIPS: { icon: React.ComponentProps<typeof Ionicons>['name']; title: string
 ];
 
 export function CaptureStep({ quota, busy, onPick, onManual }: CaptureStepProps) {
-  const { height: winH } = useWindowDimensions();
+  const { height: winH, width: winW } = useWindowDimensions();
+  const icons = winW >= 380; // narrow phones: labels only, so they never touch the border
   const frameH = Math.max(168, Math.min(232, winH - 640));
 
   return (
@@ -39,8 +40,8 @@ export function CaptureStep({ quota, busy, onPick, onManual }: CaptureStepProps)
           primary={{ title: 'Prendre une photo', icon: 'camera-outline', onPress: () => onPick('camera'), haptic: 'tap', disabled: busy, testID: 'invoice-camera' }}
         >
           <View style={styles.footRow}>
-            <Button title="Choisir une image" variant="secondary" size="sm" icon="images-outline" onPress={() => onPick('library')} disabled={busy} style={styles.flex} testID="invoice-library" />
-            <Button title="Saisir à la main" variant="tonal" size="sm" icon="create-outline" onPress={onManual} style={styles.flex} testID="invoice-manual" />
+            <Button title="Choisir une image" variant="secondary" size="sm" icon={icons ? 'images-outline' : undefined} onPress={() => onPick('library')} disabled={busy} style={styles.flex} testID="invoice-library" />
+            <Button title="Saisir à la main" variant="tonal" size="sm" icon={icons ? 'create-outline' : undefined} onPress={onManual} style={styles.flex} testID="invoice-manual" />
           </View>
         </StickyActionBar>
       }
@@ -79,7 +80,7 @@ export function CaptureStep({ quota, busy, onPick, onManual }: CaptureStepProps)
           <Text style={styles.quotaText}>
             {quota
               ? quota.remaining > 0
-                ? `Lecture gratuite · ${quota.remaining}${NBSP}sur${NBSP}${quota.limit} restantes aujourd’hui`
+                ? `${plural(quota.remaining, 'lecture gratuite restante', 'lectures gratuites restantes')} aujourd’hui`
                 : 'Limite de lectures du jour atteinte · saisie à la main possible'
               : 'Lecture gratuite · la photo n’est pas conservée'}
           </Text>

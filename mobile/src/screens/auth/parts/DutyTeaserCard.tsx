@@ -64,9 +64,9 @@ export const DutyTeaserCard = React.memo(function DutyTeaserCard({ onOpen, delay
       </View>
 
       <View style={styles.params}>
-        <Param label="Catégorie" value={rate.label} flex={1.3} />
-        <Param label="Contenant" value={formatVolumeCl(EXAMPLE.volumeCl)} />
-        <Param label="Degré" value={formatPercent(EXAMPLE.degree, 0)} />
+        <Param label="Catégorie" value={rate.label} compact={twoByTwo} />
+        <Param label="Contenant" value={formatVolumeCl(EXAMPLE.volumeCl)} compact={twoByTwo} />
+        <Param label="Degré" value={formatPercent(EXAMPLE.degree, 0)} compact={twoByTwo} />
       </View>
 
       <View style={styles.result}>
@@ -116,9 +116,10 @@ export const DutyTeaserCard = React.memo(function DutyTeaserCard({ onOpen, delay
   );
 });
 
-function Param({ label, value, flex = 1 }: { label: string; value: string; flex?: number }) {
+/** Sized to its content, then the boxes share what is left (no truncation down to 360 px). */
+function Param({ label, value, compact }: { label: string; value: string; compact?: boolean }) {
   return (
-    <View style={[styles.param, { flex }]}>
+    <View style={[styles.param, compact && styles.paramCompact]}>
       <Text style={styles.paramLabel} numberOfLines={1}>
         {label}
       </Text>
@@ -146,6 +147,9 @@ const styles = StyleSheet.create({
 
   params: { flexDirection: 'row', gap: 8, marginTop: 14 },
   param: {
+    flexGrow: 1,
+    flexShrink: 1,
+    flexBasis: 'auto',
     minWidth: 0,
     height: 56,
     borderRadius: radius.icon,
@@ -153,6 +157,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     justifyContent: 'center',
   },
+  paramCompact: { paddingHorizontal: 10 },
   paramLabel: { ...type.footnote, color: palette.text3 },
   paramValue: { ...type.calloutStrong, color: palette.ink, marginTop: 1 },
 

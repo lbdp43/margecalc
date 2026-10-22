@@ -95,7 +95,6 @@ export function InvoiceScanScreen({ navigation }: Props) {
   const [invoiceDate, setInvoiceDate] = useState<string | null>(null);
   const [lines, setLines] = useState<InvoiceLine[]>([]);
   const [correcting, setCorrecting] = useState(false);
-  const [dirty, setDirty] = useState(false);
 
   const [editing, setEditing] = useState<{ id: string; isNew: boolean; showErrors: boolean; draft?: InvoiceLine } | null>(null);
   const [supplierOpen, setSupplierOpen] = useState(false);
@@ -160,7 +159,6 @@ export function InvoiceScanScreen({ navigation }: Props) {
         setInvoiceDate(result.invoiceDate);
         setLines(linesFromScan(result.products, categories));
         setCorrecting(false);
-        setDirty(false);
         setPhase('done');
         haptics.success();
         await wait(520);
@@ -185,6 +183,7 @@ export function InvoiceScanScreen({ navigation }: Props) {
 
   const startFromImage = useCallback(
     async (picked: PickedImage) => {
+      const token = ++runRef.current;
       setStep('scanning');
       setPhase('preparing');
       setUpload(0);
@@ -192,11 +191,12 @@ export function InvoiceScanScreen({ navigation }: Props) {
       setScanError(null);
       try {
         const prepared = await prepareInvoicePhoto(picked);
-        if (!mounted.current) return;
+        // « Annuler » (or leaving) while the photo was being prepared.
+        if (!mounted.current || token !== runRef.current) return;
         setPhoto(prepared);
         await runScan(prepared);
       } catch (err: any) {
-        if (!mounted.current) return;
+        if (!mounted.current || token !== runRef.current) return;
         haptics.warning();
         setScanError({
           kind: 'unreadable',
@@ -258,17 +258,15 @@ export function InvoiceScanScreen({ navigation }: Props) {
     }
   }, [scanError, photo, runScan]);
 
-  const manual = useCallback(() => openProductForm(nav), [nav]);
+  const manual = useCallback(() => openProductForm(nav, { start: 'form' }), [nav]);
 
   // ─── Review ─────────────────────────────────────────────────────────────
 
   const onToggle = useCallback((id: string) => {
-    setDirty(true);
     setLines((prev) => prev.map((l) => (l.id === id ? { ...l, selected: !l.selected } : l)));
   }, []);
 
   const onToggleAll = useCallback(() => {
-    setDirty(true);
     setLines((prev) => {
       const all = prev.every((l) => l.selected);
       return prev.map((l) => ({ ...l, selected: !all }));
@@ -286,12 +284,10 @@ export function InvoiceScanScreen({ navigation }: Props) {
 
   const submitLine = useCallback(
     (line: InvoiceLine) => {
-      setDirty(true);
       setLines((prev) => (prev.some((l) => l.id === line.id) ? prev.map((l) => (l.id === line.id ? line : l)) : [...prev, line]));
       setTimeout(() => setEditing(null), 0);
-      if (editing?.isNew) toast.success('Ligne ajoutée');
     },
-    [editing],
+    [],
   );
 
   const confirmDiscard = useCallback(
@@ -316,14 +312,13 @@ export function InvoiceScanScreen({ navigation }: Props) {
     setScanError(null);
     setSummary(null);
     setCorrecting(false);
-    setDirty(false);
     setStep('capture');
   }, []);
 
   const rescan = useCallback(async () => {
-    if (dirty && !(await confirmDiscard())) return;
+    if (lines.length > 0 && !(await confirmDiscard())) return;
     resetAll();
-  }, [dirty, confirmDiscard, resetAll]);
+  }, [lines.length, confirmDiscard, resetAll]);
 
   // Leaving with lines not imported asks first (NavBar back, browser / Android back).
   const guardRef = useRef(false);
@@ -395,7 +390,6 @@ export function InvoiceScanScreen({ navigation }: Props) {
           }),
       );
       guardRef.current = false;
-      setDirty(false);
       setStep('results');
 
       if (okCount > 0) {
@@ -411,6 +405,8 @@ export function InvoiceScanScreen({ navigation }: Props) {
       if (!mounted.current) return;
       const info = describeImportError(err);
       haptics.warning();
+      importingRef.current = false;
+      setImporting(false);
       await dialog.alert({
         title: info.title,
         message: info.message,
@@ -489,7 +485,6 @@ export function InvoiceScanScreen({ navigation }: Props) {
         dateLabel={dateLabel}
         onSubmit={(s) => {
           setSupplier(s);
-          setDirty(true);
           setSupplierOpen(false);
         }}
         onClose={() => setSupplierOpen(false)}

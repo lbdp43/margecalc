@@ -15,6 +15,7 @@ import { useRatesStore } from '../../store/rates.store';
 import { useNavigateOnce } from '../../hooks/useNavigateOnce';
 import { openDutyCalculator, ROUTES } from '../../navigation/routes';
 import { DutyTeaserCard } from './parts/DutyTeaserCard';
+import { frenchQuotes, withoutTitleLead } from './parts/authErrors';
 import { ClosingCard, FeatureSection, LandingFooter, LandingHeroContent } from './parts/LandingSections';
 
 type Props = StackScreenProps<any, 'Landing'>;
@@ -29,8 +30,9 @@ export function LandingScreen({ navigation }: Props) {
   useEffect(() => {
     if (!notice) return;
     setNotice(null);
-    if (notice.kind === 'expired') toast.info(`${notice.title} : ${notice.message.charAt(0).toLowerCase()}${notice.message.slice(1)}`);
-    else dialog.alert({ title: notice.title, message: notice.message, tone: 'bad', icon: notice.kind === 'banned' ? 'lock-closed-outline' : 'alert-circle-outline' });
+    const message = withoutTitleLead(notice.title, frenchQuotes(notice.message));
+    if (notice.kind === 'expired') toast.info(`${notice.title} : ${message.charAt(0).toLowerCase()}${message.slice(1)}`);
+    else dialog.alert({ title: notice.title, message, tone: 'bad', icon: notice.kind === 'banned' ? 'lock-closed-outline' : 'alert-circle-outline' });
   }, [notice, setNotice]);
 
   const goRegister = useCallback(() => navigate(ROUTES.register), [navigate]);

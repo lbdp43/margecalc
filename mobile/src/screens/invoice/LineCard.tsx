@@ -18,10 +18,10 @@ import { Ionicons } from '@expo/vector-icons';
 import type { Category } from '@margebar/shared';
 import { Badge, PressableScale, useReduceMotion } from '../../components/ui';
 import { elevation, motion, palette, radius, type } from '../../theme';
-import { formatDegree, formatEuro } from '../../utils/format';
+import { formatDegree, formatEuro, formatVolumeCl } from '../../utils/format';
 import {
   containerLabel,
-  doseLabel,
+  doseOf,
   effectivePrice,
   quantityLabel,
   validateLine,
@@ -119,25 +119,20 @@ function LineCardBase({ line, category, ctx, disabled, onToggle, onEdit }: LineC
               <Text style={[styles.tileValue, priceMissing && { color: palette.bad }]} numberOfLines={1}>
                 {priceMissing ? 'À compléter' : formatEuro(line.purchasePriceHT)}
               </Text>
-              <Text style={styles.tileCaption} numberOfLines={2}>
+              <Text style={styles.tileCaption} numberOfLines={1}>
                 {lineTotal !== null ? (qty ? `${qty} · ${formatEuro(lineTotal)}` : 'l’unité') : qty ?? 'l’unité'}
               </Text>
             </View>
             <View style={styles.tileSep} />
             <View style={styles.tile}>
-              <Text style={styles.tileLabel}>Vente TTC</Text>
+              <Text style={styles.tileLabel} numberOfLines={1}>
+                Vente TTC · {formatVolumeCl(doseOf(line, ctx).doseCl)}
+              </Text>
               <Text style={[styles.tileValue, !(price > 0) && { color: palette.text3 }]} numberOfLines={1}>
                 {price > 0 ? formatEuro(price) : '–'}
               </Text>
-              <Text style={styles.tileCaption} numberOfLines={2}>
-                {derived ? (
-                  <>
-                    <Text style={styles.derived}>calculé ×4</Text>
-                    {` · ${doseLabel(line, ctx)}`}
-                  </>
-                ) : (
-                  doseLabel(line, ctx)
-                )}
+              <Text style={[styles.tileCaption, derived && price > 0 && styles.derived]} numberOfLines={1}>
+                {!(price > 0) ? 'à calculer' : derived ? 'calculé ×4' : doseOf(line, ctx).soldByUnit ? 'à l’unité' : 'votre prix'}
               </Text>
             </View>
           </View>
@@ -166,11 +161,11 @@ const styles = StyleSheet.create({
     ...elevation.e2,
   },
   cardFlagged: { borderColor: palette.badSolid },
-  checkCol: { width: 52, paddingTop: 14, alignItems: 'center', alignSelf: 'stretch' },
+  checkCol: { width: 48, paddingTop: 14, alignItems: 'center', alignSelf: 'stretch' },
   check: { width: 26, height: 26, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
   checkOn: { backgroundColor: palette.em700 },
   checkOff: { borderWidth: 2, borderColor: palette.lineStrong, backgroundColor: palette.surface },
-  body: { flex: 1, minWidth: 0, paddingTop: 14, paddingBottom: 14, paddingRight: 14 },
+  body: { flex: 1, minWidth: 0, paddingTop: 14, paddingBottom: 14, paddingRight: 12 },
   head: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
   name: { ...type.headline, color: palette.ink, flex: 1, minWidth: 0, paddingTop: 1 },
   unsure: { marginTop: 0 },
@@ -182,7 +177,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.sm,
     backgroundColor: palette.surface2,
   },
-  tile: { flex: 1, minWidth: 0, paddingHorizontal: 12, paddingVertical: 9 },
+  tile: { flex: 1, minWidth: 0, paddingHorizontal: 11, paddingVertical: 8 },
   tileSep: { width: 1, marginVertical: 10, backgroundColor: palette.line },
   tileLabel: { ...type.footnoteStrong, color: palette.text3 },
   tileValue: { ...type.numM, fontSize: 17, lineHeight: 22, color: palette.ink, marginTop: 1 },

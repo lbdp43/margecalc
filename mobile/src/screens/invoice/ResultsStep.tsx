@@ -54,7 +54,12 @@ export function ResultsStep({ summary, onOpenProduct, onFix, onSeeProducts, onNe
         <View style={[styles.panelIcon, allFailed && styles.panelIconBad]}>
           <Ionicons name={allFailed ? 'alert' : 'checkmark'} size={22} color={palette.em900} />
         </View>
-        <Text style={styles.panelKicker}>{summary.supplier ? summary.supplier : 'Import de la facture'}</Text>
+        <View style={styles.flex}>
+          <Text style={styles.panelKicker} numberOfLines={1}>
+            {summary.supplier ? summary.supplier : 'Import de la facture'}
+          </Text>
+          {summary.dateLabel ? <Text style={styles.panelDate}>Facture du {summary.dateLabel}</Text> : null}
+        </View>
       </View>
       <View style={styles.countRow}>
         <AnimatedNumber value={ok} format={(v) => String(Math.round(v))} style={styles.count} />
@@ -73,10 +78,7 @@ export function ResultsStep({ summary, onOpenProduct, onFix, onSeeProducts, onNe
       header={<NavBar title="Scanner une facture" />}
       testID="invoice-results"
       stickyFooter={
-        <StickyActionBar
-          secondary={{ title: 'Nouvelle facture', icon: 'camera-outline', onPress: onNewInvoice, testID: 'invoice-new' }}
-          primary={{ title: 'Voir mes produits', trailingIcon: 'arrow-forward', onPress: onSeeProducts, testID: 'invoice-see-products' }}
-        />
+        <StickyActionBar primary={{ title: 'Voir mes produits', trailingIcon: 'arrow-forward', onPress: onSeeProducts, testID: 'invoice-see-products' }} />
       }
     >
       <FadeIn offset={8}>
@@ -91,7 +93,7 @@ export function ResultsStep({ summary, onOpenProduct, onFix, onSeeProducts, onNe
         </Card>
       </FadeIn>
 
-      <SectionHeader title="Détail de l’import" meta={summary.dateLabel ? `Facture du ${summary.dateLabel}` : undefined} style={styles.section} />
+      <SectionHeader title="Détail de l’import" style={styles.section} />
       <FadeIn delay={80} offset={8}>
         <ListGroup>
           {summary.outcomes.map(({ line, result }, i) => {
@@ -128,18 +130,20 @@ export function ResultsStep({ summary, onOpenProduct, onFix, onSeeProducts, onNe
         </ListGroup>
       </FadeIn>
 
-      {failed > 0 ? (
-        <FadeIn delay={120} offset={8}>
-          <Button
-            title={failed > 1 ? `Corriger les ${failed} lignes` : 'Corriger la ligne'}
-            variant="secondary"
-            icon="create-outline"
-            onPress={onFix}
-            style={styles.fix}
-            testID="invoice-fix"
-          />
-        </FadeIn>
-      ) : null}
+      <FadeIn delay={120} offset={8}>
+        <View style={styles.after}>
+          {failed > 0 ? (
+            <Button
+              title={failed > 1 ? `Corriger les ${failed} lignes` : 'Corriger la ligne'}
+              variant="secondary"
+              icon="create-outline"
+              onPress={onFix}
+              testID="invoice-fix"
+            />
+          ) : null}
+          <Button title="Scanner une autre facture" variant="text" icon="camera-outline" onPress={onNewInvoice} testID="invoice-new" />
+        </View>
+      </FadeIn>
     </Screen>
   );
 }
@@ -149,12 +153,14 @@ const styles = StyleSheet.create({
   panelTop: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   panelIcon: { width: 32, height: 32, borderRadius: 16, backgroundColor: palette.lime, alignItems: 'center', justifyContent: 'center' },
   panelIconBad: { backgroundColor: palette.badOnEmerald },
-  panelKicker: { ...type.calloutStrong, color: palette.onEmerald2, flex: 1 },
+  flex: { flex: 1, minWidth: 0 },
+  panelKicker: { ...type.calloutStrong, color: palette.onEmerald },
+  panelDate: { ...type.footnote, color: palette.onEmerald2 },
   countRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 10, marginTop: 14 },
   count: { ...type.numHero, color: palette.onEmerald },
   countLabel: { ...type.title3, color: palette.onEmerald, marginBottom: 6, flexShrink: 1 },
   badges: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 14 },
   heroNote: { ...type.footnote, color: palette.text2 },
   section: { marginTop: 24, marginBottom: 10 },
-  fix: { marginTop: 16 },
+  after: { marginTop: 16, gap: 4 },
 });

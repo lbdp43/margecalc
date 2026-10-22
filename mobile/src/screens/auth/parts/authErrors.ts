@@ -28,6 +28,29 @@ export interface AuthErrorInfo {
 
 const FIELDS: AuthField[] = ['email', 'password', 'businessName'];
 
+const fold = (s: string) =>
+  s
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '');
+
+/** French typography for a backend sentence: « d'informations » → « d’informations ». */
+export function frenchQuotes(message: string): string {
+  return message.replace(/([A-Za-zÀ-ÿ])'([A-Za-zÀ-ÿ])/g, '$1’$2');
+}
+
+/**
+ * Drops the start of `message` when it repeats `title` (« Compte suspendu : ce compte… »
+ * under the title « Compte suspendu » → « Ce compte… »). Returns the message unchanged otherwise.
+ */
+export function withoutTitleLead(title: string | undefined, message: string): string {
+  if (!title || !message) return message;
+  if (!fold(message).startsWith(fold(title))) return message;
+  const rest = message.slice(title.length).replace(/^[\s ]*[,:;.–-]?[\s ]*/, '');
+  if (!rest) return message;
+  return rest.charAt(0).toUpperCase() + rest.slice(1);
+}
+
 export function readAuthError(err: unknown, fallback: string): AuthErrorInfo {
   const e = err as { response?: { status?: number; data?: any }; message?: string; code?: string };
   if (!e?.response) {
@@ -52,7 +75,7 @@ export function readAuthError(err: unknown, fallback: string): AuthErrorInfo {
 
   const status = e.response.status ?? 0;
   const data = e.response.data ?? {};
-  const backend = typeof data.error === 'string' && data.error.trim() ? data.error.trim() : '';
+  const backend = typeof data.error === 'string' && data.error.trim() ? frenchQuotes(data.error.trim()) : '';
   const fields: Partial<Record<AuthField, string>> = {};
   if (Array.isArray(data.details)) {
     for (const d of data.details) {
@@ -66,18 +89,21 @@ export function readAuthError(err: unknown, fallback: string): AuthErrorInfo {
     return { kind: 'validation', message: mapped ? '' : backend || fallback, fields };
   }
   if (status === 401) {
-    if (data.code === 'banned') return { kind: 'banned', title: 'Compte suspendu', message: backend, fields: {} };
+    if (data.code === 'banned') {
+      return { kind: 'banned', title: 'Compte suspendu', message: withoutTitleLead('Compte suspendu', backend), fields: {} };
+    }
     return { kind: 'credentials', message: backend || 'E-mail ou mot de passe incorrect.', fields: {} };
   }
   if (status === 403) {
     // Login of a banned account.
-    return { kind: 'banned', title: 'Compte suspendu', message: backend || 'Ce compte a été suspendu.', fields: {} };
+    return { kind: 'banned', title: 'Compte suspendu', message: withoutTitleLead('Compte suspendu', backend) || 'Ce compte a été suspendu.', fields: {} };
   }
   if (status === 409) {
     return { kind: 'conflict', message: '', fields: { email: backend || 'Un compte existe déjà avec cette adresse.' } };
   }
   if (status === 429) {
-    return { kind: 'rate', title: 'Trop de tentatives', message: backend || 'Réessayez dans quelques minutes.', fields: {} };
+    const title = 'Trop de tentatives';
+    return { kind: 'rate', title, message: withoutTitleLead(title, backend) || 'Réessayez dans quelques minutes.', fields: {} };
   }
   // 5xx: a bare « Erreur serveur » says less than the screen's own sentence.
   const generic = !backend || /^erreur (interne|serveur)/i.test(backend);

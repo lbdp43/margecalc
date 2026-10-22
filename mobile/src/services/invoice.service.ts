@@ -128,7 +128,7 @@ export function describeInvoiceScanError(err: any): InvoiceScanErrorInfo {
     if (code === 'cooldown') {
       return {
         kind: 'cooldown',
-        title: 'Lecture en pause',
+        title: 'Un peu de patience',
         message: msg ?? 'Plusieurs lectures ont échoué d’affilée. Patientez quelques minutes, puis réessayez.',
         resend: true,
         canRetry: true,

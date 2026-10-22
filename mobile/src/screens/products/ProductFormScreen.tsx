@@ -203,12 +203,6 @@ export function ProductFormScreen({ route, navigation }: Props) {
     retry: false,
   });
 
-  // The prefill is now in the form: drop it from the route so the web URL stays
-  // clean (« /produits/nouveau » instead of « ?scanData=[object Object] »).
-  useEffect(() => {
-    if (prefill) (navigation as any).setParams({ scanData: undefined });
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
   // ─── Hydration (edit) ────────────────────────────────────────────────────
   useEffect(() => {
     if (!editing || hydrated || !productQ.data || !productQ.isFetchedAfterMount) return;

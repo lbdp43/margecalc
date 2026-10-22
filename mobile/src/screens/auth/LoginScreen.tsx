@@ -12,7 +12,7 @@ import { haptics } from '../../theme/haptics';
 import { useAuthStore } from '../../store/auth.store';
 import * as authService from '../../services/auth.service';
 import { ROUTES } from '../../navigation/routes';
-import { AuthHeader, FormBanner, PasswordField, SwitchLink, useOnline } from './parts/AuthBits';
+import { AUTH_COLUMN, AuthHeader, FormBanner, PasswordField, ServerErrorBanner, SwitchLink, useColumnInset, useOnline } from './parts/AuthBits';
 import { AuthErrorInfo, readAuthError } from './parts/authErrors';
 import { emailError, passwordError } from './parts/validation';
 
@@ -27,8 +27,10 @@ export function LoginScreen({ navigation, route }: Props) {
   const [errors, setErrors] = useState<{ email?: string | null; password?: string | null }>({});
   const [serverError, setServerError] = useState<AuthErrorInfo | null>(null);
   const [loading, setLoading] = useState(false);
+  const [offlineNudge, setOfflineNudge] = useState(0);
   const setAuth = useAuthStore((s) => s.setAuth);
   const online = useOnline();
+  const side = useColumnInset();
   const emailRef = useRef<TextInput>(null);
   const passwordRef = useRef<TextInput>(null);
   const mounted = useRef(true);
@@ -39,6 +41,12 @@ export function LoginScreen({ navigation, route }: Props) {
     setServerError(null);
     // Once an error shows, re-check live so it clears as soon as it is fixed.
     if (errors.email) setErrors((e) => ({ ...e, email: emailError(v) }));
+  };
+  // Blur only ADDS a local error (typing clears errors): clearing here would
+  // move the layout under a pointer that is pressing the next control.
+  const onEmailBlur = () => {
+    const err = email.trim() ? emailError(email) : null;
+    if (err) setErrors((e) => ({ ...e, email: err }));
   };
   const onPasswordChange = (v: string) => {
     setPassword(v);
@@ -54,6 +62,12 @@ export function LoginScreen({ navigation, route }: Props) {
     if (next.email || next.password) {
       haptics.warning();
       (next.email ? emailRef : passwordRef).current?.focus();
+      return;
+    }
+    if (!online) {
+      // The offline banner already explains it: replay it instead of a doomed request.
+      haptics.warning();
+      setOfflineNudge((n) => n + 1);
       return;
     }
     setLoading(true);
@@ -76,7 +90,7 @@ export function LoginScreen({ navigation, route }: Props) {
       else if (info.fields.email) emailRef.current?.focus();
       setLoading(false);
     }
-  }, [email, password, loading, setAuth]);
+  }, [email, password, loading, online, setAuth]);
 
   const goRegister = () => navigation.replace(ROUTES.register, email.trim() ? { email: email.trim() } : undefined);
 
@@ -85,6 +99,7 @@ export function LoginScreen({ navigation, route }: Props) {
       header={<NavBar title="Connexion" />}
       stickyFooter={
         <StickyActionBar
+          style={{ paddingHorizontal: side }}
           primary={{ title: 'Se connecter', onPress: submit, loading, icon: 'log-in-outline', testID: 'login-submit' }}
         />
       }
@@ -99,21 +114,11 @@ export function LoginScreen({ navigation, route }: Props) {
         {!online ? (
           <View style={styles.bannerSlot}>
             <FormBanner
+              key={offlineNudge}
               tone="neutral"
               title="Vous êtes hors ligne"
               message="La connexion a besoin d’internet. Réessayez dès le retour du réseau."
               testID="login-offline"
-            />
-          </View>
-        ) : null}
-        {serverError ? (
-          <View style={styles.bannerSlot}>
-            <FormBanner
-              key={`${serverError.kind}-${serverError.message}`}
-              tone={serverError.kind === 'rate' ? 'warn' : serverError.kind === 'offline' || serverError.kind === 'timeout' ? 'neutral' : 'bad'}
-              title={serverError.title}
-              message={serverError.message}
-              testID="login-error"
             />
           </View>
         ) : null}
@@ -124,7 +129,7 @@ export function LoginScreen({ navigation, route }: Props) {
             label="Adresse e-mail"
             value={email}
             onChangeText={onEmailChange}
-            onBlur={() => email.trim() && setErrors((e) => ({ ...e, email: emailError(email) }))}
+            onBlur={onEmailBlur}
             placeholder="nom@etablissement.fr"
             keyboardType="email-address"
             autoCapitalize="none"
@@ -154,6 +159,12 @@ export function LoginScreen({ navigation, route }: Props) {
             testID="login-password"
           />
         </FadeIn>
+        {/* Right under the fields: still in view with the keyboard open. */}
+        {serverError && !(serverError.kind === 'offline' && !online) ? (
+          <View style={styles.bannerSlot}>
+            <ServerErrorBanner error={serverError} testID="login-error" />
+          </View>
+        ) : null}
         <FadeIn index={3} style={styles.linkSlot}>
           <SwitchLink lead="Pas encore de compte ?" action="Créer un compte" onPress={goRegister} testID="login-to-register" />
         </FadeIn>
@@ -164,7 +175,7 @@ export function LoginScreen({ navigation, route }: Props) {
 
 const styles = StyleSheet.create({
   content: { paddingTop: 8 },
-  column: { width: '100%', maxWidth: 480, alignSelf: 'center' },
+  column: { width: '100%', maxWidth: AUTH_COLUMN, alignSelf: 'center' },
   bannerSlot: { marginBottom: 20 },
   field: { marginBottom: 20 },
   linkSlot: { marginTop: 4 },
