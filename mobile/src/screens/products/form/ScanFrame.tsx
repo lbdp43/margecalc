@@ -92,7 +92,7 @@ export function ScanFrame({ uri, status = 'idle', height, style }: ScanFrameProp
         </>
       ) : null}
 
-      <Corners color={uri ? '#FFFFFF' : palette.em700} />
+      <Corners color={uri ? '#FFFFFF' : palette.em700} hideTopRight={status === 'done' || status === 'error'} />
 
       {status === 'done' || status === 'error' ? (
         <View style={styles.badgeRow} pointerEvents="none">
@@ -105,12 +105,12 @@ export function ScanFrame({ uri, status = 'idle', height, style }: ScanFrameProp
   );
 }
 
-function Corners({ color }: { color: string }) {
+function Corners({ color, hideTopRight }: { color: string; hideTopRight?: boolean }) {
   const s = { borderColor: color };
   return (
     <View style={[StyleSheet.absoluteFill, { margin: 14 }]} pointerEvents="none">
       <View style={[styles.corner, s, { top: 0, left: 0, borderTopWidth: 3, borderLeftWidth: 3, borderTopLeftRadius: 14 }]} />
-      <View style={[styles.corner, s, { top: 0, right: 0, borderTopWidth: 3, borderRightWidth: 3, borderTopRightRadius: 14 }]} />
+      {hideTopRight ? null : <View style={[styles.corner, s, { top: 0, right: 0, borderTopWidth: 3, borderRightWidth: 3, borderTopRightRadius: 14 }]} />}
       <View style={[styles.corner, s, { bottom: 0, left: 0, borderBottomWidth: 3, borderLeftWidth: 3, borderBottomLeftRadius: 14 }]} />
       <View style={[styles.corner, s, { bottom: 0, right: 0, borderBottomWidth: 3, borderRightWidth: 3, borderBottomRightRadius: 14 }]} />
     </View>
@@ -151,7 +151,7 @@ const styles = StyleSheet.create({
   sweep: { position: 'absolute', left: 0, right: 0, top: 0, height: SWEEP_H, justifyContent: 'center' },
   sweepLine: { height: 2, backgroundColor: palette.em300, opacity: 0.95 },
   corner: { position: 'absolute', width: 30, height: 30 },
-  badgeRow: { position: 'absolute', left: 0, right: 0, bottom: 16, alignItems: 'center' },
+  badgeRow: { position: 'absolute', top: 14, right: 14 },
   badge: {
     width: 32,
     height: 32,

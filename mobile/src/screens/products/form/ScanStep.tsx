@@ -51,13 +51,14 @@ export function ScanStep(props: ScanStepProps) {
   const { phase, photoUri } = props;
   const { height: winH } = useWindowDimensions();
   const working = phase === 'preparing' || phase === 'reading';
-  const bigFrame = Math.max(240, Math.min(420, winH - 420));
+  const bigFrame = Math.max(220, Math.min(380, winH - 476));
   const smallFrame = Math.max(180, Math.min(260, winH - 560));
 
   let footer: React.ReactNode;
   if (phase === 'intro') {
     footer = (
       <StickyActionBar
+        key="intro"
         primary={{ title: 'Prendre une photo', icon: 'camera-outline', onPress: () => props.onPick('camera'), haptic: 'tap', testID: 'scan-camera' }}
       >
         <View style={styles.footRow}>
@@ -69,6 +70,7 @@ export function ScanStep(props: ScanStepProps) {
   } else if (working) {
     footer = (
       <StickyActionBar
+        key="working"
         primary={{
           title: phase === 'reading' ? 'Continuer sans attendre' : 'Préparation de la photo…',
           variant: 'tonal',
@@ -81,6 +83,7 @@ export function ScanStep(props: ScanStepProps) {
   } else if (phase === 'result') {
     footer = (
       <StickyActionBar
+        key="result"
         secondary={{ title: 'Reprendre', icon: 'camera-reverse-outline', onPress: props.onRetake }}
         primary={{ title: 'Continuer', trailingIcon: 'arrow-forward', onPress: props.onContinue, testID: 'scan-continue' }}
       />
@@ -88,6 +91,7 @@ export function ScanStep(props: ScanStepProps) {
   } else {
     footer = (
       <StickyActionBar
+        key="error"
         secondary={{ title: 'Reprendre', icon: 'camera-reverse-outline', onPress: props.onRetake }}
         primary={{
           title: photoUri ? 'Continuer sans lecture' : 'Saisir à la main',
