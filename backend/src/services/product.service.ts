@@ -456,7 +456,10 @@ export async function importProducts(
         await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`import|${userId}|${key}|${containerVolumeCl}`}))`;
         const sameContainer = await tx.product.findMany({
           where: { userId, containerVolumeCl },
-          select: { id: true, name: true, purchasePriceHT: true, sellingPriceTTC: true },
+          select: {
+            id: true, name: true, purchasePriceHT: true, sellingPriceTTC: true,
+            servings: { select: { sellingPriceTTC: true, servingType: { select: { sortOrder: true, volumeCl: true } } } },
+          },
           orderBy: { createdAt: 'asc' },
         });
         const match = sameContainer.find((p) => normName(p.name) === key);
@@ -467,7 +470,9 @@ export async function importProducts(
             await tx.priceHistory.create({ data: { productId: match.id, oldPrice: match.purchasePriceHT, newPrice: purchasePriceHT, source: 'invoice' } });
             await tx.product.update({ where: { id: match.id }, data: { purchasePriceHT, ...(lineSupplier ? { supplier: lineSupplier } : {}) } });
           }
-          return { action: 'updated' as const, productId: match.id, sellingPriceTTC: match.sellingPriceTTC ?? 0, priceDerived: false };
+          // Headline price as the app shows it (primary service first, see withHeadline).
+          const shown = primaryServing(match.servings, containerVolumeCl)?.sellingPriceTTC ?? match.sellingPriceTTC ?? 0;
+          return { action: 'updated' as const, productId: match.id, sellingPriceTTC: shown, priceDerived: false };
         }
 
         let sellingPriceTTC = line.sellingPriceTTC && line.sellingPriceTTC > 0 ? Math.round(line.sellingPriceTTC * 100) / 100 : 0;

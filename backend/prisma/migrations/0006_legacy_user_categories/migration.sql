@@ -7,9 +7,10 @@
 --    Every other built-in row is a legacy one, handled by who uses it:
 --      - products of ONE account: the row becomes that account's private category (same id);
 --      - products of SEVERAL accounts: each one gets its own private copy and its products are moved to it;
---      - no product: deleted.
---    A category an admin really meant for everyone must have its slug added to the list below
---    before deploying. Report to run on production first:
+--      - no product: left untouched (still shared by every account, exactly as before).
+--    Only the emptied originals of 1b are deleted; no product ever loses its category.
+--    A category an admin really meant for everyone, and that is in use, becomes private to its users:
+--    the admin can recreate it as a shared category from Réglages. Report to see what will change:
 --      SELECT c.name, c.slug, count(p.id) AS products, count(DISTINCT p."userId") AS accounts
 --      FROM "Category" c LEFT JOIN "Product" p ON p."categoryId" = c.id
 --      WHERE c."userId" IS NULL AND c.slug NOT IN ('spiritueux','vins','bieres','softs','ingredients_cocktails','consommables')
@@ -58,11 +59,15 @@ JOIN "Category" n ON n.slug = l.slug AND n."userId" IS NOT NULL
 WHERE p."categoryId" = l.id
   AND n."userId" = p."userId";
 
--- 1c) Legacy built-in rows left without any product are removed.
+-- 1c) A legacy row whose products were all moved to private copies in 1b is now empty: every account
+--     that used it has its own copy, so it is removed (otherwise each of them would see the name twice).
+--     Legacy rows that never had any product are kept as they are (shared, as before): a deploy must
+--     never delete data whose intent cannot be checked.
 DELETE FROM "Category" c
 USING "_legacy_category" l
 WHERE c.id = l.id
   AND c."userId" IS NULL
+  AND cardinality(l.users) >= 1
   AND NOT EXISTS (SELECT 1 FROM "Product" p WHERE p."categoryId" = c.id);
 
 DROP TABLE "_legacy_category";
