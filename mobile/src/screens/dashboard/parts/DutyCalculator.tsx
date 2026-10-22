@@ -1,14 +1,19 @@
 /**
- * Calculateur de droits — body (spec §4.5 + grafts 7, 8, 16).
+ * Calculateur de droits — body (spec §4.5 + grafts 7, 8, 16), built from the kit.
  *
  *   Catégorie fiscale            13 catégories
  *   [flask] Spiritueux · Whisky, vodka…        Changer ⌄   → FiscalCategorySheet
- *   Prix HT hors droits [− 11,00 € +]   Degré d’alcool [− 40 % +]
+ *   Prix d’achat HT · hors droits   [ 11,00            € ]   TextField (typed)
+ *   Degré d’alcool                  [(−)   40 % vol.  (+)]  NumberInput large (graft 8)
  *   (« Le degré n’impacte pas l’accise pour cette catégorie » when relevant)
  *   Contenant                    Bouteille · 70 cl
  *   [2 cl] [4 cl] … [70 cl] … [Fût 30 L]       (scrolled to the selection)
  *   Result panel (answer first, breakdown after)
  *   « Enregistrer comme produit » (logged in) or `footer` (logged out CTA)
+ *
+ * Out-of-range typing is never clamped silently: the calculation uses the
+ * nearest allowed value while a line under the field says so, and the field
+ * shows that value once editing ends.
  *
  * Changing the category applies its typical strength and container while
  * the user has not set them (a 40 % « Bière » would make no sense), and
@@ -17,15 +22,14 @@
  * the API and the product form use.
  */
 import React, { useCallback, useMemo, useRef, useState } from 'react';
-import { Linking, StyleSheet, Text, View } from 'react-native';
+import { Linking, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { calculateDroits, DEFAULT_RATES, type DroitsResult, type Rate } from '@margebar/shared';
-import { Button, Card, ChipRow, FadeIn, FiscalCategorySheet, PressableScale, SwapFade } from '../../../components/ui';
+import { Button, Card, ChipRow, FadeIn, FiscalCategorySheet, NumberInput, PressableScale, SwapFade, TextField } from '../../../components/ui';
 import { palette, radius, type } from '../../../theme';
-import { formatEuro, formatNumber, NBSP } from '../../../utils/format';
+import { clamp, formatDegree, formatEuro, formatNumber, NBSP, parseLocaleFloat, toInputString } from '../../../utils/format';
 import { useRatesStore } from '../../../store/rates.store';
 import { useSystemParamsStore } from '../../../store/systemParams.store';
-import { StepperField } from './StepperField';
 import { DutyResultPanel } from './DutyResultPanel';
 import { categoryDefaults, CONTAINERS, containerMeta, rateExamples, rateIcon } from './duties';
 
@@ -41,8 +45,6 @@ export interface DutyDraft {
 export interface DutyCalculatorProps {
   /** Logged in: shows « Enregistrer comme produit ». */
   onSaveAsProduct?: (draft: DutyDraft) => void;
-  /** Legacy (DroitsCalculator): shows « Enregistrer le calcul ». */
-  onSaveLegacy?: (draft: DutyDraft) => void;
   /** Rendered after the result (e.g. the logged-out sign-up card). */
   footer?: React.ReactNode;
   /** The container chips bleed to the screen edges (inside a padded Screen). */
@@ -50,12 +52,17 @@ export interface DutyCalculatorProps {
 }
 
 const REFERENCE_URL = 'https://entreprendre.service-public.fr/vosdroits/F32101';
+const PRICE_MAX = 99999;
+const DEGREE_MAX = 100;
+/** Below this width « % vol. » does not fit next to the stepper buttons: « 12,5 % ». */
+const SHORT_DEGREE_BELOW = 360;
 
 function useParam(key: string): string | undefined {
   return useSystemParamsStore((s) => s.params.find((p) => p.key === key)?.value);
 }
 
-export function DutyCalculator({ onSaveAsProduct, onSaveLegacy, footer, bleed = true }: DutyCalculatorProps) {
+export function DutyCalculator({ onSaveAsProduct, footer, bleed = true }: DutyCalculatorProps) {
+  const { width } = useWindowDimensions();
   const storeRates = useRatesStore((s) => s.rates);
   const rates = storeRates?.length ? storeRates : DEFAULT_RATES;
   const year = useParam('tarif_annee') || '2026';
@@ -65,35 +72,62 @@ export function DutyCalculator({ onSaveAsProduct, onSaveLegacy, footer, bleed = 
   const reference = useParam('lien_reference') || REFERENCE_URL;
 
   const [slug, setSlug] = useState('spiritueux');
-  const [price, setPrice] = useState(11);
-  const [degree, setDegree] = useState(40);
+  // Raw values as typed (may be out of range while editing); the
+  // calculation always uses the clamped ones.
+  const [priceRaw, setPriceRaw] = useState(11);
+  const [priceText, setPriceText] = useState(() => toInputString(11, 2));
+  const [degreeRaw, setDegreeRaw] = useState(40);
   const [volumeCl, setVolumeCl] = useState(70);
   const [sheetOpen, setSheetOpen] = useState(false);
-  const [typing, setTyping] = useState(false);
+  const [editingPrice, setEditingPrice] = useState(false);
+  const [editingDegree, setEditingDegree] = useState(false);
   const touched = useRef({ degree: false, container: false });
 
+  const price = clamp(priceRaw, 0, PRICE_MAX);
+  const degree = clamp(degreeRaw, 0, DEGREE_MAX);
   const rate = rates.find((r) => r.slug === slug) ?? rates.find((r) => r.slug === 'spiritueux') ?? rates[0];
   const result = useMemo(() => calculateDroits(rate, volumeCl, degree, price, tvaRate, seuilSS), [rate, volumeCl, degree, price, tvaRate, seuilSS]);
 
-  const selectRate = useCallback(
-    (next: Rate) => {
-      setSlug(next.slug);
-      const d = categoryDefaults(next);
-      setDegree((current) => {
-        if (!touched.current.degree || current < d.min || current > d.max) {
-          touched.current.degree = false;
-          return d.degree;
-        }
-        return current;
-      });
-      if (!touched.current.container) setVolumeCl(d.volumeCl);
-    },
-    [],
-  );
+  const selectRate = useCallback((next: Rate) => {
+    setSlug(next.slug);
+    const d = categoryDefaults(next);
+    setDegreeRaw((current) => {
+      const c = clamp(current, 0, DEGREE_MAX);
+      if (!touched.current.degree || c < d.min || c > d.max) {
+        touched.current.degree = false;
+        return d.degree;
+      }
+      return c;
+    });
+    if (!touched.current.container) setVolumeCl(d.volumeCl);
+  }, []);
 
+  // Prix d’achat: a typed field (as in the D1 mockup). Live while valid;
+  // an empty or unreadable entry keeps the last price until blur.
+  const changePriceText = useCallback((t: string) => {
+    const cleaned = t.replace(/[^0-9.,\s]/g, '');
+    setPriceText(cleaned);
+    const n = parseLocaleFloat(cleaned);
+    if (isFinite(n) && n >= 0) setPriceRaw(n);
+  }, []);
+  const focusPrice = useCallback(() => setEditingPrice(true), []);
+  const blurPrice = useCallback(() => {
+    const v = Number(clamp(priceRaw, 0, PRICE_MAX).toFixed(2));
+    setEditingPrice(false);
+    setPriceRaw(v);
+    setPriceText(toInputString(v, 2));
+  }, [priceRaw]);
+
+  // Degré: the kit stepper. While typing, `max` is lifted so an
+  // out-of-range value reaches us (and gets a message) instead of being
+  // dropped; it is clamped when editing ends.
   const changeDegree = useCallback((v: number) => {
     touched.current.degree = true;
-    setDegree(v);
+    setDegreeRaw(v);
+  }, []);
+  const editDegree = useCallback((editing: boolean) => {
+    setEditingDegree(editing);
+    if (!editing) setDegreeRaw((raw) => clamp(raw, 0, DEGREE_MAX));
   }, []);
 
   const changeContainer = useCallback((key: string) => {
@@ -104,8 +138,13 @@ export function DutyCalculator({ onSaveAsProduct, onSaveLegacy, footer, bleed = 
   const openSheet = useCallback(() => setSheetOpen(true), []);
   const closeSheet = useCallback(() => setSheetOpen(false), []);
 
-  const hint = degreeHint(rate, degree, seuilSS);
+  const priceOver = priceRaw > PRICE_MAX;
+  const degreeOver = degreeRaw > DEGREE_MAX;
+  const hint = degreeOver
+    ? { text: `Maximum ${formatDegree(DEGREE_MAX)} : le calcul utilise ${formatDegree(DEGREE_MAX)}.`, tone: 'warn' as const }
+    : degreeHint(rate, degree, seuilSS);
   const draft: DutyDraft = { rate, price, degree, volumeCl, result };
+  const formatDeg = width < SHORT_DEGREE_BELOW ? (n: number) => `${formatNumber(n, Number.isInteger(n) ? 0 : 1)}${NBSP}%` : formatDegree;
 
   return (
     <View>
@@ -139,40 +178,42 @@ export function DutyCalculator({ onSaveAsProduct, onSaveLegacy, footer, bleed = 
         </View>
       </Card>
 
-      {/* Prix + degré */}
-      <View style={styles.inputs}>
-        <StepperField
-          label="Prix HT hors droits"
-          value={price}
-          onChange={setPrice}
-          step={0.1}
-          min={0}
-          max={99999}
-          decimals={2}
-          fixedDecimals
-          unit="€"
-          unitSpoken="euros"
-          accessibilityLabel="Prix d’achat HT hors droits"
-          onEditingChange={setTyping}
-          style={styles.priceField}
-          testID="duty-price"
-        />
-        <StepperField
-          label="Degré d’alcool"
-          value={degree}
-          onChange={changeDegree}
-          step={0.5}
-          min={0}
-          max={100}
-          decimals={1}
-          unit={`%${NBSP}vol.`}
-          unitShort="%"
-          unitSpoken="pour cent"
-          onEditingChange={setTyping}
-          style={styles.degreeField}
-          testID="duty-degree"
-        />
-      </View>
+      {/* Prix d’achat */}
+      <TextField
+        label="Prix d’achat HT"
+        meta="hors droits"
+        value={priceText}
+        onChangeText={changePriceText}
+        onFocus={focusPrice}
+        onBlur={blurPrice}
+        keyboardType="decimal-pad"
+        inputMode="decimal"
+        selectTextOnFocus
+        maxLength={10}
+        suffix="€"
+        accessibilityLabel="Prix d’achat hors taxes, hors droits, en euros"
+        error={priceOver ? `Maximum ${formatEuro(PRICE_MAX, { trimZeros: true })} : le calcul utilise ${formatEuro(PRICE_MAX)}.` : null}
+        containerStyle={styles.section}
+        testID="duty-price"
+      />
+
+      {/* Degré d’alcool */}
+      <NumberInput
+        size="large"
+        label="Degré d’alcool"
+        value={degreeRaw}
+        onChange={changeDegree}
+        step={0.5}
+        min={0}
+        max={editingDegree ? Infinity : DEGREE_MAX}
+        decimals={1}
+        format={formatDeg}
+        suffix={`%${NBSP}vol.`}
+        accessibilityLabel="Degré d’alcool"
+        onEditingChange={editDegree}
+        style={styles.degree}
+        testID="duty-degree"
+      />
       {hint ? (
         <FadeIn key={hint.text} offset={4} duration={160}>
           <View style={styles.hint} accessibilityLiveRegion="polite">
@@ -182,7 +223,7 @@ export function DutyCalculator({ onSaveAsProduct, onSaveLegacy, footer, bleed = 
               color={hint.tone === 'warn' ? palette.warn : palette.text3}
               style={styles.hintIcon}
             />
-            <Text style={[styles.hintText, hint.tone === 'warn' && { color: palette.warn }]}>{hint.text}</Text>
+            <Text style={[styles.hintText, hint.tone === 'warn' && styles.hintWarn]}>{hint.text}</Text>
           </View>
         </FadeIn>
       ) : null}
@@ -192,13 +233,7 @@ export function DutyCalculator({ onSaveAsProduct, onSaveLegacy, footer, bleed = 
         <Text style={styles.label}>Contenant</Text>
         <Text style={styles.meta}>{containerMeta(volumeCl)}</Text>
       </View>
-      <ChipRow
-        items={CONTAINERS}
-        selectedKey={String(volumeCl)}
-        onSelect={changeContainer}
-        bleed={bleed}
-        accessibilityLabel="Contenant"
-      />
+      <ChipRow items={CONTAINERS} selectedKey={String(volumeCl)} onSelect={changeContainer} bleed={bleed} accessibilityLabel="Contenant" />
 
       {/* Résultat */}
       <View style={styles.section}>
@@ -209,7 +244,7 @@ export function DutyCalculator({ onSaveAsProduct, onSaveLegacy, footer, bleed = 
           volumeCl={volumeCl}
           seuilSS={seuilSS}
           tvaRate={tvaRate}
-          instant={typing}
+          instant={editingPrice || editingDegree}
         />
       </View>
 
@@ -225,11 +260,6 @@ export function DutyCalculator({ onSaveAsProduct, onSaveLegacy, footer, bleed = 
           <Text style={styles.saveNote}>
             {`Le prix HT avec droits (${formatEuro(result.prixHTAvecDroits)}) devient votre prix d’achat.`}
           </Text>
-        </View>
-      ) : null}
-      {onSaveLegacy ? (
-        <View style={styles.section}>
-          <Button title="Enregistrer le calcul" icon="bookmark-outline" variant="secondary" onPress={() => onSaveLegacy(draft)} fullWidth />
         </View>
       ) : null}
 
@@ -253,7 +283,7 @@ export function DutyCalculator({ onSaveAsProduct, onSaveLegacy, footer, bleed = 
   );
 }
 
-/** Contextual note under the price / degree row. */
+/** Contextual note under the degree. */
 function degreeHint(rate: Rate, degree: number, seuilSS: number): { text: string; tone: 'info' | 'warn' } | null {
   const seuil = `${formatNumber(seuilSS)}${NBSP}%${NBSP}vol.`;
   if (rate.slug === 'biere_legere' && degree > 2.8) {
@@ -279,6 +309,7 @@ const styles = StyleSheet.create({
   label: { ...type.label, color: palette.text2 },
   meta: { ...type.footnoteStrong, color: palette.text3 },
   section: { marginTop: 20 },
+  degree: { marginTop: 16 },
   picker: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 68, paddingLeft: 12, paddingRight: 8, paddingVertical: 10 },
   pickerIcon: { width: 44, height: 44, borderRadius: radius.icon, backgroundColor: palette.em50, alignItems: 'center', justifyContent: 'center' },
   pickerTexts: { flex: 1, minWidth: 0 },
@@ -286,12 +317,10 @@ const styles = StyleSheet.create({
   pickerSub: { ...type.footnote, color: palette.text3, marginTop: 1 },
   change: { flexDirection: 'row', alignItems: 'center', gap: 2, height: 44, paddingHorizontal: 8, borderRadius: radius.sm },
   changeText: { ...type.calloutStrong, color: palette.em700 },
-  inputs: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginTop: 20 },
-  priceField: { flexGrow: 1.2, flexBasis: 176, minWidth: 0 },
-  degreeField: { flexGrow: 1, flexBasis: 146, minWidth: 0 },
   hint: { flexDirection: 'row', alignItems: 'flex-start', gap: 6, marginTop: 10 },
   hintIcon: { marginTop: 1 },
   hintText: { ...type.footnote, color: palette.text3, flex: 1 },
+  hintWarn: { color: palette.warn },
   saveNote: { ...type.footnote, color: palette.text3, textAlign: 'center', marginTop: 10 },
   source: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', alignSelf: 'center', gap: 6, minHeight: 44, marginTop: 12, paddingHorizontal: 8 },
   sourceText: { ...type.footnoteStrong, color: palette.em700 },
