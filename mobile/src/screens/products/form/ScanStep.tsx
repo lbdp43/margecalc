@@ -32,7 +32,7 @@ export interface ScanStepProps {
   /** True once the photo is resized (it will be kept on the product). */
   photoReady: boolean;
   result: BottleScanResult | null;
-  error: { title: string; message: string; tone: 'bad' | 'warn' } | null;
+  error: { title: string; message: string; tone: 'bad' | 'warn'; icon?: React.ComponentProps<typeof Ionicons>['name'] } | null;
   categories: Category[];
   quota: ScanQuota | null;
   draft: { name: string; savedAt: number } | null;
@@ -48,7 +48,8 @@ export interface ScanStepProps {
 
 export function ScanStep(props: ScanStepProps) {
   const { phase, photoUri } = props;
-  const { height: winH } = useWindowDimensions();
+  const { height: winH, width: winW } = useWindowDimensions();
+  const narrow = winW < 380;
   const working = phase === 'preparing' || phase === 'reading';
   const bigFrame = Math.max(220, Math.min(380, winH - 476));
   const smallFrame = Math.max(180, Math.min(260, winH - 560));
@@ -61,8 +62,8 @@ export function ScanStep(props: ScanStepProps) {
         primary={{ title: 'Prendre une photo', icon: 'camera-outline', onPress: () => props.onPick('camera'), haptic: 'tap', testID: 'scan-camera' }}
       >
         <View style={styles.footRow}>
-          <Button title="Choisir une image" variant="secondary" size="sm" icon="images-outline" onPress={() => props.onPick('library')} style={styles.flex} testID="scan-library" />
-          <Button title="Saisir à la main" variant="tonal" size="sm" icon="create-outline" onPress={props.onManual} style={styles.flex} testID="scan-manual" />
+          <Button title="Choisir une image" variant="secondary" size="sm" icon={narrow ? undefined : 'images-outline'} onPress={() => props.onPick('library')} style={styles.footBtn} testID="scan-library" />
+          <Button title="Saisir à la main" variant="tonal" size="sm" icon={narrow ? undefined : 'create-outline'} onPress={props.onManual} style={styles.footBtn} testID="scan-manual" />
         </View>
       </StickyActionBar>
     );
@@ -119,7 +120,7 @@ export function ScanStep(props: ScanStepProps) {
         </FadeIn>
       ) : (
         <FadeIn key="error" offset={8}>
-          <ScanFrame uri={photoUri} status={photoUri ? 'error' : 'idle'} height={smallFrame} style={styles.frameGap} />
+          <ScanFrame uri={photoUri} status={photoUri ? (props.error?.tone === 'warn' ? 'warn' : 'error') : 'idle'} height={smallFrame} style={styles.frameGap} />
           <ErrorCard error={props.error} hasPhoto={!!photoUri} />
         </FadeIn>
       )}
@@ -322,7 +323,7 @@ function ErrorCard({ error, hasPhoto }: { error: ScanStepProps['error']; hasPhot
     <View accessibilityLiveRegion="polite">
       <Card style={styles.errorCard}>
         <View style={[styles.errorIcon, { backgroundColor: tone.bg }]}>
-          <Ionicons name={error.tone === 'bad' ? 'alert-circle-outline' : 'time-outline'} size={24} color={tone.fg} />
+          <Ionicons name={error.icon ?? (error.tone === 'bad' ? 'alert-circle-outline' : 'time-outline')} size={24} color={tone.fg} />
         </View>
         <Text style={styles.errorTitle} accessibilityRole="header">
           {error.title}
@@ -345,6 +346,7 @@ const styles = StyleSheet.create({
   title: { ...type.title2, color: palette.ink, marginTop: 20 },
   lead: { ...type.callout, color: palette.text2, marginTop: 6 },
   footRow: { flexDirection: 'row', gap: 10 },
+  footBtn: { flex: 1, minWidth: 0, paddingHorizontal: 10 },
   tips: { marginTop: 16 },
   tip: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 12, paddingVertical: 11 },
   tipDivider: { borderBottomWidth: 1, borderBottomColor: palette.line },

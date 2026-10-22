@@ -21,7 +21,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { palette, radius } from '../../../theme';
 import { useReduceMotion } from '../../../components/ui';
 
-type Status = 'idle' | 'working' | 'done' | 'error';
+type Status = 'idle' | 'working' | 'done' | 'error' | 'warn';
 
 interface ScanFrameProps {
   uri?: string | null;
@@ -76,7 +76,7 @@ export function ScanFrame({ uri, status = 'idle', height, style }: ScanFrameProp
         </View>
       )}
 
-      {uri && status === 'error' ? <View style={[StyleSheet.absoluteFill, styles.dim]} /> : null}
+      {uri && (status === 'error' || status === 'warn') ? <View style={[StyleSheet.absoluteFill, styles.dim]} /> : null}
 
       {working ? (
         <>
@@ -92,11 +92,11 @@ export function ScanFrame({ uri, status = 'idle', height, style }: ScanFrameProp
         </>
       ) : null}
 
-      <Corners color={uri ? '#FFFFFF' : palette.em700} hideTopRight={status === 'done' || status === 'error'} />
+      <Corners color={uri ? '#FFFFFF' : palette.em700} hideTopRight={status === 'done' || status === 'error' || status === 'warn'} />
 
-      {status === 'done' || status === 'error' ? (
+      {status === 'done' || status === 'error' || status === 'warn' ? (
         <View style={[styles.badgeRow, styles.noTouch]}>
-          <View style={[styles.badge, { backgroundColor: status === 'done' ? palette.em700 : palette.badSolid }]}>
+          <View style={[styles.badge, { backgroundColor: status === 'done' ? palette.em700 : status === 'warn' ? palette.warnSolid : palette.badSolid }]}>
             <Ionicons name={status === 'done' ? 'checkmark' : 'alert'} size={18} color="#FFFFFF" />
           </View>
         </View>

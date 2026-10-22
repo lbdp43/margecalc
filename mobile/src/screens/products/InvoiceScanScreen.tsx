@@ -1,570 +1,499 @@
-import React, { useState } from 'react';
-import {
-  View, Text, StyleSheet, TouchableOpacity, Image, ActivityIndicator,
-  ScrollView, Switch,
-} from 'react-native';
-import { alert } from '../../utils/alert';
+/**
+ * « Scanner une facture » (root stack, no tab bar). Admins reach it from the
+ * Scanner menu (`openInvoiceScan`).
+ *
+ *   capture ──pick──▶ scanning (resize ~2 000 px → upload → free OCR)
+ *      ▲                 │ ok                        │ 422 / 429 / offline / timeout
+ *      │                 ▼                           ▼
+ *      └──── review (edit, tick, add) ──Importer──▶ results ── « Corriger » ─▶ review
+ *                                                      └─ « Voir mes produits » ─▶ ProductList
+ *
+ * Every number goes through utils/format.ts. The selling price is never sent
+ * as 0: left empty, the backend derives it (×4) and the screen shows it as
+ * « calculé ×4 » beforehand.
+ */
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Platform } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { useQueryClient } from '@tanstack/react-query';
-import { Ionicons } from '@expo/vector-icons';
-import * as ImagePicker from 'expo-image-picker';
-import * as ImageManipulator from 'expo-image-manipulator';
-import { Category, MarginMode, TVA_RATES, CONTAINER_PRESETS } from '@margebar/shared';
-import { ScreenWrapper } from '../../components/ui/ScreenWrapper';
-import { DecorativeCurve } from '../../components/ui/DecorativeCurve';
-import { YinYangSpinner } from '../../components/ui/YinYangSpinner';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import type { Category } from '@margebar/shared';
+import { dialog, toast } from '../../components/ui';
+import { haptics } from '../../theme/haptics';
+import { plural } from '../../utils/format';
+import { goToProduct, goToProductList, openProductForm } from '../../navigation/routes';
 import { useAuthStore } from '../../store/auth.store';
-import * as scanService from '../../services/scan.service';
-import * as productService from '../../services/product.service';
+import { useOfflineQuery } from '../../hooks/useOfflineQuery';
 import * as categoryService from '../../services/category.service';
-import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
+import { getScanQuota, type ScanQuota } from '../../services/scan.service';
+import {
+  describeImportError,
+  describeInvoiceScanError,
+  importInvoiceLines,
+  isCancelled,
+  scanInvoice,
+  type InvoiceScanErrorInfo,
+} from '../../services/invoice.service';
+import { CaptureStep } from '../invoice/CaptureStep';
+import { ScanningStep, type ScanPhase } from '../invoice/ScanningStep';
+import { ErrorStep } from '../invoice/ErrorStep';
+import { ReviewStep } from '../invoice/ReviewStep';
+import { LineEditSheet, SupplierSheet } from '../invoice/LineEditSheet';
+import { ResultsStep, type ImportSummary } from '../invoice/ResultsStep';
+import {
+  PhotoError,
+  pickInvoiceImage,
+  prepareInvoicePhoto,
+  recoverPendingInvoiceImage,
+  type PickSource,
+  type PickedImage,
+  type PreparedInvoicePhoto,
+} from '../invoice/photo';
+import {
+  emptyLine,
+  errorField,
+  formatInvoiceDate,
+  hasErrors,
+  linesFromScan,
+  pairResults,
+  toImportLine,
+  validateLine,
+  type InvoiceLine,
+  type PricingContext,
+} from '../invoice/model';
 
 type Props = NativeStackScreenProps<any, 'InvoiceScan'>;
+type Step = 'capture' | 'scanning' | 'error' | 'review' | 'results';
 
-interface InvoiceProductState extends scanService.InvoiceProduct {
-  selected: boolean;
-}
+const MIN_BUSY_MS = 400;
+const wait = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 export function InvoiceScanScreen({ navigation }: Props) {
-  const user = useAuthStore((s) => s.user);
+  // Route helpers take a loose navigation type (they work from any navigator).
+  const nav = navigation as any;
   const queryClient = useQueryClient();
+  const user = useAuthStore((s) => s.user);
+  const ctx: PricingContext = useMemo(
+    () => ({
+      tvaRate: user?.isAutoEntrepreneur ? 0 : typeof user?.defaultTvaRate === 'number' ? user.defaultTvaRate : 0.2,
+      defaultContainerCl: user?.defaultContainerVolumeCl && user.defaultContainerVolumeCl > 0 ? user.defaultContainerVolumeCl : 70,
+    }),
+    [user?.isAutoEntrepreneur, user?.defaultTvaRate, user?.defaultContainerVolumeCl],
+  );
 
-  const [imageUri, setImageUri] = useState<string | null>(null);
-  const [scanning, setScanning] = useState(false);
+  const categoriesQ = useOfflineQuery<Category[]>(['categories'], categoryService.getCategories);
+  const categories = useMemo(() => categoriesQ.data ?? [], [categoriesQ.data]);
+  const quotaQ = useQuery<ScanQuota>({ queryKey: ['scanQuota'], queryFn: getScanQuota, staleTime: 60_000, retry: 0 });
+
+  const [step, setStep] = useState<Step>('capture');
+  const [phase, setPhase] = useState<ScanPhase>('preparing');
+  const [upload, setUpload] = useState(0);
+  const [photo, setPhoto] = useState<PreparedInvoicePhoto | null>(null);
+  const [scanError, setScanError] = useState<InvoiceScanErrorInfo | null>(null);
+  const [picking, setPicking] = useState(false);
+
   const [supplier, setSupplier] = useState('');
   const [invoiceDate, setInvoiceDate] = useState<string | null>(null);
-  const [products, setProducts] = useState<InvoiceProductState[]>([]);
+  const [lines, setLines] = useState<InvoiceLine[]>([]);
+  const [correcting, setCorrecting] = useState(false);
+  const [dirty, setDirty] = useState(false);
+
+  const [editing, setEditing] = useState<{ id: string; isNew: boolean; showErrors: boolean; draft?: InvoiceLine } | null>(null);
+  const [supplierOpen, setSupplierOpen] = useState(false);
+
   const [importing, setImporting] = useState(false);
-  const [categories, setCategories] = useState<Category[]>([]);
+  const importingRef = useRef(false);
+  const [summary, setSummary] = useState<ImportSummary | null>(null);
 
-  const pickImage = async (useCamera: boolean) => {
-    const permission = useCamera
-      ? await ImagePicker.requestCameraPermissionsAsync()
-      : await ImagePicker.requestMediaLibraryPermissionsAsync();
+  const mounted = useRef(true);
+  const abortRef = useRef<AbortController | null>(null);
+  const runRef = useRef(0);
+  useEffect(
+    () => () => {
+      mounted.current = false;
+      abortRef.current?.abort();
+    },
+    [],
+  );
 
-    if (!permission.granted) {
-      alert('Permission requise', "Autorisez l'accès à la caméra/galerie");
-      return;
-    }
+  const dateLabel = formatInvoiceDate(invoiceDate);
 
-    const pickerFn = useCamera ? ImagePicker.launchCameraAsync : ImagePicker.launchImageLibraryAsync;
-    const picked = await pickerFn({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      quality: 0.8,
-    });
+  // ─── Scan ───────────────────────────────────────────────────────────────
 
-    if (picked.canceled || !picked.assets?.[0]) return;
-
-    const asset = picked.assets[0];
-    setImageUri(asset.uri);
-    setScanning(true);
-    setProducts([]);
-
-    try {
-      // Load categories for matching
-      const cats = await categoryService.getCategories();
-      setCategories(cats);
-
-      const compressed = await ImageManipulator.manipulateAsync(
-        asset.uri,
-        [{ resize: { width: 1600 } }],
-        { compress: 0.7, format: ImageManipulator.SaveFormat.JPEG, base64: true }
-      );
-
-      if (!compressed.base64) {
-        alert('Erreur', "Impossible de lire l'image");
-        setScanning(false);
-        return;
-      }
-
-      const result = await scanService.scanInvoice(compressed.base64);
-      setSupplier(result.supplier || '');
-      setInvoiceDate(result.invoiceDate);
-      setProducts(
-        result.products.map((p) => ({ ...p, selected: p.confidence >= 0.5 }))
-      );
-    } catch (err: any) {
-      alert(
-        'Erreur de scan',
-        err.response?.data?.error || err.message || "Impossible d'analyser la facture",
-      );
-    } finally {
-      setScanning(false);
-    }
-  };
-
-  const toggleProduct = (index: number) => {
-    setProducts((prev) =>
-      prev.map((p, i) => (i === index ? { ...p, selected: !p.selected } : p))
-    );
-  };
-
-  const toggleAll = () => {
-    const allSelected = products.every((p) => p.selected);
-    setProducts((prev) => prev.map((p) => ({ ...p, selected: !allSelected })));
-  };
-
-  const handleImport = async () => {
-    const selected = products.filter((p) => p.selected);
-    if (selected.length === 0) {
-      alert('Erreur', 'Sélectionnez au moins un produit');
-      return;
-    }
-
-    setImporting(true);
-    let importCount = 0;
-
-    try {
-      const defaultContainer = user?.defaultContainerVolumeCl || 70;
-      const tvaRate = user?.isAutoEntrepreneur ? 0 : TVA_RATES.RATE_20;
-
-      const results = await Promise.allSettled(
-        selected.map((p) => {
-          const matchedCat = categories.find((c) => c.slug === p.category);
-          return productService.createProduct({
-            name: p.name,
-            categoryId: matchedCat?.id || categories[0]?.id || '',
-            purchasePriceHT: p.purchasePriceHT || 0,
-            containerVolumeCl: p.containerVolumeCl || defaultContainer,
-            doseVolumeCl: 5,
-            marginMode: MarginMode.FIX_SELLING_PRICE,
-            sellingPriceTTC: 0,
-            tvaRate,
-            supplier: supplier || undefined,
+  const runScan = useCallback(
+    async (prepared: PreparedInvoicePhoto) => {
+      const run = ++runRef.current;
+      const ctrl = new AbortController();
+      abortRef.current?.abort();
+      abortRef.current = ctrl;
+      setScanError(null);
+      setStep('scanning');
+      setPhase('sending');
+      setUpload(0);
+      // Some platforms never report upload progress: move on to « Lecture » anyway.
+      const fallback = setTimeout(() => {
+        if (mounted.current && run === runRef.current) setPhase((p) => (p === 'sending' ? 'reading' : p));
+      }, 900);
+      try {
+        const result = await scanInvoice(prepared.ocrBase64, {
+          signal: ctrl.signal,
+          onUploadProgress: (r) => {
+            if (!mounted.current || run !== runRef.current) return;
+            setUpload(r);
+            if (r >= 1) setPhase((p) => (p === 'sending' ? 'reading' : p));
+          },
+        });
+        if (!mounted.current || run !== runRef.current) return;
+        queryClient.invalidateQueries({ queryKey: ['scanQuota'] });
+        if (!result.products.length) {
+          haptics.warning();
+          setScanError({
+            kind: 'unreadable',
+            title: 'Aucun produit reconnu',
+            message: 'La lecture n’a trouvé aucune ligne produit sur cette facture. Reprenez la photo à plat, en entier et bien éclairée.',
+            resend: false,
+            canRetry: true,
           });
-        })
-      );
-      importCount = results.filter((r) => r.status === 'fulfilled').length;
-      const failCount = results.length - importCount;
-
-      queryClient.invalidateQueries({ queryKey: ['products'] });
-      if (failCount > 0) {
-        alert(
-          'Import partiel',
-          `${importCount} importé(s), ${failCount} échoué(s). Configurez les prix de vente dans chaque fiche produit.`,
-        );
-      } else {
-        alert(
-          'Import terminé',
-          `${importCount} produit${importCount > 1 ? 's' : ''} importé${importCount > 1 ? 's' : ''}. Configurez les prix de vente dans chaque fiche produit.`,
-        );
+          setStep('error');
+          return;
+        }
+        setSupplier(result.supplier.trim());
+        setInvoiceDate(result.invoiceDate);
+        setLines(linesFromScan(result.products, categories));
+        setCorrecting(false);
+        setDirty(false);
+        setPhase('done');
+        haptics.success();
+        await wait(520);
+        if (!mounted.current || run !== runRef.current) return;
+        setStep('review');
+      } catch (err: any) {
+        if (!mounted.current || run !== runRef.current) return;
+        if (isCancelled(err)) {
+          setStep('capture');
+          return;
+        }
+        haptics.warning();
+        setScanError(describeInvoiceScanError(err));
+        setStep('error');
+        if (err?.response?.status === 429) queryClient.invalidateQueries({ queryKey: ['scanQuota'] });
+      } finally {
+        clearTimeout(fallback);
       }
-      navigation.goBack();
-    } catch (err: any) {
-      alert(
-        'Erreur',
-        `${importCount} importé(s). Erreur : ${err.message || "Impossible d'importer"}`,
-      );
-    } finally {
-      setImporting(false);
+    },
+    [categories, queryClient],
+  );
+
+  const startFromImage = useCallback(
+    async (picked: PickedImage) => {
+      setStep('scanning');
+      setPhase('preparing');
+      setUpload(0);
+      setPhoto(null);
+      setScanError(null);
+      try {
+        const prepared = await prepareInvoicePhoto(picked);
+        if (!mounted.current) return;
+        setPhoto(prepared);
+        await runScan(prepared);
+      } catch (err: any) {
+        if (!mounted.current) return;
+        haptics.warning();
+        setScanError({
+          kind: 'unreadable',
+          title: 'Image illisible',
+          message: err instanceof PhotoError ? err.message : 'Impossible de lire cette image. Choisissez une photo JPEG ou PNG de la facture.',
+          resend: false,
+          canRetry: true,
+        });
+        setStep('error');
+      }
+    },
+    [runScan],
+  );
+
+  const onPick = useCallback(
+    async (source: PickSource) => {
+      if (picking) return;
+      // Web: a cancelled file chooser never resolves, so only native tracks « busy ».
+      const track = Platform.OS !== 'web';
+      if (track) setPicking(true);
+      let picked: PickedImage | null = null;
+      try {
+        picked = await pickInvoiceImage(source);
+      } catch (err: any) {
+        if (err instanceof PhotoError) {
+          await dialog.alert({ title: 'Accès refusé', message: err.message, tone: 'warn', icon: 'camera-outline' });
+        } else {
+          toast.error('Impossible d’ouvrir les photos. Réessayez.');
+        }
+      } finally {
+        if (track && mounted.current) setPicking(false);
+      }
+      if (picked && mounted.current) startFromImage(picked);
+    },
+    [picking, startFromImage],
+  );
+
+  // Android: the camera may have killed the activity — recover the photo.
+  useEffect(() => {
+    recoverPendingInvoiceImage().then((img) => {
+      if (img && mounted.current) startFromImage(img);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const cancelScan = useCallback(() => {
+    runRef.current++;
+    abortRef.current?.abort();
+    abortRef.current = null;
+    setStep('capture');
+  }, []);
+
+  const retry = useCallback(() => {
+    if (scanError?.resend && photo) runScan(photo);
+    else {
+      setPhoto(null);
+      setScanError(null);
+      setStep('capture');
     }
-  };
+  }, [scanError, photo, runScan]);
 
-  const selectedCount = products.filter((p) => p.selected).length;
+  const manual = useCallback(() => openProductForm(nav), [nav]);
 
-  const getConfidenceColor = (confidence: number) => {
-    if (confidence >= 0.7) return colors.marginGreen;
-    if (confidence >= 0.4) return colors.marginOrange;
-    return colors.marginRed;
-  };
+  // ─── Review ─────────────────────────────────────────────────────────────
 
-  const getContainerLabel = (volumeCl: number | null) => {
-    if (!volumeCl) return '?';
-    const preset = CONTAINER_PRESETS.find((p) => p.volumeCl === volumeCl);
-    return preset ? preset.label : `${volumeCl} cl`;
-  };
+  const onToggle = useCallback((id: string) => {
+    setDirty(true);
+    setLines((prev) => prev.map((l) => (l.id === id ? { ...l, selected: !l.selected } : l)));
+  }, []);
 
-  // === SCAN STEP ===
-  if (products.length === 0 && !scanning) {
-    return (
-      <ScreenWrapper>
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-            <Ionicons name="arrow-back" size={24} color={colors.text} />
-          </TouchableOpacity>
-          <Text style={styles.title}>Scanner une facture</Text>
-        </View>
+  const onToggleAll = useCallback(() => {
+    setDirty(true);
+    setLines((prev) => {
+      const all = prev.every((l) => l.selected);
+      return prev.map((l) => ({ ...l, selected: !all }));
+    });
+  }, []);
 
-        <DecorativeCurve variant="middle" />
+  const onEdit = useCallback((id: string) => setEditing({ id, isNew: false, showErrors: false }), []);
 
-        {imageUri && (
-          <View style={styles.previewCard}>
-            <Image source={{ uri: imageUri }} style={styles.preview} resizeMode="contain" />
-          </View>
-        )}
+  const onAddLine = useCallback(() => {
+    const draft = emptyLine(lines.length ? Math.max(...lines.map((l) => l.position)) + 1 : 0, categories);
+    setEditing({ id: draft.id, isNew: true, showErrors: false, draft });
+  }, [lines, categories]);
 
-        {scanning ? (
-          <View style={styles.loadingContainer}>
-            <YinYangSpinner
-              size={120}
-              message="Analyse de la facture en cours..."
-              submessage="Cela peut prendre jusqu'à 2 minutes"
-            />
-          </View>
-        ) : (
-          <>
-            <View style={styles.infoCard}>
-              <Ionicons name="receipt-outline" size={48} color={colors.primary} />
-              <Text style={styles.infoTitle}>Importez vos produits depuis une facture</Text>
-              <Text style={styles.infoText}>
-                Prenez en photo votre facture fournisseur. L'IA va extraire tous les
-                produits avec leurs prix d'achat et contenants.
-              </Text>
-            </View>
+  const editingLine = editing ? (editing.draft ?? lines.find((l) => l.id === editing.id) ?? null) : null;
 
-            <View style={styles.scanButtons}>
-              <TouchableOpacity style={styles.scanBtn} onPress={() => pickImage(true)}>
-                <Ionicons name="camera-outline" size={32} color={colors.white} />
-                <Text style={styles.scanBtnText}>Photographier</Text>
-              </TouchableOpacity>
+  const submitLine = useCallback(
+    (line: InvoiceLine) => {
+      setDirty(true);
+      setLines((prev) => (prev.some((l) => l.id === line.id) ? prev.map((l) => (l.id === line.id ? line : l)) : [...prev, line]));
+      setTimeout(() => setEditing(null), 0);
+      if (editing?.isNew) toast.success('Ligne ajoutée');
+    },
+    [editing],
+  );
 
-              <TouchableOpacity style={styles.scanBtn} onPress={() => pickImage(false)}>
-                <Ionicons name="images-outline" size={32} color={colors.white} />
-                <Text style={styles.scanBtnText}>Galerie</Text>
-              </TouchableOpacity>
-            </View>
-          </>
-        )}
-      </ScreenWrapper>
+  const confirmDiscard = useCallback(
+    async () =>
+      dialog.confirm({
+        title: 'Abandonner cette facture ?',
+        message: 'Les lignes détectées et vos corrections ne seront pas importées.',
+        confirmLabel: 'Abandonner',
+        cancelLabel: 'Continuer la vérification',
+        destructive: true,
+      }),
+    [],
+  );
+
+  const resetAll = useCallback(() => {
+    runRef.current++;
+    abortRef.current?.abort();
+    setLines([]);
+    setSupplier('');
+    setInvoiceDate(null);
+    setPhoto(null);
+    setScanError(null);
+    setSummary(null);
+    setCorrecting(false);
+    setDirty(false);
+    setStep('capture');
+  }, []);
+
+  const rescan = useCallback(async () => {
+    if (dirty && !(await confirmDiscard())) return;
+    resetAll();
+  }, [dirty, confirmDiscard, resetAll]);
+
+  // Leaving with lines not imported asks first (NavBar back, browser / Android back).
+  const guardRef = useRef(false);
+  guardRef.current = step === 'review' && lines.length > 0;
+  useEffect(() => {
+    const unsub = navigation.addListener('beforeRemove', (e: any) => {
+      if (!guardRef.current) return;
+      e.preventDefault();
+      confirmDiscard().then((ok) => {
+        if (ok) {
+          guardRef.current = false;
+          navigation.dispatch(e.data.action);
+        }
+      });
+    });
+    return unsub;
+  }, [navigation, confirmDiscard]);
+
+  // ─── Import ─────────────────────────────────────────────────────────────
+
+  const doImport = useCallback(async () => {
+    if (importingRef.current) return;
+    const selected = lines.filter((l) => l.selected);
+    if (!selected.length) return;
+    const invalid = selected.find((l) => hasErrors(validateLine(l)));
+    if (invalid) {
+      haptics.warning();
+      setEditing({ id: invalid.id, isNew: false, showErrors: true });
+      return;
+    }
+    importingRef.current = true;
+    setImporting(true);
+    const started = Date.now();
+    try {
+      const res = await importInvoiceLines({
+        supplier: supplier.trim() || null,
+        lines: selected.map((l) => toImportLine(l, categories, supplier)),
+      });
+      const elapsed = Date.now() - started;
+      if (elapsed < MIN_BUSY_MS) await wait(MIN_BUSY_MS - elapsed);
+      if (!mounted.current) return;
+
+      const okCount = res.createdCount + res.updatedCount;
+      if (okCount > 0) {
+        queryClient.invalidateQueries({ queryKey: ['products'] });
+        queryClient.invalidateQueries({ queryKey: ['product'] });
+        queryClient.invalidateQueries({ queryKey: ['priceHistory'] });
+        queryClient.invalidateQueries({ queryKey: ['admin', 'products'] });
+      }
+      const outcomes = pairResults(selected, res.results);
+      setSummary({
+        outcomes,
+        createdCount: res.createdCount,
+        updatedCount: res.updatedCount,
+        failedCount: res.failedCount,
+        supplier: supplier.trim(),
+        dateLabel,
+      });
+      // Imported lines leave the review list; failed ones stay, with their error.
+      const failedById = new Map<string, string>();
+      for (const o of outcomes) if (!o.result.ok) failedById.set(o.line.id, o.result.error);
+      const importedIds = new Set(outcomes.filter((o) => o.result.ok).map((o) => o.line.id));
+      setLines((prev) =>
+        prev
+          .filter((l) => !importedIds.has(l.id))
+          .map((l) => {
+            const msg = failedById.get(l.id);
+            return msg ? { ...l, selected: true, importError: { message: msg, field: errorField(msg) } } : l;
+          }),
+      );
+      guardRef.current = false;
+      setDirty(false);
+      setStep('results');
+
+      if (okCount > 0) {
+        haptics.success();
+        const label = plural(okCount, 'produit importé', 'produits importés');
+        if (res.failedCount > 0) toast.info(`${label} · ${res.failedCount} en échec`);
+        else toast.success(label);
+      } else {
+        haptics.warning();
+        toast.error(res.error ?? 'Aucun produit n’a pu être importé');
+      }
+    } catch (err: any) {
+      if (!mounted.current) return;
+      const info = describeImportError(err);
+      haptics.warning();
+      await dialog.alert({
+        title: info.title,
+        message: info.message,
+        tone: 'bad',
+        icon: info.offline ? 'cloud-offline-outline' : 'alert-circle-outline',
+      });
+    } finally {
+      importingRef.current = false;
+      if (mounted.current) setImporting(false);
+    }
+  }, [lines, supplier, categories, queryClient, dateLabel]);
+
+  const fixFailed = useCallback(() => {
+    setCorrecting(true);
+    setLines((prev) => prev.filter((l) => !!l.importError));
+    setStep('review');
+  }, []);
+
+  // ─── Render ─────────────────────────────────────────────────────────────
+
+  let body: React.ReactNode;
+  if (step === 'capture') {
+    const q = quotaQ.data;
+    body = <CaptureStep quota={q ? { limit: q.limit, remaining: q.remaining } : null} busy={picking} onPick={onPick} onManual={manual} />;
+  } else if (step === 'scanning') {
+    body = <ScanningStep phase={phase} previewUri={photo?.previewUri ?? null} upload={upload} onCancel={cancelScan} />;
+  } else if (step === 'error' && scanError) {
+    body = <ErrorStep error={scanError} previewUri={photo?.previewUri ?? null} onRetry={retry} onManual={manual} />;
+  } else if (step === 'results' && summary) {
+    body = (
+      <ResultsStep
+        summary={summary}
+        onOpenProduct={(id) => goToProduct(nav, id)}
+        onFix={fixFailed}
+        onSeeProducts={() => goToProductList(nav)}
+        onNewInvoice={resetAll}
+      />
+    );
+  } else {
+    body = (
+      <ReviewStep
+        lines={lines}
+        supplier={supplier}
+        dateLabel={dateLabel}
+        previewUri={photo?.previewUri ?? null}
+        categories={categories}
+        ctx={ctx}
+        importing={importing}
+        correcting={correcting}
+        onToggle={onToggle}
+        onToggleAll={onToggleAll}
+        onEdit={onEdit}
+        onEditSupplier={() => setSupplierOpen(true)}
+        onAddLine={onAddLine}
+        onRescan={rescan}
+        onImport={doImport}
+      />
     );
   }
 
-  // === RESULTS STEP ===
   return (
-    <ScreenWrapper>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <Ionicons name="arrow-back" size={24} color={colors.text} />
-        </TouchableOpacity>
-        <Text style={styles.title}>Produits détectés</Text>
-      </View>
-
-      {/* Supplier info */}
-      {supplier && (
-        <View style={styles.supplierCard}>
-          <Ionicons name="business-outline" size={18} color={colors.primary} />
-          <View style={styles.supplierInfo}>
-            <Text style={styles.supplierName}>{supplier}</Text>
-            {invoiceDate && (
-              <Text style={styles.supplierDate}>{invoiceDate}</Text>
-            )}
-          </View>
-        </View>
-      )}
-
-      {/* Select all / count */}
-      <View style={styles.selectBar}>
-        <TouchableOpacity onPress={toggleAll} style={styles.selectAllBtn}>
-          <Ionicons
-            name={selectedCount === products.length ? 'checkbox' : 'square-outline'}
-            size={22}
-            color={colors.primary}
-          />
-          <Text style={styles.selectAllText}>Tout sélectionner</Text>
-        </TouchableOpacity>
-        <Text style={styles.countText}>
-          {selectedCount}/{products.length} produit{products.length > 1 ? 's' : ''}
-        </Text>
-      </View>
-
-      {/* Product list */}
-      {products.map((p, index) => (
-        <TouchableOpacity
-          key={index}
-          style={[styles.productRow, p.selected && styles.productRowSelected]}
-          onPress={() => toggleProduct(index)}
-          activeOpacity={0.7}
-        >
-          <Ionicons
-            name={p.selected ? 'checkbox' : 'square-outline'}
-            size={22}
-            color={p.selected ? colors.primary : colors.tabBarInactive}
-            style={styles.checkbox}
-          />
-          <View style={styles.productInfo}>
-            <Text style={styles.productName} numberOfLines={2}>{p.name}</Text>
-            <View style={styles.productMeta}>
-              {p.purchasePriceHT != null && (
-                <Text style={styles.metaTag}>
-                  {p.purchasePriceHT.toFixed(2)} € HT
-                </Text>
-              )}
-              {p.containerVolumeCl != null && (
-                <Text style={styles.metaTag}>
-                  {getContainerLabel(p.containerVolumeCl)}
-                </Text>
-              )}
-              {p.quantity > 1 && (
-                <Text style={styles.metaTag}>x{p.quantity}</Text>
-              )}
-            </View>
-          </View>
-          <View
-            style={[
-              styles.confidenceDot,
-              { backgroundColor: getConfidenceColor(p.confidence) },
-            ]}
-          />
-        </TouchableOpacity>
-      ))}
-
-      {/* Rescan button */}
-      <TouchableOpacity
-        style={styles.rescanBtn}
-        onPress={() => {
-          setProducts([]);
-          setImageUri(null);
+    <>
+      {body}
+      <LineEditSheet
+        line={step === 'review' ? editingLine : null}
+        isNew={editing?.isNew}
+        showErrors={editing?.showErrors}
+        categories={categories}
+        ctx={ctx}
+        onSubmit={submitLine}
+        onClose={() => setEditing(null)}
+      />
+      <SupplierSheet
+        visible={step === 'review' && supplierOpen}
+        supplier={supplier}
+        dateLabel={dateLabel}
+        onSubmit={(s) => {
+          setSupplier(s);
+          setDirty(true);
+          setSupplierOpen(false);
         }}
-      >
-        <Ionicons name="refresh-outline" size={18} color={colors.primary} />
-        <Text style={styles.rescanText}>Scanner une autre facture</Text>
-      </TouchableOpacity>
-
-      {/* Import button */}
-      {selectedCount > 0 && (
-        <TouchableOpacity
-          style={[styles.importBtn, importing && styles.importBtnDisabled]}
-          onPress={handleImport}
-          disabled={importing}
-          activeOpacity={0.8}
-        >
-          {importing ? (
-            <ActivityIndicator color={colors.white} />
-          ) : (
-            <>
-              <Ionicons name="download-outline" size={22} color={colors.white} />
-              <Text style={styles.importBtnText}>
-                Importer {selectedCount} produit{selectedCount > 1 ? 's' : ''}
-              </Text>
-            </>
-          )}
-        </TouchableOpacity>
-      )}
-
-      <View style={{ height: spacing.xl }} />
-    </ScreenWrapper>
+        onClose={() => setSupplierOpen(false)}
+      />
+    </>
   );
 }
-
-const styles = StyleSheet.create({
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: spacing.lg,
-  },
-  backBtn: {
-    marginRight: spacing.md,
-    padding: spacing.xs,
-  },
-  title: {
-    ...typography.h2,
-    color: colors.text,
-  },
-
-  // Info card
-  infoCard: {
-    alignItems: 'center',
-    backgroundColor: colors.cardBackground,
-    borderRadius: borderRadius.xl,
-    padding: spacing.xl,
-    marginBottom: spacing.lg,
-    ...shadows.sm,
-  },
-  infoTitle: {
-    ...typography.h3,
-    color: colors.text,
-    textAlign: 'center',
-    marginTop: spacing.md,
-    marginBottom: spacing.sm,
-  },
-  infoText: {
-    ...typography.body,
-    color: colors.textSecondary,
-    textAlign: 'center',
-    lineHeight: 22,
-  },
-
-  // Scan buttons
-  scanButtons: {
-    flexDirection: 'row',
-    gap: spacing.md,
-    marginBottom: spacing.xl,
-  },
-  scanBtn: {
-    flex: 1,
-    backgroundColor: colors.primary,
-    borderRadius: borderRadius.lg,
-    paddingVertical: spacing.lg,
-    alignItems: 'center',
-    gap: spacing.sm,
-    ...shadows.md,
-  },
-  scanBtnText: {
-    ...typography.bodySmall,
-    fontWeight: '600',
-    color: colors.white,
-  },
-
-  // Preview
-  previewCard: {
-    backgroundColor: colors.cardBackground,
-    borderRadius: borderRadius.lg,
-    padding: spacing.sm,
-    marginBottom: spacing.md,
-    ...shadows.sm,
-  },
-  preview: {
-    width: '100%',
-    height: 200,
-    borderRadius: borderRadius.md,
-  },
-
-  // Loading
-  loadingContainer: {
-    alignItems: 'center',
-    padding: spacing.xxl,
-  },
-  loadingText: {
-    ...typography.body,
-    fontWeight: '600',
-    color: colors.text,
-    marginTop: spacing.md,
-  },
-  loadingSubtext: {
-    ...typography.caption,
-    color: colors.textSecondary,
-    marginTop: spacing.xs,
-  },
-
-  // Supplier card
-  supplierCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.cardBackground,
-    borderRadius: borderRadius.lg,
-    padding: spacing.md,
-    marginBottom: spacing.md,
-    gap: spacing.sm,
-    ...shadows.sm,
-  },
-  supplierInfo: {
-    flex: 1,
-  },
-  supplierName: {
-    ...typography.body,
-    fontWeight: '700',
-    color: colors.text,
-  },
-  supplierDate: {
-    ...typography.caption,
-    color: colors.textSecondary,
-    marginTop: 2,
-  },
-
-  // Select bar
-  selectBar: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: spacing.md,
-  },
-  selectAllBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-  },
-  selectAllText: {
-    ...typography.bodySmall,
-    fontWeight: '600',
-    color: colors.primary,
-  },
-  countText: {
-    ...typography.caption,
-    color: colors.textSecondary,
-  },
-
-  // Product rows
-  productRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.cardBackground,
-    borderRadius: borderRadius.lg,
-    padding: spacing.md,
-    marginBottom: spacing.sm,
-    borderWidth: 2,
-    borderColor: 'transparent',
-    ...shadows.sm,
-  },
-  productRowSelected: {
-    borderColor: colors.primary,
-    backgroundColor: colors.light,
-  },
-  checkbox: {
-    marginRight: spacing.sm + 2,
-  },
-  productInfo: {
-    flex: 1,
-  },
-  productName: {
-    ...typography.body,
-    fontWeight: '600',
-    color: colors.text,
-    marginBottom: spacing.xs,
-  },
-  productMeta: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.xs,
-  },
-  metaTag: {
-    ...typography.caption,
-    fontWeight: '600',
-    color: colors.textSecondary,
-    backgroundColor: colors.surface,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 2,
-    borderRadius: borderRadius.sm,
-    overflow: 'hidden',
-  },
-  confidenceDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    marginLeft: spacing.sm,
-  },
-
-  // Rescan
-  rescanBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.sm,
-    paddingVertical: spacing.md,
-    marginTop: spacing.sm,
-  },
-  rescanText: {
-    ...typography.bodySmall,
-    fontWeight: '600',
-    color: colors.primary,
-  },
-
-  // Import button
-  importBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.primary,
-    borderRadius: borderRadius.lg,
-    paddingVertical: spacing.md,
-    gap: spacing.sm,
-    marginTop: spacing.md,
-    ...shadows.md,
-  },
-  importBtnDisabled: {
-    opacity: 0.7,
-  },
-  importBtnText: {
-    ...typography.button,
-    color: colors.white,
-  },
-});

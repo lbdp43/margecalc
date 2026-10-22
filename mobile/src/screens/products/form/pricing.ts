@@ -181,7 +181,9 @@ export function pricingSetup(
   const objective = priceForMargin(costHT, tva, t.good);
   const medium = hasCost ? (costHT / (1 - t.medium / 100)) * (1 + tva) : 0;
   const min = hasCost ? Math.max(0.5, Math.floor(costTTC * 2) / 2) : 0.5;
-  const max = niceCeil(Math.max(10, objective * 2.2, costTTC * 5, (anchorPrice || 0) * 1.15, min + 5));
+  // The range only widens for a price above it (dragging to the end never rescales the track).
+  const base = niceCeil(Math.max(10, objective * 2.2, costTTC * 5, min + 5));
+  const max = anchorPrice > base ? niceCeil(anchorPrice * 1.15) : base;
   return {
     min,
     max,

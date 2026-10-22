@@ -60,12 +60,14 @@ export function DetailHero({
       {!showPhoto ? (
         <View style={styles.heroCenter} accessible accessibilityRole="image" accessibilityLabel={`${name}, pas de photo`}>
           <View style={styles.heroIcon}>
-            <Icon name={icon} size={40} color="#FFFFFF" />
+            <Icon name={icon} size={40} color={palette.onEmerald} />
           </View>
         </View>
       ) : null}
       {waitingForPhoto && !showPhoto ? (
-        <Skeleton width="100%" height={HERO_HEIGHT} radius={0} color="rgba(255,255,255,0.06)" style={StyleSheet.absoluteFill} />
+        <View style={[StyleSheet.absoluteFill, styles.heroShimmer]}>
+          <Skeleton width="100%" height={HERO_HEIGHT} radius={0} color="rgba(255,255,255,0.04)" />
+        </View>
       ) : null}
       {showPhoto ? (
         <>
@@ -206,7 +208,7 @@ export function ServiceRow({
         <View style={styles.stripSep} />
         <Figure label="Gain HT" value={formatEuro(s.gain, { sign: true })} valueColor={c.fg} caption="par dose" />
       </View>
-      <View style={styles.svcFoot} pointerEvents="none">
+      <View style={styles.svcFoot}>
         {onPress ? (
           <View style={styles.svcEdit}>
             <Icon name="create-outline" size={15} color={palette.em700} />
@@ -282,7 +284,7 @@ function Sparkline({ values, width, height = 56 }: { values: number[]; width: nu
   const area = `${line} L${pts[pts.length - 1][0].toFixed(1)},${height} L${pts[0][0].toFixed(1)},${height} Z`;
   const [lx, ly] = pts[pts.length - 1];
   return (
-    <Svg width={width} height={height} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+    <Svg width={width} height={height}>
       <Defs>
         <SvgGradient id="spark" x1="0" y1="0" x2="0" y2="1">
           <Stop offset="0" stopColor={palette.em600} stopOpacity={0.18} />
@@ -320,7 +322,12 @@ export function PriceHistoryCard({ entries }: { entries: PriceHistoryEntry[] }) 
         </View>
         <DeltaPill delta={delta} />
       </View>
-      <View style={styles.spark} onLayout={(e) => setW(e.nativeEvent.layout.width)}>
+      <View
+        style={styles.spark}
+        onLayout={(e) => setW(e.nativeEvent.layout.width)}
+        accessibilityElementsHidden
+        importantForAccessibility="no-hide-descendants"
+      >
         <Sparkline values={values} width={w} />
       </View>
       {shown.map((e, i) => (
@@ -404,6 +411,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   thumbUnder: { opacity: 0.9 },
+  // The kit shimmer is tuned for light surfaces: calmer on emerald.
+  heroShimmer: { opacity: 0.35, pointerEvents: 'none' },
 
   tiles: { marginTop: 20, gap: 10 },
   tileRow: { flexDirection: 'row', gap: 10 },
@@ -441,7 +450,7 @@ const styles = StyleSheet.create({
   figLabel: { ...type.footnote, color: palette.text3 },
   figValue: { fontFamily: fontFamily.bold, fontSize: 16, lineHeight: 21, letterSpacing: -0.2, color: palette.ink, fontVariant: ['tabular-nums'], marginTop: 2 },
   figCaption: { ...type.footnote, fontSize: 12, lineHeight: 16, color: palette.text3, marginTop: 1 },
-  svcFoot: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginTop: -2, minHeight: 20 },
+  svcFoot: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginTop: -2, minHeight: 20, pointerEvents: 'none' },
   svcEdit: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   svcPer: { ...type.footnote, color: palette.text3, flexShrink: 1, textAlign: 'right' },
   svcPerValue: { fontFamily: fontFamily.bold },

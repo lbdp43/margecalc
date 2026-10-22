@@ -119,6 +119,7 @@ export function ProductDetailScreen({ route, navigation: nav }: Props) {
   const [actionsOpen, setActionsOpen] = useState(false);
   const [priceTarget, setPriceTarget] = useState<PriceEditTarget | null>(null);
   const [titleShown, setTitleShown] = useState(false);
+  const [pulling, setPulling] = useState(false);
   const titleRef = useRef(false);
   // Narrow phones: the tile labels need the room the decorative icons take.
   const { width } = useWindowDimensions();
@@ -155,6 +156,15 @@ export function ProductDetailScreen({ route, navigation: nav }: Props) {
     q.refetch();
     history.refetch();
   };
+  const onPull = useCallback(async () => {
+    setPulling(true);
+    try {
+      await Promise.all([q.refetch(), history.refetch()]);
+    } finally {
+      setPulling(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [q.refetch, history.refetch]);
   const firstFocus = useRef(true);
   useFocusEffect(
     useCallback(() => {
@@ -248,7 +258,7 @@ export function ProductDetailScreen({ route, navigation: nav }: Props) {
   const updated = formatShortDate(product.updatedAt);
 
   return (
-    <Screen header={header} onScroll={onScroll} refreshing={false} onRefresh={() => refetchRef.current()}>
+    <Screen header={header} onScroll={onScroll} refreshing={pulling} onRefresh={onPull}>
       <FadeIn>
         <DetailHero
           imageUrl={isFull ? product.imageUrl : null}

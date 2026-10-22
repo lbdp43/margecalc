@@ -68,6 +68,8 @@ export interface ProductFormParams {
   scanData?: ProductPrefill;
   /** 'form' opens the form directly (manual entry); default 'scan' for a new, empty product. */
   start?: 'scan' | 'form';
+  /** Alias of `start: 'form'` (« À la main »). */
+  manual?: boolean | string;
 }
 
 // ─── Values ─────────────────────────────────────────────────────────────────

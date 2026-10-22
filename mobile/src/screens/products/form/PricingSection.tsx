@@ -6,13 +6,14 @@
  * « Dès 7,96 € TTC, ce verre dépasse 65 % de marge. » hint.
  */
 import React, { useCallback, useMemo, useRef, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import type { ServingType } from '@margebar/shared';
 import {
   Button,
   Card,
   ChipRow,
+  FadeIn,
   NumberInput,
   ResultGrid,
   ResultTile,
@@ -67,7 +68,8 @@ export function pricingMeta(values: FormValues, d: Derived, servingTypes: Servin
   const key = values.selected && values.services[values.selected] ? values.selected : null;
   if (!key) return null;
   const st = servingTypes.find((s) => s.id === key);
-  return dosesSentence(d.containerCl, d.doseOf(key), serviceNoun(key === CUSTOM_DOSE ? 'dose' : st?.name));
+  const whole = key === CUSTOM_DOSE && d.containerCl > 0 && d.doseOf(key) >= d.containerCl;
+  return dosesSentence(d.containerCl, d.doseOf(key), serviceNoun(key === CUSTOM_DOSE ? (whole ? 'bouteille' : 'dose') : st?.name));
 }
 
 export function PricingSection({ values, setValues, servingTypes, loading, derived: d, thresholds: t, error, onLiveChange }: PricingSectionProps) {
@@ -214,6 +216,7 @@ interface ServicePricingProps {
 
 function ServicePricing({ serviceKey: key, values, setValues, servingTypes, d, t, tva, onModeChange, onLiveChange }: ServicePricingProps) {
   const s = values.services[key];
+  const { width: winW } = useWindowDimensions();
   const [dragging, setDragging] = useState(false);
   const anchor = useRef(s.price);
   if (!dragging) anchor.current = s.price;
@@ -221,7 +224,7 @@ function ServicePricing({ serviceKey: key, values, setValues, servingTypes, d, t
   const dose = d.doseOf(key);
   const cost = d.costOf(key);
   const st = servingTypes.find((x) => x.id === key);
-  const noun = serviceNoun(key === CUSTOM_DOSE ? 'dose' : st?.name);
+  const noun = serviceNoun(key === CUSTOM_DOSE ? (d.containerCl > 0 && dose >= d.containerCl ? 'bouteille' : 'dose') : st?.name);
   const result = serviceResult(d.purchaseHT, d.containerCl, tva, dose, s.price);
   const zone = result ? getMarginZone(result.marginPercent, t) : undefined;
   const setup = pricingSetup(s.mode, cost, tva, t, anchor.current);
@@ -261,7 +264,7 @@ function ServicePricing({ serviceKey: key, values, setValues, servingTypes, d, t
   const sliderValue = clamp(isFinite(shown) ? shown : setup.min, setup.min, setup.max);
 
   return (
-    <View>
+    <FadeIn offset={6} duration={160}>
       {/* Graft 1: the answer above the control */}
       <ResultGrid style={styles.tiles}>
         <ResultTile label="Prix TTC" value={formatEuro(s.price)} caption={tvaLabel(tva)} />
@@ -271,7 +274,7 @@ function ServicePricing({ serviceKey: key, values, setValues, servingTypes, d, t
           value={result ? formatPercent(result.marginPercent) : '–'}
           zone={zone}
           highlight
-          caption={`objectif ${formatPercent(t.good, 0)}`}
+          caption={`${winW < 380 ? 'obj.' : 'objectif'} ${formatPercent(t.good, 0)}`}
         />
         <ResultTile label="Coût/dose" value={result ? formatEuro(result.costPerServingHT) : '–'} caption="HT" />
         <ResultTile
@@ -384,7 +387,7 @@ function ServicePricing({ serviceKey: key, values, setValues, servingTypes, d, t
           />
         </View>
       </Card>
-    </View>
+    </FadeIn>
   );
 }
 

@@ -118,7 +118,7 @@ const styles = StyleSheet.create({
   controlRow: { paddingHorizontal: 16, paddingVertical: 14 },
   divider: { borderBottomWidth: 1, borderBottomColor: palette.line },
   controlInner: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 },
-  controlTexts: { flexGrow: 1, flexShrink: 1, flexBasis: 104, minWidth: 96 },
+  controlTexts: { flexGrow: 1, flexShrink: 1, flexBasis: 76, minWidth: 72 },
   controlTitle: { ...type.calloutStrong, color: palette.ink },
   controlCaption: { ...type.footnote, color: palette.text3, marginTop: 1 },
   stackedHead: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, marginBottom: 10 },

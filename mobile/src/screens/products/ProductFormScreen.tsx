@@ -2,10 +2,10 @@
  * Fiche produit — create (scan step, then the form) and edit (« Modifier le produit »).
  *
  * Route params (contract, see form/model.ts `ProductFormParams`):
- *   { productId }            edit that product (no scan step)
- *   { scanData: prefill }    new product prefilled (duty calculator, scan…), no scan step
- *   { start: 'form' }        new product, manual entry (no scan step)
- *   {}                       new product, starts with « Scanner un produit »
+ *   { productId }                       edit that product (no scan step)
+ *   { scanData: prefill }               new product prefilled (duty calculator, scan…), no scan step
+ *   { start: 'form' } | { manual: true } new product, manual entry (no scan step)
+ *   {}                                  new product, starts with « Scanner un produit »
  *
  * One form with three sections (Produit · Contenant & achat · Services & prix),
  * a sticky « Enregistrer » bar, and ONE request that saves the product with
@@ -56,7 +56,7 @@ import {
   saveProductDraft,
 } from '../../services/draft.service';
 import { isOnline } from '../../services/offline';
-import { ScanPhase, ScanStep } from './form/ScanStep';
+import { ScanPhase, ScanStep, ScanStepProps } from './form/ScanStep';
 import { PhotoCard } from './form/PhotoCard';
 import { PurchaseSection } from './form/PurchaseSection';
 import { PricingSection, pricingMeta } from './form/PricingSection';
@@ -151,7 +151,7 @@ export function ProductFormScreen({ route, navigation }: Props) {
   });
 
   // ─── State ───────────────────────────────────────────────────────────────
-  const [step, setStep] = useState<'scan' | 'form'>(editing || prefill || params.start === 'form' ? 'form' : 'scan');
+  const [step, setStep] = useState<'scan' | 'form'>(editing || prefill || params.start === 'form' || (!!params.manual && params.manual !== 'false') ? 'form' : 'scan');
   const [values, setValues] = useState<FormValues>(() => {
     const base = emptyValues(user);
     return prefill ? applyPrefill(base, prefill, []) : base;
@@ -170,7 +170,7 @@ export function ProductFormScreen({ route, navigation }: Props) {
   const [scanPhoto, setScanPhoto] = useState<string | null>(null);
   const [photoReady, setPhotoReady] = useState(false);
   const [scanResult, setScanResult] = useState<BottleScanResult | null>(null);
-  const [scanError, setScanError] = useState<{ title: string; message: string; tone: 'bad' | 'warn' } | null>(null);
+  const [scanError, setScanError] = useState<ScanStepProps['error']>(null);
   const [draft, setDraft] = useState<{ name: string; savedAt: number; form: FormValues } | null>(null);
   const [savedCalcs, setSavedCalcs] = useState<SavedCalc[]>([]);
   const [calcsOpen, setCalcsOpen] = useState(false);
@@ -202,6 +202,12 @@ export function ProductFormScreen({ route, navigation }: Props) {
     staleTime: 60_000,
     retry: false,
   });
+
+  // The prefill is now in the form: drop it from the route so the web URL stays
+  // clean (« /produits/nouveau » instead of « ?scanData=[object Object] »).
+  useEffect(() => {
+    if (prefill) (navigation as any).setParams({ scanData: undefined });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ─── Hydration (edit) ────────────────────────────────────────────────────
   useEffect(() => {
@@ -258,7 +264,11 @@ export function ProductFormScreen({ route, navigation }: Props) {
         changed = true;
       }
     }
-    if (changed) setErrors(next);
+    if (changed) {
+      setErrors(next);
+      // The validation toast is stale once everything it pointed at is fixed.
+      if (!Object.keys(next).length) toast.clear();
+    }
   }, [values]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ─── Derived numbers ─────────────────────────────────────────────────────
@@ -387,6 +397,16 @@ export function ProductFormScreen({ route, navigation }: Props) {
           title: info.title,
           message: info.message,
           tone: info.kind === 'quota' || info.kind === 'cooldown' || info.kind === 'busy' || info.kind === 'offline' ? 'warn' : 'bad',
+          icon:
+            info.kind === 'offline'
+              ? 'cloud-offline-outline'
+              : info.kind === 'quota' || info.kind === 'busy'
+                ? 'time-outline'
+                : info.kind === 'cooldown'
+                  ? 'hourglass-outline'
+                  : info.kind === 'timeout'
+                    ? 'timer-outline'
+                    : 'alert-circle-outline',
         });
         setPhase('error');
         haptics.warning();
@@ -763,6 +783,7 @@ export function ProductFormScreen({ route, navigation }: Props) {
               rates={rates}
               duties={d.duties}
               autoEntrepreneur={!!user?.isAutoEntrepreneur}
+              categorySlug={categorySlug}
               onOpenFiscal={() => setFiscalOpen(true)}
             />
           </FormSection>

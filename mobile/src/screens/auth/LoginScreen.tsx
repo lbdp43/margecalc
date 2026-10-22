@@ -1,130 +1,171 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, KeyboardAvoidingView, Platform, Keyboard } from 'react-native';
-import { alert } from '../../utils/alert';
-import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { ScreenWrapper } from '../../components/ui/ScreenWrapper';
-import { Input } from '../../components/ui/Input';
-import { Button } from '../../components/ui/Button';
+/**
+ * Connexion — NavBar back, BrandMark header, e-mail + password with inline
+ * validation, readable backend errors (wrong password, « Compte suspendu… »,
+ * too many attempts, offline), « Se connecter » in the sticky bar so it rides
+ * above the keyboard. Enter goes to the next field, then submits.
+ */
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { StyleSheet, TextInput, View } from 'react-native';
+import type { StackScreenProps } from '@react-navigation/stack';
+import { FadeIn, NavBar, Screen, StickyActionBar, TextField, toast } from '../../components/ui';
+import { haptics } from '../../theme/haptics';
 import { useAuthStore } from '../../store/auth.store';
 import * as authService from '../../services/auth.service';
-import { colors, spacing, typography } from '../../theme';
-import { Eyebrow, Display, Script, InkStamp, Scribble } from '../../components/ui/atelier';
+import { ROUTES } from '../../navigation/routes';
+import { AuthHeader, FormBanner, PasswordField, SwitchLink, useOnline } from './parts/AuthBits';
+import { AuthErrorInfo, readAuthError } from './parts/authErrors';
+import { emailError, passwordError } from './parts/validation';
 
-const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+type Props = StackScreenProps<any, 'Login'>;
 
-type Props = NativeStackScreenProps<any, 'Login'>;
+const MIN_SPINNER_MS = 400;
 
-export function LoginScreen({ navigation }: Props) {
-  const [email, setEmail] = useState('');
+export function LoginScreen({ navigation, route }: Props) {
+  const initialEmail = typeof route.params?.email === 'string' ? route.params.email : '';
+  const [email, setEmail] = useState(initialEmail);
   const [password, setPassword] = useState('');
+  const [errors, setErrors] = useState<{ email?: string | null; password?: string | null }>({});
+  const [serverError, setServerError] = useState<AuthErrorInfo | null>(null);
   const [loading, setLoading] = useState(false);
   const setAuth = useAuthStore((s) => s.setAuth);
+  const online = useOnline();
+  const emailRef = useRef<TextInput>(null);
+  const passwordRef = useRef<TextInput>(null);
+  const mounted = useRef(true);
+  useEffect(() => () => { mounted.current = false; }, []);
 
-  const handleLogin = async () => {
-    Keyboard.dismiss();
-    if (!email || !password) {
-      alert('Erreur', 'Veuillez remplir tous les champs');
-      return;
-    }
-    if (!EMAIL_REGEX.test(email)) {
-      alert('Erreur', 'Veuillez entrer une adresse email valide');
-      return;
-    }
-
-    setLoading(true);
-    try {
-      const result = await authService.login({ email, password });
-      setAuth(result.token, result.user, result.refreshToken);
-    } catch (err: any) {
-      alert('Erreur', err.response?.data?.error || 'Connexion impossible');
-    } finally {
-      setLoading(false);
-    }
+  const onEmailChange = (v: string) => {
+    setEmail(v);
+    setServerError(null);
+    // Once an error shows, re-check live so it clears as soon as it is fixed.
+    if (errors.email) setErrors((e) => ({ ...e, email: emailError(v) }));
+  };
+  const onPasswordChange = (v: string) => {
+    setPassword(v);
+    setServerError(null);
+    if (errors.password) setErrors((e) => ({ ...e, password: passwordError(v, 'login') }));
   };
 
-  return (
-    <ScreenWrapper>
-      <KeyboardAvoidingView
-        style={styles.container}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
-        <View style={styles.header}>
-          <InkStamp size={56} color={colors.primary} rotate={-6} />
-          <Eyebrow color={colors.textMuted} style={{ marginTop: spacing.md }}>Le carnet du bistrot</Eyebrow>
-          <Display size={36} color={colors.text} style={{ marginTop: spacing.xs, textAlign: 'center' }}>
-            MargeBar Pro
-          </Display>
-          <Scribble width={60} color={colors.primary} style={{ marginTop: spacing.sm }} />
-          <Text style={styles.subtitle}>
-            Calculez vos marges.{'\n'}
-            <Script size={18} color={colors.primary}>Maîtrisez votre rentabilité.</Script>
-          </Text>
-        </View>
+  const submit = useCallback(async () => {
+    if (loading) return;
+    const next = { email: emailError(email), password: passwordError(password, 'login') };
+    setErrors(next);
+    setServerError(null);
+    if (next.email || next.password) {
+      haptics.warning();
+      (next.email ? emailRef : passwordRef).current?.focus();
+      return;
+    }
+    setLoading(true);
+    const started = Date.now();
+    try {
+      const result = await authService.login({ email: email.trim(), password });
+      const wait = MIN_SPINNER_MS - (Date.now() - started);
+      if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+      haptics.success();
+      const name = result.user?.businessName?.trim();
+      toast.success(name ? `Ravi de vous revoir, ${name}` : 'Connexion réussie');
+      setAuth(result.token, result.user, result.refreshToken);
+    } catch (err) {
+      if (!mounted.current) return;
+      const info = readAuthError(err, 'Connexion impossible pour le moment.');
+      haptics.warning();
+      if (Object.keys(info.fields).length) setErrors((e) => ({ ...e, ...info.fields }));
+      setServerError(info.message || info.title ? info : null);
+      if (info.kind === 'credentials') passwordRef.current?.focus();
+      else if (info.fields.email) emailRef.current?.focus();
+      setLoading(false);
+    }
+  }, [email, password, loading, setAuth]);
 
-        <View style={styles.form}>
-          <Input
-            label="Email"
+  const goRegister = () => navigation.replace(ROUTES.register, email.trim() ? { email: email.trim() } : undefined);
+
+  return (
+    <Screen
+      header={<NavBar title="Connexion" />}
+      stickyFooter={
+        <StickyActionBar
+          primary={{ title: 'Se connecter', onPress: submit, loading, icon: 'log-in-outline', testID: 'login-submit' }}
+        />
+      }
+      contentContainerStyle={styles.content}
+      testID="login-screen"
+    >
+      <View style={styles.column}>
+        <FadeIn>
+          <AuthHeader title="Ravi de vous revoir" subtitle="Connectez-vous pour retrouver vos produits, vos prix et vos marges." />
+        </FadeIn>
+
+        {!online ? (
+          <View style={styles.bannerSlot}>
+            <FormBanner
+              tone="neutral"
+              title="Vous êtes hors ligne"
+              message="La connexion a besoin d’internet. Réessayez dès le retour du réseau."
+              testID="login-offline"
+            />
+          </View>
+        ) : null}
+        {serverError ? (
+          <View style={styles.bannerSlot}>
+            <FormBanner
+              key={`${serverError.kind}-${serverError.message}`}
+              tone={serverError.kind === 'rate' ? 'warn' : serverError.kind === 'offline' || serverError.kind === 'timeout' ? 'neutral' : 'bad'}
+              title={serverError.title}
+              message={serverError.message}
+              testID="login-error"
+            />
+          </View>
+        ) : null}
+
+        <FadeIn index={1} style={styles.field}>
+          <TextField
+            ref={emailRef}
+            label="Adresse e-mail"
             value={email}
-            onChangeText={setEmail}
+            onChangeText={onEmailChange}
+            onBlur={() => email.trim() && setErrors((e) => ({ ...e, email: emailError(email) }))}
+            placeholder="nom@etablissement.fr"
             keyboardType="email-address"
             autoCapitalize="none"
-            placeholder="votre@email.com"
-            accessibilityLabel="Adresse email"
+            autoCorrect={false}
+            spellCheck={false}
+            autoComplete="email"
+            textContentType="emailAddress"
+            returnKeyType="next"
+            blurOnSubmit={false}
+            onSubmitEditing={() => passwordRef.current?.focus()}
+            error={errors.email}
+            testID="login-email"
           />
-          <Input
+        </FadeIn>
+        <FadeIn index={2} style={styles.field}>
+          <PasswordField
+            ref={passwordRef}
             label="Mot de passe"
             value={password}
-            onChangeText={setPassword}
-            secureTextEntry
-            placeholder="••••••"
-            accessibilityLabel="Mot de passe"
+            onChangeText={onPasswordChange}
+            placeholder="Votre mot de passe"
+            autoComplete="current-password"
+            textContentType="password"
+            returnKeyType="go"
+            onSubmitEditing={submit}
+            error={errors.password}
+            testID="login-password"
           />
-          <Button title="Se connecter" onPress={handleLogin} loading={loading} />
-
-          <TouchableOpacity
-            onPress={() => navigation.navigate('Register')}
-            style={styles.link}
-            accessibilityRole="button"
-          >
-            <Text style={styles.linkText}>
-              Pas encore de compte ? <Text style={styles.linkBold}>Créer un compte</Text>
-            </Text>
-          </TouchableOpacity>
-        </View>
-      </KeyboardAvoidingView>
-    </ScreenWrapper>
+        </FadeIn>
+        <FadeIn index={3} style={styles.linkSlot}>
+          <SwitchLink lead="Pas encore de compte ?" action="Créer un compte" onPress={goRegister} testID="login-to-register" />
+        </FadeIn>
+      </View>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    justifyContent: 'center',
-  },
-  header: {
-    alignItems: 'center',
-    marginBottom: spacing.xl + spacing.lg,
-  },
-  subtitle: {
-    ...typography.body,
-    color: colors.textSecondary,
-    textAlign: 'center',
-    marginTop: spacing.md,
-    lineHeight: 24,
-  },
-  form: {
-    gap: spacing.sm,
-  },
-  link: {
-    alignItems: 'center',
-    marginTop: spacing.md,
-  },
-  linkText: {
-    ...typography.bodySmall,
-    color: colors.textSecondary,
-  },
-  linkBold: {
-    color: colors.primary,
-    fontWeight: '600',
-  },
+  content: { paddingTop: 8 },
+  column: { width: '100%', maxWidth: 480, alignSelf: 'center' },
+  bannerSlot: { marginBottom: 20 },
+  field: { marginBottom: 20 },
+  linkSlot: { marginTop: 4 },
 });

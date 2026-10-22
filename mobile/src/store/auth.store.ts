@@ -5,15 +5,28 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
 import { clearAllOfflineData } from '../services/offline';
 
+/**
+ * Why the app signed the user out on its own (shown once on the landing):
+ * a suspended or deleted account, or a session that could not be renewed.
+ */
+export interface AuthNotice {
+  kind: 'banned' | 'account_missing' | 'expired';
+  title: string;
+  message: string;
+}
+
 interface AuthState {
   token: string | null;
   refreshToken: string | null;
   user: User | null;
   isAuthenticated: boolean;
   isLoading: boolean;
+  /** Forced sign-out reason, read (and cleared) by the landing. */
+  notice: AuthNotice | null;
   setAuth: (token: string, user: User, refreshToken?: string) => void;
-  logout: () => void;
+  logout: () => Promise<void>;
   loadStoredAuth: () => Promise<void>;
+  setNotice: (notice: AuthNotice | null) => void;
 }
 
 const TOKEN_KEY = 'margebar_token';
@@ -52,6 +65,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   user: null,
   isAuthenticated: false,
   isLoading: true,
+  notice: null,
 
   setAuth: (token, user, refreshToken) => {
     const writes: Promise<void>[] = [
@@ -69,12 +83,14 @@ export const useAuthStore = create<AuthState>((set) => ({
       user,
       isAuthenticated: true,
       refreshToken: refreshToken ?? prev.refreshToken,
+      notice: null,
     }));
   },
 
   logout: async () => {
     set({ token: null, refreshToken: null, user: null, isAuthenticated: false });
-    await Promise.all([
+    // Each removal on its own: one failing store must not keep the others.
+    await Promise.allSettled([
       deleteToken(),
       AsyncStorage.removeItem(USER_KEY),
       AsyncStorage.removeItem(REFRESH_TOKEN_KEY),
@@ -104,4 +120,6 @@ export const useAuthStore = create<AuthState>((set) => ({
       set({ isLoading: false });
     }
   },
+
+  setNotice: (notice) => set({ notice }),
 }));

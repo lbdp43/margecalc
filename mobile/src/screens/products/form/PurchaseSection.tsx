@@ -7,10 +7,10 @@ import React, { useMemo } from 'react';
 import { Platform, StyleSheet, Switch, Text, View } from 'react-native';
 import type { CustomContainer, DroitsResult, Rate } from '@margebar/shared';
 import { CONTAINER_PRESETS } from '@margebar/shared';
+import type { ChipItem } from '../../../components/ui';
 import {
   Card,
   ChipRow,
-  ChipItem,
   ListRow,
   NumberInput,
   SegmentedControl,
@@ -23,7 +23,7 @@ import { formatEuro, formatNumber, formatVolumeCl } from '../../../utils/format'
 import { ControlRow, FieldError, FieldLabel } from './FieldBits';
 import type { FieldErrors } from './errors';
 import type { FormValues } from './model';
-import { containerLabel, containerNoun, round2 } from './pricing';
+import { FISCAL_TO_PRODUCT_CATEGORY, containerLabel, containerNoun, defaultFiscalSlug, round2 } from './pricing';
 
 const OTHER = 'other';
 
@@ -35,6 +35,8 @@ interface PurchaseSectionProps {
   rates: Rate[];
   duties: DroitsResult | null;
   autoEntrepreneur: boolean;
+  /** Product category slug: picks the likely fiscal category when « hors droits » is switched on. */
+  categorySlug?: string;
   onOpenFiscal: () => void;
 }
 
@@ -42,7 +44,7 @@ const TVA_CHOICES = [0.2, 0.1, 0.055];
 
 const tvaText = (t: number) => `${formatNumber(round2(t * 100), Number.isInteger(round2(t * 100)) ? 0 : 1)}${' '}%`;
 
-export function PurchaseSection({ values, patch, errors, containers, rates, duties, autoEntrepreneur, onOpenFiscal }: PurchaseSectionProps) {
+export function PurchaseSection({ values, patch, errors, containers, rates, duties, autoEntrepreneur, categorySlug, onOpenFiscal }: PurchaseSectionProps) {
   const list = useMemo(() => {
     const src = containers && containers.length ? containers.map((c) => ({ name: c.name, volumeCl: c.volumeCl })) : CONTAINER_PRESETS.map((c) => ({ name: c.label, volumeCl: c.volumeCl }));
     const seen = new Set<number>();
@@ -130,7 +132,7 @@ export function PurchaseSection({ values, patch, errors, containers, rates, duti
           />
         </ControlRow>
 
-        <ControlRow title="Degré" caption="% vol. · facultatif" error={errors.degree} testID="row-degree">
+        <ControlRow title="Degré" caption="facultatif" error={errors.degree} testID="row-degree">
           <NumberInput
             value={values.degree}
             onChange={(n) => patch({ degree: n })}
@@ -155,7 +157,9 @@ export function PurchaseSection({ values, patch, errors, containers, rates, duti
             value={values.horsDroits}
             onValueChange={(v) => {
               haptics.select();
-              patch({ horsDroits: v });
+              // A fiscal category that does not match the product category is a leftover default.
+              const fits = categorySlug ? FISCAL_TO_PRODUCT_CATEGORY[values.fiscalSlug] === categorySlug : true;
+              patch(v && !fits ? { horsDroits: v, fiscalSlug: defaultFiscalSlug(categorySlug) } : { horsDroits: v });
             }}
             trackColor={{ false: palette.surface3, true: palette.em600 }}
             thumbColor="#FFFFFF"

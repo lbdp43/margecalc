@@ -49,7 +49,10 @@ const FEATURES: Array<{ icon: IconName; title: string; desc: string }> = [
 const DATA_POINTS: Array<{ icon: IconName; text: string }> = [
   { icon: 'lock-closed-outline', text: 'Vos produits, vos prix et vos marges ne sont visibles que par vous.' },
   { icon: 'shield-checkmark-outline', text: 'Vos données ne sont jamais partagées ni revendues.' },
-  { icon: 'eye-off-outline', text: 'Le scan lit la photo sur nos serveurs, sans service tiers, et ne la conserve pas.' },
+  {
+    icon: 'eye-off-outline',
+    text: 'Le scan lit la photo sur nos serveurs, sans aucun service tiers, et ne la conserve pas. Les photos de produits que vous enregistrez sont stockées dans votre compte et supprimées avec lui.',
+  },
   { icon: 'chatbubble-ellipses-outline', text: 'Pour supprimer votre compte, écrivez-nous depuis Réglages › Aide & retours.' },
 ];
 

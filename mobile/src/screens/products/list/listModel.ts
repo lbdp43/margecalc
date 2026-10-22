@@ -35,7 +35,7 @@ export function matchesQuery(p: ProductWithMargin, query: string): boolean {
 }
 
 /** « Tous » + the categories that have products (by category order), with counts. */
-export function categoryChips(products: ProductWithMargin[], selected: string): ChipItem[] {
+export function categoryChips(products: ProductWithMargin[]): ChipItem[] {
   const map = new Map<string, { label: string; slug?: string; order: number; count: number }>();
   for (const p of products) {
     const id = p.categoryId;
@@ -51,10 +51,6 @@ export function categoryChips(products: ProductWithMargin[], selected: string): 
       count: c.count,
       accessibilityLabel: `${c.label}, ${c.count} produit${c.count > 1 ? 's' : ''}`,
     }));
-  // A category emptied by a delete stays reachable while it is selected.
-  if (selected !== ALL_KEY && !map.has(selected)) {
-    items.push({ key: selected, label: 'Catégorie', count: 0 });
-  }
   return [{ key: ALL_KEY, label: 'Tous', count: products.length, accessibilityLabel: `Tous les produits, ${products.length}` }, ...items];
 }
 

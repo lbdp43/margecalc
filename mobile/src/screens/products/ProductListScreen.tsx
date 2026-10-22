@@ -84,7 +84,7 @@ function Flash() {
     o.value = withDelay(reduce ? 400 : 800, withTiming(0, { duration: reduce ? motion.duration.fast : 600, easing: motion.easing.standard }));
   }, [o, reduce]);
   const style = useAnimatedStyle(() => ({ opacity: o.value }));
-  return <Animated.View pointerEvents="none" style={[styles.flash, style]} />;
+  return <Animated.View style={[styles.flash, style]} />;
 }
 
 /**
@@ -95,16 +95,16 @@ function useCapturedScroll() {
   const node = useRef<ScrollView | null>(null);
   const render = useMemo(() => {
     const Captured = React.forwardRef<ScrollView, ScrollViewProps>(function Captured(props, ref) {
-      return (
-        <ScrollView
-          {...props}
-          ref={(n) => {
-            node.current = n;
-            if (typeof ref === 'function') ref(n);
-            else if (ref) (ref as React.MutableRefObject<ScrollView | null>).current = n;
-          }}
-        />
+      // Stable, so the list's own ref is not detached / re-attached on every render.
+      const setRef = React.useCallback(
+        (n: ScrollView | null) => {
+          node.current = n;
+          if (typeof ref === 'function') ref(n);
+          else if (ref) (ref as React.MutableRefObject<ScrollView | null>).current = n;
+        },
+        [ref],
       );
+      return <ScrollView {...props} ref={setRef} />;
     });
     return (props: ScrollViewProps) => <Captured {...props} />;
   }, []);
@@ -161,7 +161,11 @@ export function ProductListScreen({ navigation: nav }: Props) {
   }, []);
 
   // ── derived data ──
-  const chips = useMemo(() => categoryChips(products, category), [products, category]);
+  const chips = useMemo(() => categoryChips(products), [products]);
+  // The selected category lost its last product (deleted): back to « Tous ».
+  useEffect(() => {
+    if (hasData && category !== ALL_KEY && !products.some((p) => p.categoryId === category)) setCategory(ALL_KEY);
+  }, [hasData, products, category]);
   const zoneCounts = useMemo(() => countByZone(products, thresholds), [products, thresholds]);
   const avg = useMemo(() => averageMargin(products), [products]);
   const visible = useMemo(() => {
@@ -426,5 +430,5 @@ const styles = StyleSheet.create({
   count: { ...type.footnote, color: palette.text3 },
   // Fresh account / offline / error: centred in the space left under the title.
   emptyFill: { flex: 1, minHeight: 420, justifyContent: 'center', paddingBottom: 40 },
-  flash: { ...StyleSheet.absoluteFillObject, borderRadius: radius.lg, backgroundColor: palette.goodBg },
+  flash: { ...StyleSheet.absoluteFillObject, borderRadius: radius.lg, backgroundColor: palette.goodBg, pointerEvents: 'none' },
 });
