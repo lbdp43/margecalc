@@ -706,8 +706,8 @@ export function ProductFormScreen({ route, navigation }: Props) {
         scrollRef={scrollRef}
         testID="product-form"
       >
-        <FadeIn index={0}>
-          <FormSection title="Produit" first onLayout={(y) => (sectionY.current.identity = y)}>
+        <FadeIn index={0} onLayout={(e) => (sectionY.current.identity = e.nativeEvent.layout.y)}>
+          <FormSection title="Produit" first>
             <PhotoCard photo={values.photo} busy={photoBusy} error={errors.photo} onAdd={addPhoto} onRemove={removePhoto} />
             <TextField
               label="Nom du produit"
@@ -753,8 +753,8 @@ export function ProductFormScreen({ route, navigation }: Props) {
           </FormSection>
         </FadeIn>
 
-        <FadeIn index={1}>
-          <FormSection title="Contenant & achat" onLayout={(y) => (sectionY.current.purchase = y)}>
+        <FadeIn index={1} onLayout={(e) => (sectionY.current.purchase = e.nativeEvent.layout.y + 28)}>
+          <FormSection title="Contenant & achat">
             <PurchaseSection
               values={values}
               patch={patch}
@@ -768,8 +768,8 @@ export function ProductFormScreen({ route, navigation }: Props) {
           </FormSection>
         </FadeIn>
 
-        <FadeIn index={2}>
-          <FormSection title="Services & prix" meta={meta} onLayout={(y) => (sectionY.current.pricing = y)}>
+        <FadeIn index={2} onLayout={(e) => (sectionY.current.pricing = e.nativeEvent.layout.y + 28)}>
+          <FormSection title="Services & prix" meta={meta}>
             <PricingSection
               values={values}
               setValues={setValues}
