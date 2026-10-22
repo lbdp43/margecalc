@@ -36,6 +36,7 @@ export function ControlRow({
   children,
   error,
   divider = true,
+  stacked = false,
   testID,
 }: {
   title: string;
@@ -43,8 +44,26 @@ export function ControlRow({
   children: React.ReactNode;
   error?: string | null;
   divider?: boolean;
+  /** Title and caption on one line, the control full width below. */
+  stacked?: boolean;
   testID?: string;
 }) {
+  if (stacked) {
+    return (
+      <View style={[styles.controlRow, divider && styles.divider]} testID={testID}>
+        <View style={styles.stackedHead}>
+          <Text style={[styles.controlTitle, error ? { color: palette.bad } : null]}>{title}</Text>
+          {caption ? (
+            <Text style={styles.stackedCaption} numberOfLines={1}>
+              {caption}
+            </Text>
+          ) : null}
+        </View>
+        {children}
+        <FieldError message={error} style={{ marginTop: 8 }} />
+      </View>
+    );
+  }
   return (
     <View style={[styles.controlRow, divider && styles.divider]} testID={testID}>
       <View style={styles.controlInner}>
@@ -96,12 +115,14 @@ const styles = StyleSheet.create({
   meta: { ...type.footnote, color: palette.text3, flexShrink: 1 },
   errorRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 6, marginTop: 8 },
   errorText: { ...type.footnote, color: palette.bad, flexShrink: 1 },
-  controlRow: { paddingHorizontal: 16, paddingVertical: 12 },
+  controlRow: { paddingHorizontal: 16, paddingVertical: 14 },
   divider: { borderBottomWidth: 1, borderBottomColor: palette.line },
   controlInner: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 },
   controlTexts: { flexGrow: 1, flexShrink: 1, flexBasis: 104, minWidth: 96 },
   controlTitle: { ...type.calloutStrong, color: palette.ink },
   controlCaption: { ...type.footnote, color: palette.text3, marginTop: 1 },
+  stackedHead: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, marginBottom: 10 },
+  stackedCaption: { ...type.footnote, color: palette.text3, flexShrink: 1, textAlign: 'right' },
   section: { marginTop: 28 },
   sectionFirst: { marginTop: 8 },
   sectionHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, minHeight: 36, marginBottom: 10 },

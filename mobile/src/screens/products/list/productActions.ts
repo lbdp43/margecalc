@@ -17,6 +17,8 @@ import { isOnline } from '../../../services/offline';
 import { plural } from '../../../utils/format';
 
 export const OFFLINE_MESSAGE = 'Pas de connexion : réessayez une fois connecté.';
+const OFFLINE_DUPLICATE = 'Pas de connexion : la copie n’a pas été créée. Réessayez une fois connecté.';
+const OFFLINE_DELETE = 'Pas de connexion : le produit n’a pas été supprimé. Réessayez une fois connecté.';
 
 /** True when the device can reach the API (NetInfo + the browser's own flag). */
 export function canReachNetwork(): boolean {
@@ -62,7 +64,7 @@ export interface ProductActionsApi {
   /** Copy the product and its services. Resolves with the new product, or null on failure. */
   duplicate: (product: ProductLike, opts?: { onOpen?: (id: string) => void }) => Promise<ProductWithMargin | null>;
   /** Ask, then delete. Resolves true when the product was deleted. */
-  remove: (product: ProductLike, opts?: { beforeCacheUpdate?: () => void }) => Promise<boolean>;
+  remove: (product: ProductLike, opts?: { onConfirmed?: () => void; beforeCacheUpdate?: () => void }) => Promise<boolean>;
 }
 
 export function useProductActions(): ProductActionsApi {
@@ -73,7 +75,7 @@ export function useProductActions(): ProductActionsApi {
     async (product, opts) => {
       if (busy.current.has(`dup-${product.id}`)) return null;
       if (!canReachNetwork()) {
-        toast.error(OFFLINE_MESSAGE);
+        toast.error(OFFLINE_DUPLICATE);
         return null;
       }
       busy.current.add(`dup-${product.id}`);
@@ -131,8 +133,9 @@ export function useProductActions(): ProductActionsApi {
         destructive: true,
       });
       if (!ok) return false;
+      opts?.onConfirmed?.();
       if (!canReachNetwork()) {
-        toast.error(OFFLINE_MESSAGE);
+        toast.error(OFFLINE_DELETE);
         return false;
       }
       busy.current.add(`del-${product.id}`);

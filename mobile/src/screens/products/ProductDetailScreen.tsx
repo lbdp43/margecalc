@@ -14,7 +14,7 @@
  * edit made in the form shows at once (RC3).
  */
 import React, { useCallback, useMemo, useRef, useState } from 'react';
-import { NativeScrollEvent, NativeSyntheticEvent, StyleSheet, Text, View } from 'react-native';
+import { NativeScrollEvent, NativeSyntheticEvent, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
 import { useQueryClient } from '@tanstack/react-query';
@@ -120,6 +120,9 @@ export function ProductDetailScreen({ route, navigation: nav }: Props) {
   const [priceTarget, setPriceTarget] = useState<PriceEditTarget | null>(null);
   const [titleShown, setTitleShown] = useState(false);
   const titleRef = useRef(false);
+  // Narrow phones: the tile labels need the room the decorative icons take.
+  const { width } = useWindowDimensions();
+  const tileIcons = width >= 380;
 
   // Open instantly with what the list already knows (no photo yet), then refresh.
   const fromList = useMemo(
@@ -179,8 +182,7 @@ export function ProductDetailScreen({ route, navigation: nav }: Props) {
   }, [actions, navigation, product]);
   const remove = useCallback(async () => {
     if (!product || deleting) return;
-    setDeleting(true);
-    const ok = await actions.remove(product, { beforeCacheUpdate: () => setDeleted(true) });
+    const ok = await actions.remove(product, { onConfirmed: () => setDeleting(true), beforeCacheUpdate: () => setDeleted(true) });
     if (ok) afterProductDeleted(navigation);
     else setDeleting(false);
   }, [actions, navigation, product, deleting]);
@@ -279,7 +281,7 @@ export function ProductDetailScreen({ route, navigation: nav }: Props) {
             format={(n) => formatPercent(n)}
             zone={zone}
             highlight
-            icon="pie-chart-outline"
+            icon={tileIcons ? 'pie-chart-outline' : undefined}
             caption={`objectif ${formatPercent(t.good, 0)}`}
             a11y={`Marge ${formatPercent(c.marginPercent).replace(/ /g, ' ').replace('%', 'pour cent')}, ${marginColors[zone].label}`}
           />
@@ -287,7 +289,7 @@ export function ProductDetailScreen({ route, navigation: nav }: Props) {
             label="Coefficient"
             value={c.coefficient}
             format={(n) => formatCoeff(n)}
-            icon="layers-outline"
+            icon={tileIcons ? 'layers-outline' : undefined}
             caption="prix HT ÷ coût"
             delay={60}
             a11y={`Coefficient ${formatNumber(c.coefficient, 2)}`}
@@ -299,7 +301,7 @@ export function ProductDetailScreen({ route, navigation: nav }: Props) {
             value={c.marginPerDoseHT}
             format={(n) => formatEuro(n, { sign: true })}
             valueColor={marginColors[zone].fg}
-            icon="cash-outline"
+            icon={tileIcons ? 'cash-outline' : undefined}
             caption={primary ? `HT · ${primary.label}` : 'HT'}
             delay={120}
             a11y={`Gain par dose ${formatEuro(c.marginPerDoseHT)} hors taxes`}
@@ -308,7 +310,7 @@ export function ProductDetailScreen({ route, navigation: nav }: Props) {
             label={`Gain par ${noun}`}
             value={c.marginPerContainer}
             format={(n) => formatEuro(n, { sign: true })}
-            icon={noun === 'fût' ? 'beer-outline' : 'wine-outline'}
+            icon={tileIcons ? (noun === 'fût' ? 'beer-outline' : 'wine-outline') : undefined}
             caption={plural(Math.floor(c.glassesPerContainer + 1e-6), 'dose')}
             delay={180}
             a11y={`Gain par ${noun} ${formatEuro(c.marginPerContainer)} hors taxes, ${plural(Math.floor(c.glassesPerContainer + 1e-6), 'dose')}`}

@@ -1,6 +1,6 @@
 import React from 'react';
 import { Platform, StyleSheet, View } from 'react-native';
-import { NavigationContainer, DefaultTheme, LinkingOptions, Theme } from '@react-navigation/native';
+import { NavigationContainer, DefaultTheme, LinkingOptions, Theme, getPathFromState } from '@react-navigation/native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
@@ -61,8 +61,34 @@ const PREFIXES = ['https://margebar.app', 'margebar://'];
 /** A tab's stack: React Navigation 6 cannot type param lists two levels deep. */
 const stackPaths = (initialRouteName: string, screens: Record<string, string>): any => ({ initialRouteName, screens });
 
+/**
+ * Only short scalar params belong in a URL. Object params (scanData prefill)
+ * and photo URIs stay in memory: serialised they would read « [object Object] »
+ * on reload, or blow up the URL with a data URI.
+ */
+function isUrlSafeParam(value: unknown): boolean {
+  if (typeof value === 'number' || typeof value === 'boolean') return true;
+  return typeof value === 'string' && value.length <= 100 && !/^(data|blob|file|content|ph):/.test(value);
+}
+
+function stripUnsafeParams(state: any): any {
+  return {
+    ...state,
+    routes: state.routes.map((route: any) => ({
+      ...route,
+      params: route.params
+        ? Object.fromEntries(Object.entries(route.params).filter(([, value]) => isUrlSafeParam(value)))
+        : route.params,
+      state: route.state ? stripUnsafeParams(route.state) : route.state,
+    })),
+  };
+}
+
+const getSafePathFromState: typeof getPathFromState = (state, options) => getPathFromState(stripUnsafeParams(state), options);
+
 const appLinking: LinkingOptions<{ Tabs: undefined; ProductForm: undefined; InvoiceScan: undefined }> = {
   prefixes: PREFIXES,
+  getPathFromState: getSafePathFromState,
   config: {
     initialRouteName: ROUTES.tabs,
     screens: {
@@ -82,6 +108,7 @@ const appLinking: LinkingOptions<{ Tabs: undefined; ProductForm: undefined; Invo
 
 const authLinking: LinkingOptions<{ Landing: undefined; Login: undefined; Register: undefined; DutyCalculator: undefined }> = {
   prefixes: PREFIXES,
+  getPathFromState: getSafePathFromState,
   config: {
     initialRouteName: ROUTES.landing,
     screens: {

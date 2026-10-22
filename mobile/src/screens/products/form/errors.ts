@@ -37,9 +37,12 @@ export function fieldOf(path: string | undefined): FieldKey | null {
 export function describeSaveError(err: any, action: 'save' | 'delete' = 'save'): SaveErrorInfo {
   const verb = action === 'save' ? 'enregistré' : 'supprimé';
   if (err instanceof OfflineError || (!err?.response && (!isOnline() || isNetworkError(err)))) {
+    const raw = err instanceof OfflineError ? err.message : action === 'save' ? OFFLINE_MESSAGE : `Pas de connexion : le produit n’a pas été ${verb}. Réessayez une fois connecté.`;
+    // The title already says « Pas de connexion »: keep only the rest of the sentence.
+    const rest = raw.replace(/^Pas de connexion\s*:\s*/i, '');
     return {
       title: 'Pas de connexion',
-      message: err instanceof OfflineError ? err.message : action === 'save' ? OFFLINE_MESSAGE : `Pas de connexion : le produit n’a pas été ${verb}. Réessayez une fois connecté.`,
+      message: rest.charAt(0).toUpperCase() + rest.slice(1),
       fields: {},
       offline: true,
     };

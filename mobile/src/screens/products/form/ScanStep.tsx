@@ -12,7 +12,6 @@ import {
   Button,
   Card,
   FadeIn,
-  IconButton,
   ListRow,
   NavBar,
   Screen,
@@ -92,14 +91,15 @@ export function ScanStep(props: ScanStepProps) {
     footer = (
       <StickyActionBar
         key="error"
-        secondary={{ title: 'Reprendre', icon: 'camera-reverse-outline', onPress: props.onRetake }}
         primary={{
           title: photoUri ? 'Continuer sans lecture' : 'Saisir à la main',
           trailingIcon: 'arrow-forward',
           onPress: photoUri ? props.onContinue : props.onManual,
           testID: 'scan-continue',
         }}
-      />
+      >
+        <Button title="Reprendre la photo" variant="secondary" size="sm" icon="camera-reverse-outline" onPress={props.onRetake} testID="scan-retake" />
+      </StickyActionBar>
     );
   }
 
@@ -159,13 +159,15 @@ function Intro(props: ScanStepProps & { frameHeight: number }) {
                 <Ionicons name="document-text-outline" size={20} color={palette.em700} />
               </View>
               <View style={styles.flex}>
-                <Text style={styles.draftTitle} numberOfLines={1}>
-                  {draft.name ? draft.name : 'Produit sans nom'}
+                <Text style={styles.draftTitle}>Brouillon en cours</Text>
+                <Text style={styles.draftMeta} numberOfLines={1}>
+                  {draft.name ? draft.name : 'Produit sans nom'} · {sinceLabel(draft.savedAt)}
                 </Text>
-                <Text style={styles.draftMeta}>Brouillon · {sinceLabel(draft.savedAt)}</Text>
+                <View style={styles.draftActions}>
+                  <Button title="Reprendre" variant="tonal" size="sm" icon="arrow-undo-outline" onPress={props.onResumeDraft} testID="draft-resume" />
+                  <Button title="Supprimer" variant="text" size="sm" onPress={props.onDiscardDraft} testID="draft-discard" />
+                </View>
               </View>
-              <Button title="Reprendre" variant="tonal" size="sm" onPress={props.onResumeDraft} testID="draft-resume" />
-              <IconButton icon="close" variant="plain" size={40} iconSize={20} color={palette.text3} onPress={props.onDiscardDraft} accessibilityLabel="Supprimer le brouillon" />
             </View>
           </Card>
         </FadeIn>
@@ -353,7 +355,8 @@ const styles = StyleSheet.create({
   quota: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 16, paddingHorizontal: 4 },
   quotaText: { ...type.footnote, color: palette.text3, flexShrink: 1 },
   draft: { marginTop: 16 },
-  draftRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  draftRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 14 },
+  draftActions: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 10 },
   draftIcon: { width: 40, height: 40, borderRadius: 12, backgroundColor: palette.em50, alignItems: 'center', justifyContent: 'center' },
   draftTitle: { ...type.headline, color: palette.ink },
   draftMeta: { ...type.footnote, color: palette.text3, marginTop: 1 },

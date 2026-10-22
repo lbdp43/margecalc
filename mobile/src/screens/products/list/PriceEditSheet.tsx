@@ -16,7 +16,7 @@ import { haptics } from '../../../theme/haptics';
 import { formatCoeff, formatEuro, formatPercent } from '../../../utils/format';
 import { getMarginZone, useMarginThresholds } from '../../../utils/marginThresholds';
 import * as servingService from '../../../services/serving.service';
-import { apiErrorMessage, canReachNetwork, OFFLINE_MESSAGE } from './productActions';
+import { apiErrorMessage, canReachNetwork } from './productActions';
 
 export interface PriceEditTarget {
   servingType: ServingType;
@@ -77,7 +77,7 @@ export function PriceEditSheet({ product, target, onClose }: { product: ProductW
       return;
     }
     if (!canReachNetwork()) {
-      setError(OFFLINE_MESSAGE);
+      setError('Pas de connexion : le prix n’a pas été enregistré. Réessayez une fois connecté.');
       haptics.warning();
       return;
     }
@@ -97,7 +97,7 @@ export function PriceEditSheet({ product, target, onClose }: { product: ProductW
       setSaving(false);
       setSaved(true);
       haptics.success();
-      toast.success(`${shown.label} : ${formatEuro(price)}`);
+      toast.success(`Nouveau prix enregistré : ${shown.label}, ${formatEuro(price)}`);
       closeTimer.current = setTimeout(onClose, 650);
     } catch (err) {
       setSaving(false);

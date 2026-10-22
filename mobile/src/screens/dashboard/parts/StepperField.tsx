@@ -20,7 +20,7 @@ import { PressableScale } from '../../../components/ui';
 import { repeatSteps } from '../../../components/ui/NumberInput';
 import { fontFamily, palette, radius, type } from '../../../theme';
 import { haptics } from '../../../theme/haptics';
-import { clamp, formatNumber, NBSP, parseLocaleFloat, roundToStep } from '../../../utils/format';
+import { clamp, formatNumber, parseLocaleFloat, roundToStep } from '../../../utils/format';
 
 export interface StepperFieldProps {
   label: string;
@@ -44,25 +44,12 @@ export interface StepperFieldProps {
   testID?: string;
 }
 
-const FONT_SIZES = [22, 20, 18, 16];
+const MAX_SIZE = 22;
+const MIN_SIZE = 14;
+/** Below this size the short unit is used (« % » instead of « % vol. »). */
+const SHORT_UNIT_BELOW = 18;
 const SIDE = 44;
-
-/** Rough width of a fr-FR number in Plus Jakarta Sans 800 (tabular digits). */
-function numberWidth(text: string, size: number): number {
-  let w = 0;
-  for (const ch of text) {
-    if (ch >= '0' && ch <= '9') w += 0.64;
-    else if (ch === ',' || ch === '.') w += 0.3;
-    else if (ch === ' ' || ch === NBSP) w += 0.3;
-    else w += 0.6;
-  }
-  return w * size + 2;
-}
-
-/** Width of a unit in callout semibold (15 px). */
-function unitWidth(unit: string): number {
-  return unit ? unit.length * 15 * 0.56 + 4 : 0;
-}
+const UNIT_GAP = 4;
 
 export function StepperField({
   label,
@@ -84,6 +71,9 @@ export function StepperField({
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState('');
   const [boxW, setBoxW] = useState(0);
+  // Widths measured off-screen: the number at MAX_SIZE, and both units.
+  const [numW, setNumW] = useState(0);
+  const [unitW, setUnitW] = useState({ full: 0, short: 0 });
   const valueRef = useRef(value);
   const repeat = useRef<{ timer?: ReturnType<typeof setInterval>; start: number; done: number; dir: 1 | -1 }>({ start: 0, done: 0, dir: 1 });
   const pressHandled = useRef(false);
@@ -94,7 +84,7 @@ export function StepperField({
   }, [value]);
 
   const show = useCallback(
-    (n: number) => formatNumber(n, decimals, { minDigits: fixedDecimals ? decimals : 0, grouping: false }),
+    (n: number) => formatNumber(n, decimals, { minDigits: fixedDecimals ? decimals : 0 }),
     [decimals, fixedDecimals],
   );
 
@@ -193,23 +183,19 @@ export function StepperField({
     onEditingChange?.(false);
   };
 
-  // Auto-fit: the largest size where number + unit fit the value box.
+  // Auto-fit: the largest size where number + unit fit the value box
+  // (text widths scale linearly with the font size).
   const shown = editing ? text : show(value);
-  const avail = Math.max(0, boxW - 12);
-  let size = FONT_SIZES[FONT_SIZES.length - 1];
+  const avail = Math.max(0, boxW - 8);
+  const fit = (u: number) => (numW > 0 && avail > 0 ? Math.floor((MAX_SIZE * (avail - (u ? u + UNIT_GAP : 0) - 3)) / numW) : MAX_SIZE);
   let unitText = unit;
-  const fits = (s: number, u: string) => numberWidth(shown || '0', s) + unitWidth(u) <= avail;
-  if (boxW > 0) {
-    const found = FONT_SIZES.find((s) => fits(s, unit));
-    if (found) size = found;
-    else if (unitShort) {
-      unitText = unitShort;
-      size = FONT_SIZES.find((s) => fits(s, unitShort)) ?? size;
-    }
-  } else {
-    size = FONT_SIZES[0];
+  let size = Math.min(MAX_SIZE, fit(unitW.full));
+  if (size < SHORT_UNIT_BELOW && unitShort) {
+    unitText = unitShort;
+    size = Math.min(MAX_SIZE, fit(unitW.short));
   }
-  const inputW = Math.min(numberWidth(shown || '0', size) + (Platform.OS === 'web' ? 2 : 6), Math.max(24, avail - unitWidth(unitText)));
+  size = Math.max(MIN_SIZE, size);
+  const inputW = numW > 0 ? Math.ceil((numW * size) / MAX_SIZE) + 3 : undefined;
 
   const atMin = value <= min;
   const atMax = value >= max;
@@ -257,6 +243,21 @@ export function StepperField({
         >
           {side(-1)}
           <View style={styles.value} onLayout={(e: LayoutChangeEvent) => setBoxW(e.nativeEvent.layout.width)}>
+            <View style={styles.measure} pointerEvents="none" accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+              <Text style={[styles.measureNumber, { fontSize: MAX_SIZE, lineHeight: MAX_SIZE + 6 }]} onLayout={(e) => setNumW(e.nativeEvent.layout.width)}>
+                {shown || '0'}
+              </Text>
+              {unit ? (
+                <Text style={styles.unit} onLayout={(e) => { const w = e.nativeEvent.layout.width; setUnitW((u) => (u.full === w ? u : { ...u, full: w })); }}>
+                  {unit}
+                </Text>
+              ) : null}
+              {unitShort ? (
+                <Text style={styles.unit} onLayout={(e) => { const w = e.nativeEvent.layout.width; setUnitW((u) => (u.short === w ? u : { ...u, short: w })); }}>
+                  {unitShort}
+                </Text>
+              ) : null}
+            </View>
             <TextInput
               value={shown}
               onChangeText={onChangeText}
@@ -271,12 +272,13 @@ export function StepperField({
               testID={testID ? `${testID}-input` : undefined}
               style={[
                 styles.input,
-                { fontSize: size, lineHeight: size + 6, width: inputW },
+                { fontSize: size, lineHeight: size + 6 },
+                inputW ? { width: inputW } : styles.inputFlex,
                 Platform.OS === 'web' ? ({ outlineWidth: 0, outlineStyle: 'none' } as any) : null,
               ]}
             />
             {unitText ? (
-              <Text style={styles.unit} numberOfLines={1}>
+              <Text style={[styles.unit, styles.unitShown]} numberOfLines={1}>
                 {unitText}
               </Text>
             ) : null}
@@ -312,7 +314,7 @@ const styles = StyleSheet.create({
     borderLeftWidth: 1,
     borderRightWidth: 1,
     borderColor: palette.line,
-    paddingHorizontal: 6,
+    paddingHorizontal: 4,
   },
   input: {
     fontFamily: fontFamily.extrabold,
@@ -324,5 +326,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 0,
     height: '100%',
   },
-  unit: { ...type.calloutStrong, color: palette.text3, marginLeft: 4 },
+  inputFlex: { flex: 1, minWidth: 0 },
+  measureNumber: { fontFamily: fontFamily.extrabold, letterSpacing: -0.4, fontVariant: ['tabular-nums'] },
+  unit: { ...type.calloutStrong, color: palette.text3 },
+  unitShown: { marginLeft: UNIT_GAP, flexShrink: 0 },
+  // Off-screen, unconstrained: texts keep their natural single-line width.
+  measure: { position: 'absolute', left: -10000, top: 0, width: 4000, flexDirection: 'row', alignItems: 'flex-start', gap: 16, opacity: 0 },
 });

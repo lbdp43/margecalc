@@ -133,7 +133,7 @@ function RatesSheet({ visible, onClose, rates, year, link }: { visible: boolean;
       testID="sheet-rates"
     >
       <InfoNote icon="shield-checkmark-outline" tone="brand" style={{ marginHorizontal: 12, marginBottom: 8 }}>
-        Droits d’accise par catégorie fiscale. La cotisation sécurité sociale s’ajoute au-delà de {formatDegree(18)}.
+        Droits d’accise par catégorie fiscale. La cotisation sécurité sociale s’ajoute au-delà de {formatDegree(18)}
       </InfoNote>
       {groups.map((g) => (
         <View key={g.key}>
@@ -286,7 +286,7 @@ function RatesEditorSheet({ visible, onClose, rates, year }: { visible: boolean;
       testID="sheet-rates-editor"
     >
       <InfoNote icon="create-outline" tone="brand">
-        Accise par catégorie fiscale ; la cotisation sécurité sociale (« Sécu. ») s’applique au-delà de {formatDegree(18)}.
+        Accise par catégorie fiscale ; la cotisation sécurité sociale (« Sécu. ») s’applique au-delà de {formatDegree(18)}
       </InfoNote>
       {groups.map((g) => (
         <View key={g.key}>

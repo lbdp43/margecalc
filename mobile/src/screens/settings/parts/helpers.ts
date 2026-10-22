@@ -39,8 +39,11 @@ export function readableError(err: unknown, fallback: string): ReadableError {
   for (const d of details) {
     if (d && typeof d.field === 'string' && typeof d.message === 'string' && !fields[d.field]) fields[d.field] = d.message;
   }
-  const message = typeof data?.error === 'string' && data.error.trim() ? data.error : fallback;
-  return { message, fields, offline: false, status: e.response.status };
+  const status = e.response.status ?? 0;
+  let message = typeof data?.error === 'string' && data.error.trim() ? data.error : fallback;
+  // A bare « Erreur serveur » says less than the screen's own sentence.
+  if (status >= 500 && /^erreur serveur\.?$/i.test(message.trim())) message = `${fallback} Réessayez dans un instant.`;
+  return { message, fields, offline: false, status };
 }
 
 const strip = (s: string) =>

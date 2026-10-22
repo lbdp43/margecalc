@@ -97,7 +97,7 @@ export function DashboardScreen() {
   const openFeedback = useCallback(() => setFeedbackOpen(true), []);
   const scanBottle = useCallback(() => openProductForm(navigation, {}), [navigation]);
   const scanInvoice = useCallback(() => openInvoiceScan(navigation), [navigation]);
-  const addManually = useCallback(() => openProductForm(navigation, { scanData: {} }), [navigation]);
+  const addManually = useCallback(() => openProductForm(navigation, { start: 'form' }), [navigation]);
   const { refetch } = query;
   const retry = useCallback(() => {
     refetch();

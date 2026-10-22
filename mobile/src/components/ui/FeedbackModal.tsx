@@ -11,7 +11,7 @@
  *   marked read when it is opened).
  */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Image, Platform, StyleSheet, Text, View } from 'react-native';
+import { Image, Platform, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
 import { Ionicons } from '@expo/vector-icons';
@@ -70,6 +70,7 @@ function shortDate(iso: string): string {
 
 export const FeedbackModal = React.memo(function FeedbackModal({ visible, onClose, screenName, initialTab = 'new' }: FeedbackModalProps) {
   const qc = useQueryClient();
+  const { width } = useWindowDimensions();
   const [tab, setTab] = useState<Tab>(initialTab);
 
   // new message
@@ -210,7 +211,7 @@ export const FeedbackModal = React.memo(function FeedbackModal({ visible, onClos
                   <Chip
                     key={t}
                     label={TICKET_TYPE_META[t].label}
-                    icon={TICKET_TYPE_META[t].icon}
+                    icon={width >= 380 ? TICKET_TYPE_META[t].icon : undefined}
                     selected={kind === t}
                     onPress={() => setKind(t)}
                   />

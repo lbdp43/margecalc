@@ -13,7 +13,7 @@ import { api } from '../../../services/api';
 import { useAuthStore } from '../../../store/auth.store';
 import { SETTINGS_KEYS, useCategories, useSettingsQueryClient } from './data';
 import { readableError } from './helpers';
-import { RowSkeleton, SettingsSection } from './ui';
+import { ErrorLine, RowSkeleton, SettingsSection } from './ui';
 
 const NAME_MAX = 60;
 
@@ -91,6 +91,7 @@ function AddCategorySheet({ visible, onClose, isAdmin, existing }: { visible: bo
   const [name, setName] = useState('');
   const [global, setGlobal] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -98,6 +99,7 @@ function AddCategorySheet({ visible, onClose, isAdmin, existing }: { visible: bo
       setName('');
       setGlobal(false);
       setError(null);
+      setFormError(null);
     }
   }, [visible]);
 
@@ -116,6 +118,7 @@ function AddCategorySheet({ visible, onClose, isAdmin, existing }: { visible: bo
     }
     setSaving(true);
     setError(null);
+    setFormError(null);
     try {
       const res = await api.post<Category>('/categories', isAdmin ? { name: n, global } : { name: n });
       qc.setQueryData<Category[]>([...SETTINGS_KEYS.categories], (prev) => (prev ? [...prev, res.data] : prev));
@@ -126,7 +129,8 @@ function AddCategorySheet({ visible, onClose, isAdmin, existing }: { visible: bo
     } catch (err) {
       haptics.warning();
       const e = readableError(err, 'La catégorie n’a pas pu être créée.');
-      setError(e.fields.name ?? e.message);
+      if (e.fields.name || e.status === 400 || e.status === 409) setError(e.fields.name ?? e.message);
+      else setFormError(e.message);
     } finally {
       setSaving(false);
     }
@@ -148,6 +152,7 @@ function AddCategorySheet({ visible, onClose, isAdmin, existing }: { visible: bo
         onChangeText={(t) => {
           setName(t);
           if (error) setError(null);
+          if (formError) setFormError(null);
         }}
         placeholder="Ex. : Cidres & poirés"
         maxLength={NAME_MAX}
@@ -157,6 +162,7 @@ function AddCategorySheet({ visible, onClose, isAdmin, existing }: { visible: bo
         error={error}
         testID="input-category-name"
       />
+      <ErrorLine message={formError} />
       {isAdmin ? (
         <View style={{ marginTop: 16, marginHorizontal: -12 }}>
           <ListRow

@@ -27,7 +27,7 @@ import { SegmentedControl } from './SegmentedControl';
 import { Skeleton } from './Skeleton';
 import { TextField } from './TextField';
 import { FadeIn, SwapFade } from './motion';
-import { toast } from './Toast';
+import { SheetFlash, useSheetFlash } from './AdminUsersSection';
 
 const TICKETS_KEY = ['admin', 'tickets'];
 type Filter = 'open' | 'resolved' | 'all';
@@ -70,8 +70,8 @@ const TicketRow = React.memo(function TicketRow({ ticket, onPress, divider }: { 
       iconTone={meta.tone}
       title={ticket.message.replace(/\s+/g, ' ').trim()}
       titleStyle={styles.rowTitle}
-      subtitle={`${meta.label} · ${who} · ${when(ticket.createdAt)}${ticket.adminReply ? ' · répondu' : ''}`}
-      subtitleLines={1}
+      subtitle={`${who} · ${when(ticket.createdAt)}${ticket.adminReply ? ' · répondu' : ''}`}
+      subtitleLines={2}
       right={ticket.status === 'open' ? <Badge zone="orange" label="Ouverte" size="sm" noDot /> : <Badge zone="green" label="Résolue" size="sm" noDot />}
       onPress={() => onPress(ticket)}
       divider={divider}
@@ -90,13 +90,15 @@ export function AdminTicketsSheet({ visible, onClose }: { visible: boolean; onCl
   const [busy, setBusy] = useState<'reply' | 'status' | 'delete' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [sent, setSent] = useState(false);
+  const [flash, showFlash, clearFlash] = useSheetFlash();
 
   useEffect(() => {
     if (visible) {
       setSelectedId(null);
       setError(null);
+      clearFlash();
     }
-  }, [visible]);
+  }, [visible, clearFlash]);
 
   const all = tickets.data ?? [];
   const counts = useMemo(() => ({ open: all.filter((t) => t.status === 'open').length, resolved: all.filter((t) => t.status === 'resolved').length }), [all]);
@@ -108,6 +110,7 @@ export function AdminTicketsSheet({ visible, onClose }: { visible: boolean; onCl
     setReply(t.adminReply ?? '');
     setError(null);
     setSent(false);
+    clearFlash();
   };
 
   const patch = (id: string, p: Partial<Ticket> | null) =>
@@ -129,7 +132,7 @@ export function AdminTicketsSheet({ visible, onClose }: { visible: boolean; onCl
       haptics.success();
       setSent(true);
       setTimeout(() => setSent(false), 1200);
-      toast.success('Réponse envoyée');
+      showFlash('Réponse envoyée : l’utilisateur la lira dans Aide & retours.');
     } catch (err) {
       haptics.warning();
       setError(errorText(err, 'La réponse n’a pas pu être envoyée.'));
@@ -147,7 +150,7 @@ export function AdminTicketsSheet({ visible, onClose }: { visible: boolean; onCl
       await ticketService.updateTicketStatus(selected.id, next);
       patch(selected.id, { status: next });
       haptics.success();
-      toast.success(next === 'resolved' ? 'Demande marquée résolue' : 'Demande rouverte');
+      showFlash(next === 'resolved' ? 'Demande marquée résolue' : 'Demande rouverte');
     } catch (err) {
       haptics.warning();
       setError(errorText(err, 'Le statut n’a pas pu être modifié.'));
@@ -171,7 +174,7 @@ export function AdminTicketsSheet({ visible, onClose }: { visible: boolean; onCl
       haptics.success();
       patch(selected.id, null);
       setSelectedId(null);
-      toast.success('Demande supprimée');
+      showFlash('Demande supprimée');
     } catch (err) {
       haptics.warning();
       setError(errorText(err, 'La demande n’a pas pu être supprimée.'));
@@ -198,7 +201,7 @@ export function AdminTicketsSheet({ visible, onClose }: { visible: boolean; onCl
         onPress={sendReply}
         loading={busy === 'reply'}
         success={sent}
-        disabled={(!!busy && busy !== 'reply') || !reply.trim() || reply.trim() === (selected.adminReply ?? '').trim()}
+        disabled={!sent && ((!!busy && busy !== 'reply') || !reply.trim() || reply.trim() === (selected.adminReply ?? '').trim())}
         style={{ flex: 1.3 }}
         testID="admin-ticket-reply"
       />
@@ -226,12 +229,17 @@ export function AdminTicketsSheet({ visible, onClose }: { visible: boolean; onCl
               if (error) setError(null);
             }}
             error={error}
-            onBack={() => setSelectedId(null)}
+            flash={flash}
+            onBack={() => {
+              setSelectedId(null);
+              clearFlash();
+            }}
             onDelete={remove}
             deleting={busy === 'delete'}
           />
         ) : (
           <View>
+            <SheetFlash flash={flash} style={{ marginHorizontal: 12, marginBottom: 12 }} />
             <View style={{ paddingHorizontal: 12, marginBottom: 8 }}>
               <SegmentedControl
                 options={[
@@ -272,6 +280,7 @@ function TicketDetail({
   reply,
   onReply,
   error,
+  flash,
   onBack,
   onDelete,
   deleting,
@@ -280,6 +289,7 @@ function TicketDetail({
   reply: string;
   onReply: (t: string) => void;
   error: string | null;
+  flash: React.ComponentProps<typeof SheetFlash>['flash'];
   onBack: () => void;
   onDelete: () => void;
   deleting: boolean;
@@ -297,6 +307,7 @@ function TicketDetail({
       <View style={styles.backRow}>
         <Button title="Toutes les demandes" variant="text" size="sm" icon="chevron-back" onPress={onBack} haptic="select" testID="admin-ticket-back" />
       </View>
+      <SheetFlash flash={flash} />
       <View style={styles.badges}>
         <Badge variant="neutral" icon={meta.icon} label={meta.label} size="sm" />
         {ticket.status === 'open' ? <Badge zone="orange" label="Ouverte" size="sm" noDot /> : <Badge zone="green" label="Résolue" size="sm" noDot />}

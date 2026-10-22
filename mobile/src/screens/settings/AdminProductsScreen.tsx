@@ -124,7 +124,8 @@ export function AdminProductsScreen() {
         <StatTile style={styles.stat} label="Comptes" value={accounts} valueStyle={styles.statValue} />
         <StatTile
           style={styles.stat}
-          label="Marge moy."
+          label="Marge"
+          accessibilityLabel={`Marge moyenne : ${formatPercent(avg)}`}
           value={avg}
           format={(n) => formatPercent(n)}
           valueStyle={[styles.statValue, { color: filtered.length ? (getMarginZone(avg, thresholds) === 'green' ? palette.good : getMarginZone(avg, thresholds) === 'orange' ? palette.warn : palette.bad) : palette.ink }]}

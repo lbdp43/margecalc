@@ -31,7 +31,7 @@ export const DutyResultPanel = React.memo(function DutyResultPanel({ result, rat
   const hasCotisation = rate.cotisationRate > 0 && !!rate.cotisationCond;
   const cotisationDue = result.cotisationSS > 0;
   const seuil = `${formatNumber(seuilSS)}${NBSP}%${NBSP}vol.`;
-  const cotisationQualifier = !hasCotisation ? 'non applicable' : cotisationDue ? `>${NBSP}${seuil}` : `dès${NBSP}${seuil}`;
+  const cotisationQualifier = !hasCotisation ? 'non applicable' : cotisationDue ? `>${NBSP}${seuil}` : `au-delà de ${seuil}`;
   const equation = `${formatEuro(price, { bare: true })} + ${formatEuro(result.totalDroits, { bare: true })}`;
 
   const panel = (

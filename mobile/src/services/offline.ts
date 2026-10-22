@@ -64,24 +64,53 @@ export function onConnectivityChange(cb: (online: boolean) => void) {
   };
 }
 
+function setOnline(next: boolean) {
+  const wasOffline = !_isOnline;
+  const changed = next !== _isOnline;
+  _isOnline = next;
+  if (changed) _listeners.forEach((cb) => cb(_isOnline));
+  if (wasOffline && _isOnline) {
+    syncPendingOperations().catch(() => {});
+  }
+}
+
+let _unsubWeb: (() => void) | null = null;
+
 export function initOfflineMode() {
   // Prevent double init
   if (_unsubNetInfo) return;
   _unsubNetInfo = NetInfo.addEventListener((state) => {
-    const wasOffline = !_isOnline;
-    _isOnline = !!(state.isConnected && state.isInternetReachable !== false);
-    _listeners.forEach((cb) => cb(_isOnline));
-
-    if (wasOffline && _isOnline) {
-      syncPendingOperations();
-    }
+    // Web: trust the browser's connection flag. NetInfo's reachability probe
+    // (a fetch to a Google URL) is unreliable from a PWA (blocked hosts,
+    // captive networks) and could keep the app « offline » forever.
+    setOnline(
+      Platform.OS === 'web'
+        ? state.isConnected !== false && !browserOffline()
+        : !!(state.isConnected && state.isInternetReachable !== false),
+    );
   });
+  // Web: with `navigator.connection` NetInfo only listens to its `change`
+  // event, which browsers do not fire for every online/offline switch.
+  const w = (globalThis as any).window;
+  if (Platform.OS === 'web' && w?.addEventListener) {
+    const onChange = () => setOnline(!browserOffline());
+    w.addEventListener('online', onChange);
+    w.addEventListener('offline', onChange);
+    _unsubWeb = () => {
+      w.removeEventListener('online', onChange);
+      w.removeEventListener('offline', onChange);
+    };
+  }
 }
 
 export function cleanupOfflineMode() {
   if (_unsubNetInfo) {
     _unsubNetInfo();
     _unsubNetInfo = null;
+  }
+  if (_unsubWeb) {
+    _unsubWeb();
+    _unsubWeb = null;
   }
   _listeners = [];
 }

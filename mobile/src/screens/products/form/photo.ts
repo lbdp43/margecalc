@@ -7,7 +7,10 @@
  *     - imageUrl: 640 px JPEG q0.7 data URI (≤ 300 000 chars) for the product,
  *     - thumbnailUrl: 160 × 160 JPEG q0.6 data URI (≤ 40 000 chars) for lists,
  *   each derivative is made from the previous, smaller image, so the slow
- *   decode of a 12 MP photo happens once (it blocks the JS thread on web).
+ *   decode of a 12 MP photo happens once.
+ * On web the browser's canvas scaler is used (milliseconds instead of seconds
+ * for expo-image-manipulator's JavaScript resampler); it falls back to
+ * expo-image-manipulator if anything fails.
  */
 import { Platform } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
@@ -128,7 +131,89 @@ export function nextPaint(): Promise<void> {
   });
 }
 
+// ─── Web fast path ──────────────────────────────────────────────────────────
+// expo-image-manipulator resizes on web with a JavaScript Hermite filter on the
+// main thread (3–4 s for a 12 MP photo on a laptop, far more on a phone). The
+// browser's own scaler does the same job in a few milliseconds, so on web the
+// photo is decoded once and scaled with the canvas; any failure falls back to
+// expo-image-manipulator below.
+
+type WebCanvas = { width: number; height: number; getContext: (k: '2d') => any; toDataURL: (t: string, q: number) => string };
+
+function webCanvas(w: number, h: number): WebCanvas {
+  const c = (globalThis as any).document.createElement('canvas') as WebCanvas;
+  c.width = Math.max(1, Math.round(w));
+  c.height = Math.max(1, Math.round(h));
+  return c;
+}
+
+function webLoad(uri: string): Promise<any> {
+  return new Promise((resolve, reject) => {
+    const ImageCtor = (globalThis as any).Image;
+    const el = new ImageCtor();
+    el.onload = () => resolve(el);
+    el.onerror = () => reject(new Error('decode'));
+    el.src = uri;
+  });
+}
+
+/** Draws `src` (image or canvas) scaled so its long side is ≤ max, on a white background. */
+function webFit(src: any, sw: number, sh: number, max: number): WebCanvas {
+  const scale = Math.min(1, max / Math.max(sw, sh));
+  const c = webCanvas(sw * scale, sh * scale);
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#FFFFFF';
+  ctx.fillRect(0, 0, c.width, c.height);
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(src, 0, 0, c.width, c.height);
+  return c;
+}
+
+function webSquare(src: WebCanvas, size: number): WebCanvas {
+  const side = Math.min(src.width, src.height);
+  const c = webCanvas(size, size);
+  const ctx = c.getContext('2d');
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(src, (src.width - side) / 2, (src.height - side) / 2, side, side, 0, 0, size, size);
+  return c;
+}
+
+const b64 = (dataUrl: string) => dataUrl.slice(dataUrl.indexOf(',') + 1);
+
+async function prepareOnWeb(img: PickedImage, opts: { forOcr: boolean }): Promise<PreparedPhoto> {
+  const el = await webLoad(img.uri);
+  const w = el.naturalWidth || img.width;
+  const h = el.naturalHeight || img.height;
+  if (!(w > 0 && h > 0)) throw new Error('size');
+  const ocr = opts.forOcr ? webFit(el, w, h, 1600) : null;
+  const photoSrc = ocr ?? el;
+  let photo = webFit(photoSrc, ocr ? ocr.width : w, ocr ? ocr.height : h, 640);
+  let imageUrl = photo.toDataURL('image/jpeg', 0.7);
+  if (imageUrl.length > PRODUCT_IMAGE_MAX_CHARS) {
+    photo = webFit(photo, photo.width, photo.height, 512);
+    imageUrl = photo.toDataURL('image/jpeg', 0.55);
+  }
+  let thumbnailUrl = webSquare(photo, 160).toDataURL('image/jpeg', 0.6);
+  if (thumbnailUrl.length > PRODUCT_THUMBNAIL_MAX_CHARS) thumbnailUrl = webSquare(photo, 120).toDataURL('image/jpeg', 0.5);
+  if (!imageUrl.startsWith('data:image/jpeg') || !thumbnailUrl.startsWith('data:image/jpeg')) throw new Error('encode');
+  return {
+    ocrBase64: ocr ? b64(ocr.toDataURL('image/jpeg', 0.82)) : undefined,
+    imageUrl,
+    thumbnailUrl,
+  };
+}
+
 export async function preparePhoto(img: PickedImage, opts: { forOcr: boolean }): Promise<PreparedPhoto> {
+  if (Platform.OS === 'web' && typeof (globalThis as any).document !== 'undefined') {
+    try {
+      await nextPaint();
+      return await prepareOnWeb(img, opts);
+    } catch {
+      /* fall back to expo-image-manipulator */
+    }
+  }
   try {
     await nextPaint();
     const base = await jpeg(img.uri, fitLongSide(img.width, img.height, opts.forOcr ? 1600 : 640), opts.forOcr ? 0.82 : 0.7);

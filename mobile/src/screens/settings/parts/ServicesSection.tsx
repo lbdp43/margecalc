@@ -84,7 +84,7 @@ export function ServicesSection({ index }: { index: number }) {
           <ListRow
             icon="star-outline"
             title="Contenant par défaut"
-            subtitle="Proposé pour un nouveau produit"
+            subtitle="Pour un nouveau produit"
             value={defaultLabel}
             onPress={() => setOpen('default')}
             testID="settings-default-container"

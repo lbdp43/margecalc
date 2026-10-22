@@ -10,7 +10,7 @@
  * no search result, offline without cache, load error with « Réessayer ».
  */
 import React, { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { ScrollView, ScrollViewProps, StyleSheet, Text, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { ProductWithMargin } from '@margebar/shared';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -73,15 +73,46 @@ const ProductRow = React.memo(function ProductRow({ product, index, animate, fla
   );
 });
 
-/** goodBg wash that fades out over 600 ms (a card that was just created). */
+/**
+ * goodBg wash that fades out over 600 ms on a card that was just created
+ * (held while the list scrolls back to the top).
+ */
 function Flash() {
   const reduce = useReduceMotion();
   const o = useSharedValue(0.85);
   useEffect(() => {
-    o.value = withDelay(reduce ? 0 : 280, withTiming(0, { duration: reduce ? motion.duration.fast : 600, easing: motion.easing.standard }));
+    o.value = withDelay(reduce ? 400 : 800, withTiming(0, { duration: reduce ? motion.duration.fast : 600, easing: motion.easing.standard }));
   }, [o, reduce]);
   const style = useAnimatedStyle(() => ({ opacity: o.value }));
   return <Animated.View pointerEvents="none" style={[styles.flash, style]} />;
+}
+
+/**
+ * ScreenList takes no ref: capture its scroll view through renderScrollComponent
+ * (the list clones the element with its own ref, which is forwarded here too).
+ */
+function useCapturedScroll() {
+  const node = useRef<ScrollView | null>(null);
+  const render = useMemo(() => {
+    const Captured = React.forwardRef<ScrollView, ScrollViewProps>(function Captured(props, ref) {
+      return (
+        <ScrollView
+          {...props}
+          ref={(n) => {
+            node.current = n;
+            if (typeof ref === 'function') ref(n);
+            else if (ref) (ref as React.MutableRefObject<ScrollView | null>).current = n;
+          }}
+        />
+      );
+    });
+    return (props: ScrollViewProps) => <Captured {...props} />;
+  }, []);
+  const scrollToTop = useCallback(() => {
+    // Wait for the inserted row to settle: a layout change cancels a smooth scroll.
+    setTimeout(() => node.current?.scrollTo({ y: 0, animated: true }), 320);
+  }, []);
+  return { render, scrollToTop };
 }
 
 // ─── Screen ────────────────────────────────────────────────────────────────
@@ -101,6 +132,7 @@ export function ProductListScreen({ navigation: nav }: Props) {
   const [epoch, setEpoch] = useState(0);
   const [flashId, setFlashId] = useState<string | null>(null);
   const animateUntil = useRef(0);
+  const scroller = useCapturedScroll();
 
   const { data, isLoading, isFetching, error, refetch, isOffline } = useOfflineQuery<ProductWithMargin[]>(['products'], () =>
     productService.getProducts(),
@@ -187,11 +219,12 @@ export function ProductListScreen({ navigation: nav }: Props) {
         if (category !== ALL_KEY && created.categoryId !== category) setCategory(ALL_KEY);
         if (query && !matchesQuery(created, query)) setQuery('');
         if (sort !== 'recent') onSort('recent');
+        scroller.scrollToTop();
         setFlashId(created.id);
-        setTimeout(() => setFlashId((id) => (id === created.id ? null : id)), 1400);
+        setTimeout(() => setFlashId((id) => (id === created.id ? null : id)), 2000);
       }
     },
-    [actions, openProduct, category, query, sort, onSort],
+    [actions, openProduct, category, query, sort, onSort, scroller],
   );
   const onDelete = useCallback((p: ProductWithMargin) => {
     actions.remove(p);
@@ -347,19 +380,28 @@ export function ProductListScreen({ navigation: nav }: Props) {
     );
   }
 
+  // Whole-screen states sit in the middle of the free space (the search result one stays near the field).
+  if (empty && (freshAccount || loadError || (!hasData && offlineEmpty))) {
+    empty = <View style={styles.emptyFill}>{empty}</View>;
+  }
+
   return (
     <Screen scroll={false} refreshing={pulling} onRefresh={onRefresh}>
       <ScreenList
         data={visible}
         keyExtractor={keyExtractor}
         renderItem={renderItem}
+        renderScrollComponent={scroller.render}
         extraData={flashId}
         ItemSeparatorComponent={Separator}
         ListHeaderComponent={header}
         ListEmptyComponent={empty}
-        initialNumToRender={8}
-        maxToRenderPerBatch={8}
-        windowSize={9}
+        // Render every row up front. VirtualizedList grows its window through
+        // InteractionManager, which a leaked Animated.loop (startup spinner)
+        // keeps blocked: without this the list stops at 10 cards. Rows are
+        // memoised, so a bar's catalogue (tens to a few hundred) stays smooth.
+        initialNumToRender={Math.max(10, visible.length)}
+        maxToRenderPerBatch={20}
         testID="products-list"
       />
       <ProductActionsSheet
@@ -382,5 +424,7 @@ const styles = StyleSheet.create({
   chips: { marginTop: 14 },
   toolbar: { marginTop: 6, marginBottom: 4 },
   count: { ...type.footnote, color: palette.text3 },
+  // Fresh account / offline / error: centred in the space left under the title.
+  emptyFill: { flex: 1, minHeight: 420, justifyContent: 'center', paddingBottom: 40 },
   flash: { ...StyleSheet.absoluteFillObject, borderRadius: radius.lg, backgroundColor: palette.goodBg },
 });

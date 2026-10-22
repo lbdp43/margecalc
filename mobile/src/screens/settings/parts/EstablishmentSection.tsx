@@ -11,7 +11,7 @@ import { formatPercent } from '../../../utils/format';
 import { useAuthStore } from '../../../store/auth.store';
 import { readableError } from './helpers';
 import { updateMe, useMe } from './data';
-import { SettingsSection } from './ui';
+import { ErrorLine, SettingsSection } from './ui';
 
 const NAME_MAX = 80;
 
@@ -68,12 +68,14 @@ export function EstablishmentSection({ index }: { index: number }) {
 function BusinessNameSheet({ visible, onClose, initial }: { visible: boolean; onClose: () => void; initial: string }) {
   const [name, setName] = useState(initial);
   const [error, setError] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (visible) {
       setName(initial);
       setError(null);
+      setFormError(null);
     }
   }, [visible, initial]);
 
@@ -96,7 +98,8 @@ function BusinessNameSheet({ visible, onClose, initial }: { visible: boolean; on
     } catch (err) {
       haptics.warning();
       const e = readableError(err, 'Le nom n’a pas pu être enregistré.');
-      setError(e.fields.businessName ?? e.message);
+      if (e.fields.businessName || e.status === 400) setError(e.fields.businessName ?? e.message);
+      else setFormError(e.message);
     } finally {
       setSaving(false);
     }
@@ -118,6 +121,7 @@ function BusinessNameSheet({ visible, onClose, initial }: { visible: boolean; on
         onChangeText={(t) => {
           setName(t);
           if (error) setError(null);
+          if (formError) setFormError(null);
         }}
         placeholder="Ex. : Le Comptoir des Plantes"
         maxLength={NAME_MAX}
@@ -128,6 +132,7 @@ function BusinessNameSheet({ visible, onClose, initial }: { visible: boolean; on
         error={error}
         testID="input-business-name"
       />
+      <ErrorLine message={formError} />
     </BottomSheet>
   );
 }

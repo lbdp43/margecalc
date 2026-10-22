@@ -40,14 +40,15 @@ const Row = React.memo(function Row({
   const price = primaryPrice(product);
   const margin = product.computed.marginPercent;
   const zone = getMarginZone(margin, thresholds);
-  const meta = `${price.label}${NBSP}·${NBSP}${formatEuro(price.price)}${price.extra > 0 ? ` · +${price.extra}${NBSP}service${price.extra > 1 ? 's' : ''}` : ''}`;
+  const meta = `${price.label}${NBSP}·${NBSP}${formatEuro(price.price)}`;
+  const extra = price.extra > 0 ? `, et ${price.extra} autre${price.extra > 1 ? 's' : ''} service${price.extra > 1 ? 's' : ''}` : '';
   return (
     <View>
       <PressableScale
         onPress={() => onOpen(product.id)}
         scaleTo="card"
         accessibilityRole="button"
-        accessibilityLabel={`${rank}. ${product.name}, ${product.category?.name ?? 'produit'}, ${spoken(meta)}, marge ${spoken(formatPercent(margin))}, ${marginColors[zone].label}`}
+        accessibilityLabel={`${rank}. ${product.name}, ${product.category?.name ?? 'produit'}, ${spoken(meta)}${extra}, marge ${spoken(formatPercent(margin))}, ${marginColors[zone].label}`}
         style={styles.row}
         testID={`topflop-row-${rank}`}
       >
@@ -59,9 +60,10 @@ const Row = React.memo(function Row({
           </Text>
           <Text style={styles.meta} numberOfLines={1}>
             {meta}
+            {price.extra > 0 ? <Text style={styles.extra}>{`${NBSP}${NBSP}+${price.extra}`}</Text> : null}
           </Text>
         </View>
-        <Badge value={margin} thresholds={thresholds} size="sm" />
+        <Badge value={margin} thresholds={thresholds} size="sm" style={styles.badge} />
       </PressableScale>
       {!last ? <View style={styles.divider} /> : null}
     </View>
@@ -117,5 +119,7 @@ const styles = StyleSheet.create({
   texts: { flex: 1, minWidth: 0, gap: 2 },
   name: { ...type.headline, color: palette.ink },
   meta: { ...type.footnote, color: palette.text3 },
+  extra: { ...type.footnoteStrong, color: palette.em700 },
+  badge: { alignSelf: 'center' },
   divider: { height: 1, backgroundColor: palette.line, marginLeft: 12 + 14 + 12 + 40 + 12, marginRight: 12 },
 });

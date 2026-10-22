@@ -184,7 +184,6 @@ export function PricingSection({ values, setValues, servingTypes, loading, deriv
             lastMode.current = m;
           }}
           onLiveChange={onLiveChange}
-          multiple={enabled.length > 1}
         />
       ) : (
         <Card style={styles.empty}>
@@ -209,12 +208,11 @@ interface ServicePricingProps {
   d: Derived;
   t: MarginThresholds;
   tva: number;
-  multiple: boolean;
   onModeChange: (m: PriceMode) => void;
   onLiveChange?: (live: boolean) => void;
 }
 
-function ServicePricing({ serviceKey: key, values, setValues, servingTypes, d, t, tva, multiple, onModeChange, onLiveChange }: ServicePricingProps) {
+function ServicePricing({ serviceKey: key, values, setValues, servingTypes, d, t, tva, onModeChange, onLiveChange }: ServicePricingProps) {
   const s = values.services[key];
   const [dragging, setDragging] = useState(false);
   const anchor = useRef(s.price);
@@ -375,11 +373,8 @@ function ServicePricing({ serviceKey: key, values, setValues, servingTypes, d, t
         </View>
 
         <View style={styles.cardFoot}>
-          <Text style={styles.footMeta} numberOfLines={1}>
-            {multiple ? 'Chaque service a son prix' : 'Ajoutez d’autres services au-dessus'}
-          </Text>
           <Button
-            title="Retirer"
+            title="Retirer ce service"
             variant="destructive"
             size="sm"
             icon="remove-circle-outline"
@@ -421,8 +416,7 @@ const styles = StyleSheet.create({
     backgroundColor: palette.surface2,
   },
   hintText: { ...type.footnoteStrong, color: palette.text2, flexShrink: 1 },
-  cardFoot: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginTop: 10, marginBottom: -6 },
-  footMeta: { ...type.footnote, color: palette.text3, flexShrink: 1 },
+  cardFoot: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 8, marginBottom: -8 },
   empty: { marginTop: 14, alignItems: 'flex-start' },
   emptyIcon: { width: 44, height: 44, borderRadius: 14, backgroundColor: palette.em50, alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
   emptyTitle: { ...type.headline, color: palette.ink },

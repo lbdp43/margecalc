@@ -139,7 +139,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  pillText: { fontFamily: fontFamily.bold, fontSize: 12, lineHeight: 16, color: '#FFFFFF', fontVariant: ['tabular-nums'] },
+  pillText: { fontFamily: fontFamily.bold, fontSize: 12, lineHeight: 16, color: palette.onEmerald, fontVariant: ['tabular-nums'] },
   pillChevron: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   skelRow: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 12, paddingVertical: 12, minHeight: 56 },
   skelDivider: { borderBottomWidth: 1, borderBottomColor: palette.line, marginRight: 12 },

@@ -116,6 +116,9 @@ const CLEARS: Array<[keyof FormValues, FieldKey]> = [
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/** A draft is kept once there is real work in it (a photo alone is not worth one). */
+const draftWorthy = (v: FormValues) => !!v.name.trim() || v.purchase !== null || Object.keys(v.services).length > 0;
+
 export function ProductFormScreen({ route, navigation }: Props) {
   const params = (route.params ?? {}) as ProductFormParams;
   const productId = params.productId;
@@ -304,7 +307,7 @@ export function ProductFormScreen({ route, navigation }: Props) {
   useEffect(() => {
     if (editing || step !== 'form' || saveState !== 'idle') return;
     const fp = fingerprint(values);
-    if (fp === baseline.current) return;
+    if (fp === baseline.current || !draftWorthy(values)) return;
     const t = setTimeout(() => {
       saveProductDraft(user?.id, values.name.trim(), values).then((ok) => ok && setDraftSaved(true));
     }, 700);
@@ -320,8 +323,9 @@ export function ProductFormScreen({ route, navigation }: Props) {
         if (!dirty || step !== 'form') return;
         if (!editing) {
           // The draft keeps the work: save it now and say so.
+          if (!draftWorthy(valuesRef.current)) return;
           saveProductDraft(user?.id, valuesRef.current.name.trim(), valuesRef.current);
-          toast.info('Brouillon conservé : reprenez-le depuis « Scanner un produit »');
+          toast.info('Brouillon conservé');
           return;
         }
         e.preventDefault();
@@ -329,9 +333,10 @@ export function ProductFormScreen({ route, navigation }: Props) {
           .confirm({
             title: 'Quitter sans enregistrer ?',
             message: 'Vos modifications de ce produit seront perdues.',
-            confirmLabel: 'Quitter',
-            cancelLabel: 'Continuer',
+            confirmLabel: 'Quitter sans enregistrer',
+            cancelLabel: 'Continuer la modification',
             destructive: true,
+            icon: 'exit-outline',
           })
           .then((ok) => {
             if (ok) {

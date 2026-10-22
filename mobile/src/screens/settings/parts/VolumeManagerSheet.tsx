@@ -131,7 +131,7 @@ export function VolumeManagerSheet({
   };
 
   const parsedVolume = parseLocaleFloat(volume);
-  const volumeHint = isFinite(parsedVolume) && parsedVolume > 0 ? `Soit ${formatVolumeCl(parsedVolume)}` : copy.volumeHelper;
+  const volumeHint = isFinite(parsedVolume) && parsedVolume >= 100 ? `Soit ${formatVolumeCl(parsedVolume)}` : copy.volumeHelper;
 
   const validate = (): { name: string; volumeCl: number } | null => {
     const next: typeof errors = {};

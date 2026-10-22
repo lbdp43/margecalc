@@ -111,9 +111,11 @@ export function PurchaseSection({ values, patch, errors, containers, rates, duti
           title="Prix d’achat HT"
           caption={values.horsDroits ? `hors droits · par ${noun}` : `droits inclus · par ${noun}`}
           error={errors.purchase}
+          stacked
           testID="row-purchase"
         >
           <NumberInput
+            size="large"
             value={values.purchase}
             onChange={(n) => patch({ purchase: n })}
             step={0.1}
@@ -128,7 +130,7 @@ export function PurchaseSection({ values, patch, errors, containers, rates, duti
           />
         </ControlRow>
 
-        <ControlRow title="Degré d’alcool" caption="% vol. · facultatif" error={errors.degree} testID="row-degree">
+        <ControlRow title="Degré" caption="% vol. · facultatif" error={errors.degree} testID="row-degree">
           <NumberInput
             value={values.degree}
             onChange={(n) => patch({ degree: n })}

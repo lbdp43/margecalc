@@ -80,8 +80,8 @@ export function ScanFrame({ uri, status = 'idle', height, style }: ScanFrameProp
 
       {working ? (
         <>
-          <View style={[StyleSheet.absoluteFill, styles.tint]} pointerEvents="none" />
-          <Animated.View pointerEvents="none" style={[styles.sweep, sweep]}>
+          <View style={[StyleSheet.absoluteFill, styles.tint, styles.noTouch]} />
+          <Animated.View style={[styles.sweep, styles.noTouch, sweep]}>
             <LinearGradient
               colors={['rgba(111,211,168,0)', 'rgba(111,211,168,0.42)', 'rgba(111,211,168,0)']}
               locations={[0, 0.5, 1]}
@@ -95,7 +95,7 @@ export function ScanFrame({ uri, status = 'idle', height, style }: ScanFrameProp
       <Corners color={uri ? '#FFFFFF' : palette.em700} hideTopRight={status === 'done' || status === 'error'} />
 
       {status === 'done' || status === 'error' ? (
-        <View style={styles.badgeRow} pointerEvents="none">
+        <View style={[styles.badgeRow, styles.noTouch]}>
           <View style={[styles.badge, { backgroundColor: status === 'done' ? palette.em700 : palette.badSolid }]}>
             <Ionicons name={status === 'done' ? 'checkmark' : 'alert'} size={18} color="#FFFFFF" />
           </View>
@@ -108,7 +108,7 @@ export function ScanFrame({ uri, status = 'idle', height, style }: ScanFrameProp
 function Corners({ color, hideTopRight }: { color: string; hideTopRight?: boolean }) {
   const s = { borderColor: color };
   return (
-    <View style={[StyleSheet.absoluteFill, { margin: 14 }]} pointerEvents="none">
+    <View style={[StyleSheet.absoluteFill, styles.noTouch, { margin: 14 }]}>
       <View style={[styles.corner, s, { top: 0, left: 0, borderTopWidth: 3, borderLeftWidth: 3, borderTopLeftRadius: 14 }]} />
       {hideTopRight ? null : <View style={[styles.corner, s, { top: 0, right: 0, borderTopWidth: 3, borderRightWidth: 3, borderTopRightRadius: 14 }]} />}
       <View style={[styles.corner, s, { bottom: 0, left: 0, borderBottomWidth: 3, borderLeftWidth: 3, borderBottomLeftRadius: 14 }]} />
@@ -146,6 +146,7 @@ const styles = StyleSheet.create({
     borderColor: palette.line,
   },
   center: { alignItems: 'center', justifyContent: 'center' },
+  noTouch: { pointerEvents: 'none' },
   dim: { backgroundColor: 'rgba(11,28,21,0.35)' },
   tint: { backgroundColor: 'rgba(4,64,46,0.18)' },
   sweep: { position: 'absolute', left: 0, right: 0, top: 0, height: SWEEP_H, justifyContent: 'center' },

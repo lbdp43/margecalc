@@ -31,16 +31,17 @@ export function DutyCalculatorRoute() {
     (d: DutyDraft) => {
       const slug = FISCAL_TO_PRODUCT_CATEGORY[d.rate.slug];
       const category = (categories ?? []).find((c) => c.slug === slug);
+      // ProductFormParams.scanData (screens/products/form/model.ts): a price
+      // « hors droits » + its fiscal category opens the form in that mode, so
+      // the duties stay itemised; prixHTAvecDroits is the fallback.
       openProductForm(navigation, {
-        // Same shape as the scan prefill the product form already reads.
         scanData: {
           ...(category ? { categoryId: category.id } : null),
-          containerVolumeCl: d.volumeCl,
-          estimatedPriceHT: d.result.prixHTAvecDroits,
-          alcoholDegree: d.degree,
           fiscalCategory: d.rate.slug,
-          purchasePriceHorsDroits: d.price,
-          source: 'duty-calculator',
+          containerVolumeCl: d.volumeCl,
+          alcoholDegree: d.degree,
+          prixHTHorsDroit: d.price,
+          prixHTAvecDroits: d.result.prixHTAvecDroits,
         },
       });
     },

@@ -11,6 +11,7 @@
  */
 import React, { useEffect, useMemo, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import * as adminService from '../../services/admin.service';
 import type { AdminProduct, AdminUser, AdminUsersResponse } from '../../services/admin.service';
@@ -29,7 +30,6 @@ import { ListRow, SectionHeader, ValueRow } from './ListRow';
 import { SegmentedControl } from './SegmentedControl';
 import { Skeleton } from './Skeleton';
 import { FadeIn, SwapFade } from './motion';
-import { toast } from './Toast';
 
 type Period = '1m' | '3m' | '12m' | '24m';
 const PERIODS: { key: Period; label: string; months: number }[] = [
@@ -93,6 +93,42 @@ export function usersSummary(data?: AdminUsersResponse): string | undefined {
   return `${plural(data.users.length, 'compte')} · ${plural(active, 'actif', 'actifs')} ce mois`;
 }
 
+// ─── Inline confirmation (toasts never show over a sheet) ──────────────────
+export interface SheetFlashValue {
+  id: number;
+  text: string;
+  tone?: 'good' | 'bad';
+}
+
+/** Inline confirmation shown inside a sheet for ~3 s. */
+export function useSheetFlash(): [SheetFlashValue | null, (text: string, tone?: 'good' | 'bad') => void, () => void] {
+  const [flash, setFlash] = useState<SheetFlashValue | null>(null);
+  const timer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (timer.current) clearTimeout(timer.current);
+  }, []);
+  const show = React.useCallback((text: string, tone: 'good' | 'bad' = 'good') => {
+    if (timer.current) clearTimeout(timer.current);
+    setFlash({ id: Date.now(), text, tone });
+    timer.current = setTimeout(() => setFlash(null), 3600);
+  }, []);
+  const clear = React.useCallback(() => setFlash(null), []);
+  return [flash, show, clear];
+}
+
+export function SheetFlash({ flash, style }: { flash: SheetFlashValue | null; style?: any }) {
+  if (!flash) return null;
+  const bad = flash.tone === 'bad';
+  return (
+    <FadeIn key={flash.id} offset={6} style={[styles.flash, bad && { backgroundColor: palette.badBg }, style]}>
+      <Ionicons name={bad ? 'alert-circle' : 'checkmark-circle'} size={18} color={bad ? palette.bad : palette.good} />
+      <Text style={[styles.flashText, bad && { color: palette.bad }]} accessibilityLiveRegion="polite">
+        {flash.text}
+      </Text>
+    </FadeIn>
+  );
+}
+
 // ─── Logins chart ──────────────────────────────────────────────────────────
 function LoginsChart({ series }: { series: { month: string; count: number }[] }) {
   const max = Math.max(1, ...series.map((s) => s.count));
@@ -149,6 +185,8 @@ function LoginsCard({ title, userId }: { title: string; userId?: string }) {
       />
       {q.error && !data ? (
         <Text style={[styles.cardMeta, { marginTop: 12, color: palette.bad }]}>{errorText(q.error, 'Connexions indisponibles.')}</Text>
+      ) : data && data.total === 0 ? (
+        <Text style={[styles.cardMeta, { marginTop: 12 }]}>Aucune connexion sur la période.</Text>
       ) : data && data.series.length > 1 ? (
         <LoginsChart series={data.series} />
       ) : null}
@@ -169,8 +207,8 @@ const UserRow = React.memo(function UserRow({ user, onPress, divider }: { user: 
     <ListRow
       leading={<Avatar name={user.businessName || user.email} size={40} />}
       title={user.businessName || user.email}
-      subtitle={`${user.businessName ? `${user.email} · ` : ''}${relative(user.lastSeenAt)}`}
-      subtitleLines={1}
+      subtitle={`${user.businessName ? `${user.email}\n` : ''}${relative(user.lastSeenAt).replace(/^./, (c) => c.toUpperCase())}`}
+      subtitleLines={2}
       right={right}
       onPress={() => onPress(user)}
       divider={divider}
@@ -190,6 +228,7 @@ export function AdminUsersSheet({ visible, onClose }: { visible: boolean; onClos
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [busy, setBusy] = useState<'ban' | 'delete' | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [flash, showFlash, clearFlash] = useSheetFlash();
 
   useEffect(() => {
     if (visible) {
@@ -197,8 +236,9 @@ export function AdminUsersSheet({ visible, onClose }: { visible: boolean; onClos
       setQuery('');
       setLimit(PAGE);
       setActionError(null);
+      clearFlash();
     }
-  }, [visible]);
+  }, [visible, clearFlash]);
 
   const all = users.data?.users ?? [];
   const filtered = useMemo(() => {
@@ -249,7 +289,7 @@ export function AdminUsersSheet({ visible, onClose }: { visible: boolean; onClos
       const res = banned ? await adminService.unbanUser(user.id) : await adminService.banUser(user.id);
       patchUser(user.id, { bannedAt: res.bannedAt });
       haptics.success();
-      toast.success(banned ? `${name} est réactivé` : `${name} est suspendu`);
+      showFlash(banned ? `Compte réactivé : ${name} peut de nouveau se connecter.` : `Compte suspendu : ${name} ne peut plus se connecter.`);
     } catch (err) {
       haptics.warning();
       setActionError(errorText(err, banned ? 'Le compte n’a pas pu être réactivé.' : 'Le compte n’a pas pu être suspendu.'));
@@ -274,7 +314,7 @@ export function AdminUsersSheet({ visible, onClose }: { visible: boolean; onClos
       haptics.success();
       setSelectedId(null);
       patchUser(user.id, null);
-      toast.success(`Compte de ${name} supprimé`);
+      showFlash(`Compte de ${name} supprimé`);
       qc.invalidateQueries({ queryKey: ['admin'] });
     } catch (err) {
       haptics.warning();
@@ -328,7 +368,7 @@ export function AdminUsersSheet({ visible, onClose }: { visible: boolean; onClos
     >
       <SwapFade value={selected ? `u-${selected.id}` : 'list'}>
         {selected ? (
-          <UserDetail user={selected} onBack={() => { setSelectedId(null); setActionError(null); }} actionError={actionError} />
+          <UserDetail user={selected} onBack={() => { setSelectedId(null); setActionError(null); clearFlash(); }} actionError={actionError} flash={flash} />
         ) : users.isLoading && !users.data ? (
           <View style={{ paddingHorizontal: 12, gap: 14, paddingTop: 8 }}>
             <View style={styles.statsRow}>
@@ -340,11 +380,12 @@ export function AdminUsersSheet({ visible, onClose }: { visible: boolean; onClos
           <EmptyState surface="surface" icon="cloud-offline-outline" title="Chargement impossible" text={errorText(users.error, 'Les utilisateurs n’ont pas pu être chargés.')} primary={{ label: 'Réessayer', icon: 'refresh', onPress: () => users.refetch() }} />
         ) : (
           <View>
+            <SheetFlash flash={flash} style={{ marginHorizontal: 12, marginBottom: 12 }} />
             {!query ? (
               <View style={{ paddingHorizontal: 12, gap: 12, marginBottom: 12 }}>
                 <View style={styles.statsRow}>
                   <Mini label="Comptes" value={formatNumber(stats.total)} />
-                  <Mini label="Actifs ce mois" value={formatNumber(stats.active)} tone="good" />
+                  <Mini label="Actifs" value={formatNumber(stats.active)} tone="good" />
                   <Mini label="Suspendus" value={formatNumber(stats.banned)} tone={stats.banned ? 'bad' : undefined} />
                 </View>
                 <LoginsCard title="Connexions · tous les comptes" />
@@ -389,7 +430,7 @@ function Mini({ label, value, tone }: { label: string; value: string; tone?: 'go
   );
 }
 
-function UserDetail({ user, onBack, actionError }: { user: AdminUser; onBack: () => void; actionError: string | null }) {
+function UserDetail({ user, onBack, actionError, flash }: { user: AdminUser; onBack: () => void; actionError: string | null; flash: SheetFlashValue | null }) {
   const products = useQuery<AdminProduct[]>({
     queryKey: ['admin', 'userProducts', user.id],
     queryFn: () => adminService.getAdminUserProducts(user.id),
@@ -413,6 +454,7 @@ function UserDetail({ user, onBack, actionError }: { user: AdminUser; onBack: ()
           <Text style={styles.profileMeta}>Inscrit le {dateFr(user.createdAt)}</Text>
         </View>
       </View>
+      <SheetFlash flash={flash} />
       {actionError ? (
         <FadeIn offset={4} style={styles.errorBox}>
           <Text style={styles.errorText}>{actionError}</Text>
@@ -484,4 +526,14 @@ const styles = StyleSheet.create({
   productRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10 },
   divider: { borderBottomWidth: 1, borderBottomColor: palette.line },
   productName: { ...type.headline, color: palette.ink },
+  flash: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: radius.sm,
+    backgroundColor: palette.goodBg,
+  },
+  flashText: { ...type.calloutStrong, color: palette.good, flex: 1 },
 });

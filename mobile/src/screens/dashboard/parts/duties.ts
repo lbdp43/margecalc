@@ -93,11 +93,27 @@ export function rateIcon(rate: Pick<Rate, 'calcType'>): IconName {
  * for Spiritueux but « Cidre brut, demi-sec… » for Cidre.
  */
 export function rateExamples(rate: Pick<Rate, 'examples'>): string {
+  return capitalize(pickExamples(rate));
+}
+
+function capitalize(s: string): string {
+  return s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
+}
+
+function pickExamples(rate: Pick<Rate, 'examples'>): string {
   const ex = (rate.examples ?? '').trim();
   const i = ex.indexOf('—');
   if (i < 0) return ex;
   const before = ex.slice(0, i).trim();
   const after = ex.slice(i + 1).trim();
   const commas = (s: string) => (s.match(/,/g) ?? []).length;
-  return commas(after) > commas(before) ? after : before;
+  const pick = commas(after) > commas(before) ? after : before;
+  // « Rhum produit outre-mer (Martinique, Guadeloupe, Réunion) » → the list itself,
+  // followed by a short note from the other half (« tarif réduit de moitié »).
+  const inner = pick.match(/\(([^)]*,[^)]*)\)/);
+  if (inner) {
+    const other = pick === before ? after : before;
+    return other.length <= 28 ? `${inner[1]} · ${other}` : inner[1];
+  }
+  return pick;
 }
