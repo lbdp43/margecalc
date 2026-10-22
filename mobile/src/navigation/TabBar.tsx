@@ -6,7 +6,8 @@
  * The Scanner opens the staggered spring menu (spec §5.7) for every user:
  * « Scanner un produit » (bottle photo → product form) and « Scanner une
  * facture » (invoice import), so the invoice import stays reachable once the
- * dashboard is no longer empty.
+ * dashboard is no longer empty. While open, the menu counts as an overlay
+ * (chrome sheetCount): toasts and the update dialog wait for it to close.
  */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { LayoutChangeEvent, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
@@ -155,6 +156,14 @@ export function TabBar({ state, descriptors, navigation }: BottomTabBarProps) {
   useEffect(() => {
     if (hidden || !rootFocused) setMenuOpen(false);
   }, [hidden, rootFocused]);
+  // The open menu is an overlay like a sheet: toasts and the update dialog wait
+  // until it closes (no stacked overlays).
+  useEffect(() => {
+    if (!menuOpen) return undefined;
+    const chrome = useChromeStore.getState();
+    chrome.sheetOpened();
+    return () => chrome.sheetClosed();
+  }, [menuOpen]);
 
   const renderTab = (name: string) => {
     const route = state.routes.find((r) => r.name === name);

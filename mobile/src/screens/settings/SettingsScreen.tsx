@@ -2,8 +2,12 @@
  * Réglages — the settings tab root.
  *
  *   Mon établissement · Objectifs de marge · Catalogue (services, contenants,
- *   catégories) · Taxes & droits · Aide & retours · (Administration) ·
- *   Compte · Application (web: installer l’app) · À propos (footer)
+ *   catégories) · Taxes & droits · Application (web: installer l’app) ·
+ *   Aide & retours · (Administration) · Compte · À propos (footer)
+ *
+ * Application sits with the everyday groups, above Aide & retours: the toast
+ * after « Ne plus afficher » on the dashboard card points here, so it must not
+ * hide under the account group and its destructive « Supprimer mes données ».
  *
  * Each group lives in ./parts (one component per section, each owning its
  * sheets and data). This file only composes them and wires pull-to-refresh.
@@ -68,10 +72,10 @@ export function SettingsScreen() {
       <MarginTargetsSection index={i++} />
       <CatalogSection index={i++} />
       <TaxesSection index={i++} isAdmin={isAdmin} />
+      <ApplicationSection index={i++} />
       <HelpSection index={i++} />
       {isAdmin ? <AdminSection index={i++} navigation={navigation} /> : null}
       <AccountSection index={i++} />
-      <ApplicationSection index={i++} />
       <AboutFooter index={i++} />
     </Screen>
   );

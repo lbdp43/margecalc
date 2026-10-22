@@ -21,6 +21,7 @@
  *   const pwa = usePwaInstall();
  *   pwa.shouldShowCard   // dashboard card: installable, not installed, not snoozed / dismissed, welcome sheet closed
  *   pwa.canInstall       // Réglages row: installable and not installed (even after « Ne plus afficher »)
+ *   pwa.isDesktop        // a computer: « dans sa propre fenêtre », not « écran d’accueil »
  *   await pwa.promptInstall() // 'accepted' | 'dismissed' | 'unavailable'
  *   pwa.snooze(7); pwa.dismissForever();
  *
@@ -82,6 +83,19 @@ export function detectBrowser(ua: string, maxTouchPoints = 0): BrowserInfo {
   // Safari itself carries « Version/x Safari/y »; a bare WKWebView (in-app browser) does not.
   if (/Safari\//.test(ua) && /Version\//.test(ua)) return { iosDevice, iosBrowser: 'safari' };
   return { iosDevice, iosBrowser: null };
+}
+
+/**
+ * A computer (Chrome / Edge on Windows, macOS, Linux, ChromeOS): the app
+ * installs into its own window, not onto a home screen. Phones and tablets
+ * (Android, iPhone, iPad incl. iPadOS's desktop user agent with touch) are not.
+ * A touchscreen laptop stays a computer: only the iPad's Macintosh UA counts
+ * touch points.
+ */
+export function detectDesktop(ua: string, maxTouchPoints = 0): boolean {
+  if (/Android|iPhone|iPad|iPod|Mobi|Tablet|Silk|Kindle/i.test(ua)) return false;
+  if (/Macintosh/.test(ua) && maxTouchPoints > 1) return false;
+  return true;
 }
 
 const INSTALLED_MODES = ['standalone', 'minimal-ui', 'window-controls-overlay'];
@@ -154,7 +168,10 @@ interface PwaInstallState {
   welcome: WelcomeGate;
 }
 
-const browser = win ? detectBrowser(String(win.navigator?.userAgent ?? ''), Number(win.navigator?.maxTouchPoints ?? 0)) : { iosDevice: null, iosBrowser: null };
+const userAgent = String(win?.navigator?.userAgent ?? '');
+const touchPoints = Number(win?.navigator?.maxTouchPoints ?? 0);
+const browser = win ? detectBrowser(userAgent, touchPoints) : { iosDevice: null, iosBrowser: null };
+const desktop = !!win && detectDesktop(userAgent, touchPoints);
 const initial = readPersisted();
 let deferred: BeforeInstallPromptEvent | null = win?.__mbInstallPrompt ?? null;
 
@@ -265,6 +282,8 @@ export interface PwaInstall {
   isIOS: boolean;
   iosDevice: 'iPhone' | 'iPad' | null;
   iosBrowser: IosBrowser;
+  /** A computer: the app opens in its own window (copy), not from a home screen. */
+  isDesktop: boolean;
   isInstalled: boolean;
   /** Installation is possible here and the app is not installed (Réglages row). */
   canInstall: boolean;
@@ -286,6 +305,7 @@ export function usePwaInstall(): PwaInstall {
     isIOS,
     iosDevice: s.iosDevice,
     iosBrowser: s.iosBrowser,
+    isDesktop: desktop,
     isInstalled,
     canInstall,
     shouldShowCard: canInstall && !s.dismissedForever && s.snoozeUntil <= Date.now() && s.welcome === 'done',

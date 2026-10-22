@@ -7,6 +7,8 @@
  *   « Ne plus afficher » on the card.
  * - Installed (running as the app, or installed from this browser):
  *   « Application installée », no action.
+ * - On a computer the copy speaks of « sa propre fenêtre » (Chrome / Edge
+ *   install into a window), elsewhere of the home screen.
  * - Neither (native app, Firefox desktop, in-app browsers…): no section.
  */
 import React from 'react';
@@ -21,6 +23,13 @@ export function ApplicationSection({ index }: { index: number }) {
 
   if (Platform.OS !== 'web' || (!flow.isInstalled && !flow.canInstall)) return null;
 
+  const installedText = flow.isDesktop ? 'MargeBar Pro est installée sur cet ordinateur' : 'MargeBar Pro est sur votre écran d’accueil';
+  const installText = flow.isIOS
+    ? 'Sur l’écran d’accueil, depuis Partager'
+    : flow.isDesktop
+      ? 'Dans sa propre fenêtre'
+      : 'Accès en un geste, en plein écran';
+
   return (
     <SettingsSection title="Application" index={index} testID="settings-app">
       <ListGroup>
@@ -28,17 +37,17 @@ export function ApplicationSection({ index }: { index: number }) {
           <ListRow
             icon="checkmark-circle-outline"
             title="Application installée"
-            subtitle="MargeBar Pro est sur votre écran d’accueil"
+            subtitle={installedText}
             subtitleLines={2}
             right="none"
-            accessibilityLabel="Application installée : MargeBar Pro est sur votre écran d’accueil"
+            accessibilityLabel={`Application installée : ${installedText}`}
             testID="settings-app-installed"
           />
         ) : (
           <ListRow
             icon="download-outline"
             title="Installer l’application"
-            subtitle={flow.isIOS ? 'Sur l’écran d’accueil, depuis Partager' : 'Accès en un geste, en plein écran'}
+            subtitle={installText}
             subtitleLines={2}
             onPress={() => {
               flow.install();

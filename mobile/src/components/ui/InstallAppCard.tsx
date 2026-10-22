@@ -1,27 +1,37 @@
 /**
  * « Installer MargeBar Pro » (web only: renders nothing on native).
  *
- *   <InstallAppCardSlot topGap={12} />        dashboard: shows while `shouldShowCard`,
- *                                             expands / fades in, fades / collapses out
+ *   <InstallAppCardSlot topGap={12} />        dashboard: shows while `shouldShowCard`
+ *                                             (decided per visit, see below), fades / collapses out
  *   const flow = useInstallFlow();            Réglages row: flow.install() + {flow.sheet}
- *   <IosInstallSheet visible onClose />       the two illustrated steps (Partager › « Sur l’écran d’accueil »)
+ *   <IosInstallSheet visible onClose onDone /> the two illustrated steps (Partager › « Sur l’écran d’accueil »)
  *
- * Card: em50 tile with the app mark, « Installer MargeBar Pro », one sentence,
- * a small primary « Installer » (native prompt) or « Comment faire ? » (iOS),
- * and two quiet buttons « Plus tard » (7 days) and « Ne plus afficher »
- * (permanent; Réglages › Application keeps the way back).
+ * Card: em50 tile with the app mark, « Installer MargeBar Pro », one sentence
+ * (home screen on phones and tablets, « sa propre fenêtre » on computers), a
+ * small primary « Installer » (native prompt) or « Comment faire ? » (iOS), and
+ * right next to it two quiet buttons « Plus tard » (7 days) and « Ne plus
+ * afficher » (permanent; Réglages › Application keeps the way back). On iOS,
+ * « J’ai compris » in the steps sheet rests the card for 30 days (iOS reports
+ * no installation).
+ *
+ * The slot never pushes the dashboard around while it is being used: the card
+ * is inserted only as part of the screen's entrance (the first 250 ms after it
+ * mounts) or while the dashboard is not on screen. A prompt that arrives later
+ * (Chrome holds `beforeinstallprompt` until the user engaged with the page)
+ * shows at the next visit. Hiding is immediate (fade, then collapse).
  * Logic and persistence: utils/pwaInstall.ts.
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { LayoutChangeEvent, Platform, StyleProp, StyleSheet, Text, View, ViewStyle } from 'react-native';
+import { LayoutChangeEvent, Platform, StyleProp, StyleSheet, Text, View, ViewStyle, useWindowDimensions } from 'react-native';
 import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 import { motion, palette, radius, type } from '../../theme';
-import { InstallOutcome, usePwaInstall, IosBrowser } from '../../utils/pwaInstall';
+import { InstallOutcome, usePwaInstall, IosBrowser, snooze } from '../../utils/pwaInstall';
 import { BrandMark } from './Brand';
 import { BottomSheet } from './BottomSheet';
 import { Button } from './Button';
 import { Card } from './Card';
+import { useSafeIsFocused } from './chrome';
 import { FadeIn, useReduceMotion } from './motion';
 import { toast } from './Toast';
 import { NBSP } from '../../utils/format';
@@ -29,10 +39,21 @@ import { NBSP } from '../../utils/format';
 const isWeb = Platform.OS === 'web';
 
 // ─── Install flow (shared by the card and Réglages) ────────────────────────
-export function useInstallFlow() {
+export interface InstallFlowOptions {
+  /** iOS: « J’ai compris » in the steps sheet (the sheet closes either way). */
+  onIosDone?: () => void;
+}
+
+export function useInstallFlow({ onIosDone }: InstallFlowOptions = {}) {
   const pwa = usePwaInstall();
   const [sheetVisible, setSheetVisible] = useState(false);
   const closeSheet = useCallback(() => setSheetVisible(false), []);
+  const onIosDoneRef = useRef(onIosDone);
+  onIosDoneRef.current = onIosDone;
+  const doneSheet = useCallback(() => {
+    setSheetVisible(false);
+    onIosDoneRef.current?.();
+  }, []);
   const { canPromptNatively, isIOS, promptInstall } = pwa;
   const install = useCallback(async (): Promise<InstallOutcome> => {
     if (canPromptNatively) return promptInstall();
@@ -43,7 +64,7 @@ export function useInstallFlow() {
     return 'unavailable';
   }, [canPromptNatively, isIOS, promptInstall]);
   const sheet = isWeb && pwa.isIOS ? (
-    <IosInstallSheet visible={sheetVisible} onClose={closeSheet} device={pwa.iosDevice} browser={pwa.iosBrowser} />
+    <IosInstallSheet visible={sheetVisible} onClose={closeSheet} onDone={doneSheet} device={pwa.iosDevice} browser={pwa.iosBrowser} />
   ) : null;
   return { ...pwa, install, sheet, sheetVisible, closeSheet };
 }
@@ -51,6 +72,8 @@ export function useInstallFlow() {
 // ─── The card ──────────────────────────────────────────────────────────────
 export interface InstallAppCardProps {
   isIOS: boolean;
+  /** A computer: the app opens in its own window (copy). */
+  desktop?: boolean;
   onInstall: () => void;
   onLater: () => void;
   onNever: () => void;
@@ -59,11 +82,17 @@ export interface InstallAppCardProps {
 }
 
 const ACTION_GAP = 4;
+/** Wider action rows (tablets, computers) keep the quiet pair right after the primary instead of at the far edge. */
+const WIDE_ROW = 480;
 
-export function InstallAppCard({ isIOS, onInstall, onLater, onNever, style, testID = 'install-card' }: InstallAppCardProps) {
+export function InstallAppCard({ isIOS, desktop = false, onInstall, onLater, onNever, style, testID = 'install-card' }: InstallAppCardProps) {
   // The three actions sit on one line when they fit; otherwise the primary
   // takes the full width and the quiet pair goes under it, centred.
   const [stacked, setStacked] = useState(false);
+  const { width: windowW } = useWindowDimensions();
+  const [rowW, setRowW] = useState(0);
+  // Before the first layout: the card spans the window minus the gutters and its padding.
+  const wide = (rowW || windowW - 68) > WIDE_ROW;
   const rowWidth = useRef(0);
   const natural = useRef({ primary: 0, quiet: 0 });
   const decide = useCallback(() => {
@@ -74,6 +103,7 @@ export function InstallAppCard({ isIOS, onInstall, onLater, onNever, style, test
   const onRow = useCallback(
     (e: LayoutChangeEvent) => {
       rowWidth.current = e.nativeEvent.layout.width;
+      setRowW(rowWidth.current);
       decide();
     },
     [decide],
@@ -109,10 +139,14 @@ export function InstallAppCard({ isIOS, onInstall, onLater, onNever, style, test
           <Text style={styles.title} accessibilityRole="header">
             Installer MargeBar Pro
           </Text>
-          <Text style={styles.text}>Accès en un geste depuis votre écran d’accueil, plein écran.</Text>
+          <Text style={styles.text}>
+            {desktop
+              ? 'Ouvrez MargeBar Pro dans sa propre fenêtre, comme une application.'
+              : 'Accès en un geste depuis votre écran d’accueil, plein écran.'}
+          </Text>
         </View>
       </View>
-      <View style={[styles.actions, stacked && styles.actionsStacked]} onLayout={onRow}>
+      <View style={[styles.actions, wide && !stacked && styles.actionsWide, stacked && styles.actionsStacked]} onLayout={onRow}>
         <View onLayout={onPrimary} style={stacked ? styles.primaryStacked : null}>
           <Button
             title={isIOS ? 'Comment faire ?' : 'Installer'}
@@ -124,7 +158,7 @@ export function InstallAppCard({ isIOS, onInstall, onLater, onNever, style, test
             testID={`${testID}-install`}
           />
         </View>
-        <View onLayout={onQuiet} style={[styles.quiet, stacked && styles.quietStacked]}>
+        <View onLayout={onQuiet} style={[styles.quiet, wide && !stacked && styles.quietWide, stacked && styles.quietStacked]}>
           <Button
             title="Plus tard"
             variant="text"
@@ -152,10 +186,17 @@ export function InstallAppCard({ isIOS, onInstall, onLater, onNever, style, test
   );
 }
 
-// ─── Dashboard slot: presence + height animation ──────────────────────────
-type Phase = 'hidden' | 'shown' | 'entering' | 'exiting';
-/** A card that appears this soon after the slot mounted is part of the screen's entrance (no expand). */
-const INITIAL_WINDOW_MS = 700;
+// ─── Dashboard slot: presence + collapse ───────────────────────────────────
+type Phase = 'hidden' | 'shown' | 'exiting';
+/**
+ * A card that becomes available this soon after the slot mounted is part of
+ * the screen's entrance (its FadeIn). Later, while the dashboard is on screen,
+ * it waits for the next visit (never inserted above content in use).
+ */
+const ENTRANCE_WINDOW_MS = 250;
+/** iOS « J’ai compris »: the steps were read; the card rests this long (iOS reports no install). */
+const IOS_DONE_SNOOZE_DAYS = 30;
+const snoozeAfterIosSteps = () => snooze(IOS_DONE_SNOOZE_DAYS);
 
 export interface InstallAppCardSlotProps {
   /** Space above / below the card, collapsed with it. */
@@ -167,68 +208,49 @@ export interface InstallAppCardSlotProps {
 }
 
 export function InstallAppCardSlot({ topGap = 0, bottomGap = 0, delay = 120, testID = 'install-card' }: InstallAppCardSlotProps) {
-  const flow = useInstallFlow();
+  const flow = useInstallFlow({ onIosDone: snoozeAfterIosSteps });
   const reduce = useReduceMotion();
+  const focused = useSafeIsFocused();
   const show = isWeb && flow.shouldShowCard;
-  const [phase, setPhase] = useState<Phase>(show ? 'shown' : 'hidden');
   const mountedAt = useRef(Date.now());
-  /** The content's entrance: FadeIn when it is part of the screen entrance, the expand otherwise. */
+  // Latched per visit: showing waits for the entrance or an off-screen moment
+  // (the dashboard blurred: another tab, a pushed screen, a form); hiding never waits.
+  const [gate, setGate] = useState(show);
+  useEffect(() => {
+    if (!show) setGate(false);
+    else if (!focused || Date.now() - mountedAt.current < ENTRANCE_WINDOW_MS) setGate(true);
+  }, [show, focused]);
+  const visible = show && gate;
+
+  const [phase, setPhase] = useState<Phase>(visible ? 'shown' : 'hidden');
+  /** The content's FadeIn: played at the screen entrance, skipped off screen and under reduce motion. */
   const [fadeSkip, setFadeSkip] = useState(false);
   const naturalH = useRef(0);
   const h = useSharedValue(0);
   const o = useSharedValue(1);
-  /** 0: auto height (follows the content); 1: height driven by `h` (entering / exiting). */
+  /** 0: auto height (follows the content); 1: height driven by `h` (exiting). */
   const driven = useSharedValue(0);
   const phaseRef = useRef(phase);
   phaseRef.current = phase;
 
-  const finishEnter = useCallback(() => {
-    if (phaseRef.current !== 'entering') return;
-    driven.value = 0; // back to auto height: it follows the content from now on
-    setPhase('shown');
-  }, [driven]);
   const finishExit = useCallback(() => {
     if (phaseRef.current === 'exiting') setPhase('hidden');
   }, []);
 
-  const expand = useCallback(
-    (to: number) => {
-      h.value = withTiming(to, { duration: motion.duration.base, easing: motion.easing.decel }, (done) => {
-        if (done) runOnJS(finishEnter)();
-      });
-      o.value = withTiming(1, { duration: motion.duration.enter, easing: motion.easing.decel });
-    },
-    [h, o, finishEnter],
-  );
-
   useEffect(() => {
     const current = phaseRef.current;
-    if (show) {
-      if (current === 'shown' || current === 'entering') return;
-      const late = Date.now() - mountedAt.current > INITIAL_WINDOW_MS;
-      if (reduce || (current === 'hidden' && !late)) {
-        driven.value = 0;
-        o.value = 1;
-        setFadeSkip(reduce);
-        setPhase('shown');
-        return;
-      }
-      setFadeSkip(true);
-      if (current === 'hidden') {
-        // Starts collapsed; the first measure (onLayout) expands it.
-        h.value = 0;
-        o.value = 0;
-        driven.value = 1;
-        setPhase('entering');
-      } else {
-        // Was leaving: come back from where it is.
-        setPhase('entering');
-        if (naturalH.current) expand(naturalH.current);
-      }
+    if (visible) {
+      if (current === 'shown') return;
+      // Appears with the screen's entrance or off screen: no expand (nothing in use moves).
+      // Also cancels an exit in progress.
+      driven.value = 0;
+      o.value = 1;
+      setFadeSkip(reduce || !focused);
+      setPhase('shown');
       return;
     }
     if (current === 'hidden' || current === 'exiting') return;
-    if (reduce) {
+    if (reduce || !focused) {
       setPhase('hidden');
       return;
     }
@@ -242,19 +264,14 @@ export function InstallAppCardSlot({ topGap = 0, bottomGap = 0, delay = 120, tes
         if (done) runOnJS(finishExit)();
       });
     });
-  }, [show, reduce, h, o, driven, expand, finishExit]);
+    // `focused` only matters at the moment `visible` changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible, reduce, h, o, driven, finishExit]);
 
-  const onLayout = useCallback(
-    (e: LayoutChangeEvent) => {
-      const next = e.nativeEvent.layout.height;
-      if (!next) return;
-      const first = !naturalH.current;
-      naturalH.current = next;
-      // Entering: expand to the measured height (again if the content grew meanwhile).
-      if (phaseRef.current === 'entering' && (first || h.value < next)) expand(next);
-    },
-    [h, expand],
-  );
+  const onLayout = useCallback((e: LayoutChangeEvent) => {
+    const next = e.nativeEvent.layout.height;
+    if (next) naturalH.current = next;
+  }, []);
 
   // 'auto' (not a missing key): on web the last animated height would otherwise stay on the element.
   const animated = useAnimatedStyle(() => ({ height: driven.value ? h.value : 'auto', opacity: o.value }));
@@ -276,7 +293,14 @@ export function InstallAppCardSlot({ topGap = 0, bottomGap = 0, delay = 120, tes
       <Animated.View style={[phase === 'shown' ? null : styles.clip, animated]} testID={`${testID}-slot`}>
         <View onLayout={onLayout} style={{ paddingTop: topGap, paddingBottom: bottomGap }}>
           <FadeIn delay={delay} skip={fadeSkip}>
-            <InstallAppCard isIOS={flow.isIOS} onInstall={install} onLater={later} onNever={never} testID={testID} />
+            <InstallAppCard
+              isIOS={flow.isIOS}
+              desktop={flow.isDesktop}
+              onInstall={install}
+              onLater={later}
+              onNever={never}
+              testID={testID}
+            />
           </FadeIn>
         </View>
       </Animated.View>
@@ -289,6 +313,8 @@ export function InstallAppCardSlot({ topGap = 0, bottomGap = 0, delay = 120, tes
 export interface IosInstallSheetProps {
   visible: boolean;
   onClose: () => void;
+  /** « J’ai compris » (defaults to onClose). The dashboard card rests 30 days on it. */
+  onDone?: () => void;
   device?: 'iPhone' | 'iPad' | null;
   browser?: IosBrowser;
 }
@@ -300,7 +326,7 @@ function shareHint(device: 'iPhone' | 'iPad' | null | undefined, browser: IosBro
   return `En bas de l’écran dans Safari, ou dans le menu «${NBSP}…${NBSP}» de la barre d’adresse.`;
 }
 
-export function IosInstallSheet({ visible, onClose, device, browser }: IosInstallSheetProps) {
+export function IosInstallSheet({ visible, onClose, onDone, device, browser }: IosInstallSheetProps) {
   if (!isWeb) return null;
   const where = device === 'iPad' ? 'de votre iPad' : 'de votre iPhone';
   return (
@@ -309,7 +335,7 @@ export function IosInstallSheet({ visible, onClose, device, browser }: IosInstal
       onClose={onClose}
       title="Installer MargeBar Pro"
       subline={`Sur l’écran d’accueil ${where}, en deux gestes.`}
-      footer={<Button title="J’ai compris" onPress={onClose} testID="ios-install-done" />}
+      footer={<Button title="J’ai compris" onPress={onDone ?? onClose} testID="ios-install-done" />}
       accessibilityLabel="Installer MargeBar Pro sur l’écran d’accueil"
       testID="ios-install-sheet"
     >
@@ -349,7 +375,9 @@ export function IosInstallSheet({ visible, onClose, device, browser }: IosInstal
 
       <View style={styles.note}>
         <BrandMark size={32} />
-        <Text style={styles.noteText}>MargeBar Pro s’ouvrira ensuite en plein écran, comme une application, depuis son icône.</Text>
+        <Text style={styles.noteText}>
+          MargeBar Pro s’ouvrira ensuite en plein écran depuis son icône. Connectez-vous une fois dans l’application.
+        </Text>
       </View>
     </BottomSheet>
   );
@@ -409,9 +437,11 @@ const styles = StyleSheet.create({
   title: { ...type.headline, color: palette.ink },
   text: { ...type.footnote, color: palette.text2 },
   actions: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: ACTION_GAP, marginTop: 12 },
+  actionsWide: { justifyContent: 'flex-start' },
   actionsStacked: { flexDirection: 'column', alignItems: 'stretch', gap: 2 },
   primaryStacked: { alignSelf: 'stretch' },
   quiet: { flexDirection: 'row', alignItems: 'center', marginRight: -8 },
+  quietWide: { marginRight: 0 },
   // The 44 pt touch targets reach into the card padding, so the text sits balanced.
   quietStacked: { marginRight: 0, marginBottom: -8, justifyContent: 'center' },
   quietBtn: { paddingHorizontal: 8 },

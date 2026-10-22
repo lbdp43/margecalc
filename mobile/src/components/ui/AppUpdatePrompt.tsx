@@ -4,11 +4,14 @@
  *
  * When utils/appUpdate finds a newer build, a kit dialog asks:
  *   « Mettre à jour » → reload onto the new build, then « Application mise à jour »
+ *                       (reloaded onto the same build: an error toast, and the
+ *                       question rests 30 minutes instead of coming straight back)
  *   « Plus tard »     → asked again after 30 minutes (or at the next cold start)
  *
  * It never interrupts work: it waits while the focused route is a form
- * (ProductForm, InvoiceScan, Login, Register), while a BottomSheet or another
- * dialog is open, or while the tab is hidden, and it is never shown twice at once.
+ * (ProductForm, InvoiceScan, Login, Register), while a BottomSheet, the Scanner
+ * menu or another dialog is open, or while the tab is hidden, and it is never
+ * shown twice at once.
  */
 import { useEffect, useRef, useState } from 'react';
 import { Platform } from 'react-native';
@@ -61,7 +64,13 @@ export function AppUpdatePrompt() {
     };
     doc?.addEventListener?.('visibilitychange', onVisible);
     let timer: ReturnType<typeof setTimeout> | null = null;
-    if (consumeJustUpdated()) timer = setTimeout(() => toast.success('Application mise à jour'), 900);
+    const outcome = consumeJustUpdated();
+    if (outcome === 'updated') timer = setTimeout(() => toast.success('Application mise à jour'), 900);
+    else if (outcome === 'failed') {
+      // Reloaded onto the same build (stale page served mid-deploy): rest, and say so.
+      snoozeUpdate();
+      timer = setTimeout(() => toast.error('La mise à jour n’a pas pu se faire. Réessayez dans quelques minutes.'), 900);
+    }
     return () => {
       doc?.removeEventListener?.('visibilitychange', onVisible);
       if (timer) clearTimeout(timer);

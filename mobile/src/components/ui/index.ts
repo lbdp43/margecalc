@@ -53,7 +53,7 @@ export { FiscalCategorySheet, fiscalRateLabel, groupFiscalRates, FISCAL_GROUPS }
 export type { FiscalCategorySheetProps } from './FiscalCategorySheet';
 export { WelcomeModal } from './WelcomeModal';
 export { InstallAppCard, InstallAppCardSlot, IosInstallSheet, useInstallFlow } from './InstallAppCard';
-export type { InstallAppCardProps, InstallAppCardSlotProps, IosInstallSheetProps } from './InstallAppCard';
+export type { InstallAppCardProps, InstallAppCardSlotProps, InstallFlowOptions, IosInstallSheetProps } from './InstallAppCard';
 export { BottomSheet } from './BottomSheet';
 export type { BottomSheetProps } from './BottomSheet';
 export { DialogHost, dialog } from './Dialog';

@@ -10,9 +10,13 @@
  *   ('updatefound', 'controllerchange').
  * - A different id → `useAppUpdateStore().available`; the prompt
  *   (components/ui/AppUpdatePrompt) decides when to ask.
- * - `applyUpdate()`: a waiting worker is told to take over (SKIP_WAITING),
- *   then the page reloads; a sessionStorage flag makes the new page say
- *   « Application mise à jour ».
+ * - A new worker that stays « waiting » is asked to take over (SKIP_WAITING)
+ *   until it has (see nudgeWaitingWorker).
+ * - `applyUpdate()`: a new worker still installing or waiting takes over
+ *   first (SKIP_WAITING), then the page reloads; a sessionStorage flag makes
+ *   the new page say « Application mise à jour » (or, when the reload landed
+ *   on the same build, rest 30 minutes and say it did not work:
+ *   consumeJustUpdated).
  * Both scripts/patch-html.js (build id, version.json, sw.js) and
  * backend/src/index.ts (no-cache headers) are part of this contract.
  */
@@ -69,7 +73,8 @@ export function checkForUpdate(force = false): Promise<void> {
   inflight = (async () => {
     try {
       // Also look for a newer service worker: it precaches the new shell meanwhile.
-      registration?.update?.()?.catch?.(() => undefined);
+      if (registration?.waiting) nudgeWaitingWorker();
+      else registration?.update?.()?.catch?.(() => undefined);
       const res = await fetch(`/version.json?t=${Date.now()}`, { cache: 'no-store', headers: { Accept: 'application/json' } });
       if (!res.ok) return;
       const data = await res.json();
@@ -98,6 +103,49 @@ function sameOriginHashed(url: string): boolean {
   }
 }
 
+const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+/**
+ * A new worker calls skipWaiting() while it installs, but Chromium can drop
+ * that activation when this page sends a request to the old worker at that
+ * very moment: the new worker then stays « waiting », and a later reload of
+ * this tab can hang while the browser swaps workers mid-navigation. So the page
+ * asks a waiting worker to take over (SKIP_WAITING, idempotent) until it has.
+ */
+let nudging = false;
+async function nudgeWaitingWorker(tries = 8): Promise<void> {
+  if (nudging) return;
+  nudging = true;
+  try {
+    for (let i = 0; i < tries; i++) {
+      const waiting = registration?.waiting;
+      if (!waiting) return;
+      try {
+        waiting.postMessage({ type: 'SKIP_WAITING' });
+      } catch {
+        return;
+      }
+      await wait(1500);
+    }
+  } finally {
+    nudging = false;
+  }
+}
+
+/** Resolves once no new worker is installing or waiting and the active one is ready (or after `ms`). */
+async function settleWorkers(reg: any, ms: number): Promise<void> {
+  const end = Date.now() + ms;
+  while (Date.now() < end) {
+    if (!reg.installing && !reg.waiting && (!reg.active || reg.active.state === 'activated')) return;
+    try {
+      reg.waiting?.postMessage({ type: 'SKIP_WAITING' });
+    } catch {
+      // ignore
+    }
+    await wait(300);
+  }
+}
+
 function registerServiceWorker() {
   const sw = win?.navigator?.serviceWorker;
   if (!sw?.register) return;
@@ -111,11 +159,14 @@ function registerServiceWorker() {
     sw.register('/sw.js', { scope: '/' })
       .then((reg: any) => {
         registration = reg;
+        if (reg.waiting) nudgeWaitingWorker();
         reg.addEventListener?.('updatefound', () => {
           const worker = reg.installing;
           checkForUpdate(true);
           worker?.addEventListener?.('statechange', () => {
-            if (worker.state === 'installed' || worker.state === 'activated') checkForUpdate(true);
+            // No request here when it is 'installed': the old worker is being swapped out (see above).
+            if (worker.state === 'installed') nudgeWaitingWorker();
+            else if (worker.state === 'activated') checkForUpdate(true);
           });
         });
         // The bundle and fonts were loaded before the worker controlled the page:
@@ -162,37 +213,43 @@ export async function applyUpdate(): Promise<void> {
     // no toast after the reload, that is all
   }
   try {
+    // A new worker still installing or waiting takes over first: the reload is
+    // then served by it (and never swaps workers mid-navigation).
     const sw = win.navigator?.serviceWorker;
     const reg = registration ?? (await sw?.getRegistration?.());
-    const waiting = reg?.waiting;
-    if (waiting && sw) {
-      await new Promise<void>((resolve) => {
-        const timer = setTimeout(resolve, 1500);
-        sw.addEventListener('controllerchange', () => {
-          clearTimeout(timer);
-          resolve();
-        }, { once: true });
-        waiting.postMessage({ type: 'SKIP_WAITING' });
-      });
-    }
+    if (reg && sw?.controller) await settleWorkers(reg, 5000);
   } catch {
     // reload anyway: navigations are network first
   }
   win.location.reload();
 }
 
-/** True once, on the first start after « Mettre à jour » actually changed the build. */
-export function consumeJustUpdated(): boolean {
-  if (!UPDATES_ENABLED) return false;
+export type UpdateOutcome = 'updated' | 'failed';
+
+/**
+ * Once, on the first start after « Mettre à jour »:
+ * - 'updated': the page now runs another build;
+ * - 'failed': it reloaded onto the very build it left, although a different
+ *   one was announced (a proxy / CDN still served the old index.html mid-deploy,
+ *   or the navigation fell back to the cached shell). The prompt then rests
+ *   (snoozeUpdate, SNOOZE_MS) and says so instead of asking again at once;
+ * - null: no update was just applied.
+ */
+export function consumeJustUpdated(): UpdateOutcome | null {
+  if (!UPDATES_ENABLED) return null;
   try {
     const raw = win.sessionStorage?.getItem(UPDATED_FLAG);
-    if (!raw) return false;
+    if (!raw) return null;
     win.sessionStorage.removeItem(UPDATED_FLAG);
     const flag = JSON.parse(raw);
-    if (Date.now() - Number(flag?.at ?? 0) > 2 * 60 * 1000) return false;
+    if (Date.now() - Number(flag?.at ?? 0) > 2 * 60 * 1000) return null;
     const now = currentBuildId();
-    return !!now && now !== flag?.from;
+    if (!now) return null;
+    const from = typeof flag?.from === 'string' ? flag.from : null;
+    const to = typeof flag?.to === 'string' ? flag.to : null;
+    if (to && now !== to && now === from) return 'failed';
+    return now !== from ? 'updated' : null;
   } catch {
-    return false;
+    return null;
   }
 }

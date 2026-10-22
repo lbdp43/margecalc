@@ -197,7 +197,8 @@ export function DashboardScreen() {
       <View style={styles.body}>
         {lead}
         {/* « Installer MargeBar Pro » (web, installable, not snoozed): between the
-            tiles and the duty card; it expands / collapses with its own gap. */}
+            tiles and the duty card. It appears only with the screen's entrance or
+            at the next visit (never pushes content in use), and collapses with its own gap. */}
         <InstallAppCardSlot topGap={lead ? 12 : 0} bottomGap={lead ? 0 : 12} delay={state === 'ready' ? 150 : 60} />
         {/* Same tree position in every state: it never remounts or jumps. */}
         <FadeIn delay={state === 'ready' ? 180 : 60} style={lead ? styles.gap12 : null}>
