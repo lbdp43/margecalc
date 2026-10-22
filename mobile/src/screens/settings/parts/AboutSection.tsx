@@ -2,7 +2,7 @@
  * « À propos » — version, publisher, free for everyone, contact.
  */
 import React from 'react';
-import { Badge, BrandMark, ListGroup, ListRow, toast } from '../../../components/ui';
+import { BrandMark, ListGroup, ListRow, toast } from '../../../components/ui';
 import { APP_VERSION, BREWERY_URL, CONTACT_EMAIL, openExternal } from './helpers';
 import { SettingsSection } from './ui';
 
@@ -17,7 +17,7 @@ export function AboutSection({ index }: { index: number }) {
           leading={<BrandMark size={40} />}
           title="MargeBar Pro"
           subtitle="par La Brasserie des Plantes"
-          right={<Badge variant="neutral" label={`Version ${APP_VERSION}`} size="sm" />}
+          detail={`Version ${APP_VERSION}`}
           accessibilityLabel={`MargeBar Pro, version ${APP_VERSION}, par La Brasserie des Plantes`}
         />
         <ListRow

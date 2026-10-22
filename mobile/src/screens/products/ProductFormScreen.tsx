@@ -539,7 +539,7 @@ export function ProductFormScreen({ route, navigation }: Props) {
       haptics.success();
       await wait(520);
       allowLeave.current = true;
-      afterProductSaved(navigation, saved.id);
+      afterProductSaved(navigation as any, saved.id);
       toast.success(`${saved.name} enregistré`);
     } catch (err) {
       const info = describeSaveError(err, 'save');
@@ -579,7 +579,7 @@ export function ProductFormScreen({ route, navigation }: Props) {
       productService.forgetProduct(queryClient, productId);
       deleteFormPrefs(productId);
       allowLeave.current = true;
-      afterProductDeleted(navigation);
+      afterProductDeleted(navigation as any);
       toast.success(`${name} supprimé`);
     } catch (err) {
       setDeleting(false);
@@ -638,7 +638,7 @@ export function ProductFormScreen({ route, navigation }: Props) {
                   ? 'Ce produit n’existe plus : il a peut-être été supprimé depuis un autre appareil.'
                   : ((productQ.error as any)?.response?.data?.error as string) || 'Le produit n’a pas pu être chargé. Vérifiez votre connexion, puis réessayez.'
             }
-            primary={status === 404 ? { label: 'Retour aux produits', icon: 'arrow-back', onPress: () => afterProductDeleted(navigation) } : { label: 'Réessayer', icon: 'refresh', onPress: () => productQ.refetch() }}
+            primary={status === 404 ? { label: 'Retour aux produits', icon: 'arrow-back', onPress: () => afterProductDeleted(navigation as any) } : { label: 'Réessayer', icon: 'refresh', onPress: () => productQ.refetch() }}
             style={styles.emptyState}
           />
         ) : (

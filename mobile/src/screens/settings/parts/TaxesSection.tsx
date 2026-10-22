@@ -78,7 +78,7 @@ export function TaxesSection({ index, isAdmin }: { index: number; isAdmin: boole
       footer={
         isAdmin
           ? 'Administrateur : vos modifications s’appliquent à tous les comptes.'
-          : 'Barème officiel des douanes, tenu à jour par MargeBar Pro.'
+          : 'Barème officiel des douanes, tenu à jour pour vous.'
       }
       testID="settings-taxes"
     >

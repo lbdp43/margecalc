@@ -204,14 +204,22 @@ export function ServiceRow({
         <View style={styles.stripSep} />
         <Figure label="Coût HT" value={formatEuro(s.cost)} caption="par dose" />
         <View style={styles.stripSep} />
-        <Figure label="Gain HT" value={formatEuro(s.gain, { sign: true })} valueColor={c.fg} caption={`${formatEuro(s.gainPerContainer, { sign: true })}/${containerNoun === 'fût' ? 'fût' : 'bout.'}`} />
+        <Figure label="Gain HT" value={formatEuro(s.gain, { sign: true })} valueColor={c.fg} caption="par dose" />
       </View>
-      {onPress ? (
-        <View style={styles.svcEdit} pointerEvents="none">
-          <Icon name="create-outline" size={15} color={palette.em700} />
-          <Text style={styles.svcEditText}>Changer le prix</Text>
-        </View>
-      ) : null}
+      <View style={styles.svcFoot} pointerEvents="none">
+        {onPress ? (
+          <View style={styles.svcEdit}>
+            <Icon name="create-outline" size={15} color={palette.em700} />
+            <Text style={styles.svcEditText}>Changer le prix</Text>
+          </View>
+        ) : (
+          <View />
+        )}
+        <Text style={styles.svcPer} numberOfLines={1}>
+          <Text style={[styles.svcPerValue, { color: c.fg }]}>{formatEuro(s.gainPerContainer, { sign: true })}</Text>
+          {` par ${containerNoun}`}
+        </Text>
+      </View>
     </>
   );
   const style = [styles.svc, !last ? styles.svcDivider : null];
@@ -433,7 +441,10 @@ const styles = StyleSheet.create({
   figLabel: { ...type.footnote, color: palette.text3 },
   figValue: { fontFamily: fontFamily.bold, fontSize: 16, lineHeight: 21, letterSpacing: -0.2, color: palette.ink, fontVariant: ['tabular-nums'], marginTop: 2 },
   figCaption: { ...type.footnote, fontSize: 12, lineHeight: 16, color: palette.text3, marginTop: 1 },
-  svcEdit: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: -2 },
+  svcFoot: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginTop: -2, minHeight: 20 },
+  svcEdit: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  svcPer: { ...type.footnote, color: palette.text3, flexShrink: 1, textAlign: 'right' },
+  svcPerValue: { fontFamily: fontFamily.bold },
   svcEditText: { ...type.footnoteStrong, color: palette.em700 },
 
   histHead: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },

@@ -223,7 +223,7 @@ export function DutyCalculator({ onSaveAsProduct, onSaveLegacy, footer, bleed = 
             testID="duty-save-product"
           />
           <Text style={styles.saveNote}>
-            {`Le prix HT avec droits (${formatEuro(result.prixHTAvecDroits)}) devient le prix d’achat du produit.`}
+            {`Le prix HT avec droits (${formatEuro(result.prixHTAvecDroits)}) devient votre prix d’achat.`}
           </Text>
         </View>
       ) : null}

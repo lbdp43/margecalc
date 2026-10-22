@@ -40,28 +40,28 @@ const Row = React.memo(function Row({
   const price = primaryPrice(product);
   const margin = product.computed.marginPercent;
   const zone = getMarginZone(margin, thresholds);
-  const meta = `${product.category?.name ?? 'Produit'} · ${price.label}${NBSP}·${NBSP}${formatEuro(price.price)}`;
+  const meta = `${price.label}${NBSP}·${NBSP}${formatEuro(price.price)}${price.extra > 0 ? ` · +${price.extra}${NBSP}service${price.extra > 1 ? 's' : ''}` : ''}`;
   return (
     <View>
       <PressableScale
         onPress={() => onOpen(product.id)}
         scaleTo="card"
         accessibilityRole="button"
-        accessibilityLabel={`${rank}. ${product.name}, ${spoken(meta)}, marge ${spoken(formatPercent(margin))}, ${marginColors[zone].label}`}
+        accessibilityLabel={`${rank}. ${product.name}, ${product.category?.name ?? 'produit'}, ${spoken(meta)}, marge ${spoken(formatPercent(margin))}, ${marginColors[zone].label}`}
         style={styles.row}
         testID={`topflop-row-${rank}`}
       >
         <Text style={styles.rank}>{rank}</Text>
         <ProductThumb product={product} size={40} radius={12} />
         <View style={styles.texts}>
-          <Text style={styles.name} numberOfLines={1}>
+          <Text style={styles.name} numberOfLines={2}>
             {product.name}
           </Text>
           <Text style={styles.meta} numberOfLines={1}>
             {meta}
           </Text>
         </View>
-        <Badge value={margin} thresholds={thresholds} />
+        <Badge value={margin} thresholds={thresholds} size="sm" />
       </PressableScale>
       {!last ? <View style={styles.divider} /> : null}
     </View>

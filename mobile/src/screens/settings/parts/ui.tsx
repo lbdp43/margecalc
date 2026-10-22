@@ -26,8 +26,8 @@ export function SettingsSection({
   testID?: string;
 }) {
   return (
-    <FadeIn index={index} style={styles.section} testID={testID}>
-      <SectionHeader title={title} right={right} style={styles.sectionHeader} />
+    <FadeIn index={index} style={[styles.section, index === 0 && styles.sectionFirst]} testID={testID}>
+      <SectionHeader title={title} right={right ? <View style={styles.headerRight}>{right}</View> : undefined} style={styles.sectionHeader} />
       {children}
       {footer ? <Text style={styles.footer}>{footer}</Text> : null}
     </FadeIn>
@@ -127,6 +127,8 @@ export function MiniStat({ label, value, tone }: { label: string; value: string;
 
 const styles = StyleSheet.create({
   section: { marginTop: 22 },
+  sectionFirst: { marginTop: 0 },
+  headerRight: { justifyContent: 'center', alignItems: 'flex-end' },
   sectionHeader: { marginBottom: 6, paddingHorizontal: 2 },
   footer: { ...type.footnote, color: palette.text3, marginTop: 8, paddingHorizontal: 4 },
   pill: {

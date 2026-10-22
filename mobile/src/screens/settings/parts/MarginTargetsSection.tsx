@@ -65,7 +65,7 @@ export function MarginTargetsSection({ index }: { index: number }) {
         <ListRow
           icon="flag-outline"
           title="Objectif de marge"
-          subtitle="Bonne marge à partir de ce seuil"
+          subtitle="Bonne marge dès ce seuil"
           value={formatThreshold(thresholds.good)}
           onPress={() => setOpen(true)}
           testID="settings-threshold-good"
@@ -74,7 +74,7 @@ export function MarginTargetsSection({ index }: { index: number }) {
           icon="alert-circle-outline"
           iconTone="neutral"
           title="Seuil d’alerte"
-          subtitle="En dessous, la marge est à revoir"
+          subtitle="En dessous : marge à revoir"
           value={formatThreshold(thresholds.medium)}
           onPress={() => setOpen(true)}
           testID="settings-threshold-medium"
