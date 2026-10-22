@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import NetInfo from '@react-native-community/netinfo';
+import { Platform } from 'react-native';
 
 const CACHE_PREFIX = 'margebar_cache_';
 const PENDING_OPS_KEY = 'margebar_pending_ops';
@@ -11,8 +12,49 @@ let _isOnline = true;
 let _listeners: Array<(online: boolean) => void> = [];
 let _unsubNetInfo: (() => void) | null = null;
 
+/** The browser's own flag (web only): always up to date, unlike the NetInfo event. */
+function browserOffline(): boolean {
+  if (Platform.OS !== 'web') return false;
+  const nav = (globalThis as any).navigator;
+  return !!nav && nav.onLine === false;
+}
+
 export function isOnline(): boolean {
-  return _isOnline;
+  return _isOnline && !browserOffline();
+}
+
+/** Default message when a write is attempted without a connection. */
+export const OFFLINE_MESSAGE = 'Pas de connexion : rien n’a été enregistré. Réessayez une fois connecté.';
+
+/**
+ * Thrown by writes that need the server (products, services) when the device is
+ * offline. Writes are never queued silently: a queued product would get a fake id
+ * and fail later (RC6), so the user gets an explicit, readable error instead.
+ */
+export class OfflineError extends Error {
+  readonly code = 'offline';
+  constructor(message: string = OFFLINE_MESSAGE) {
+    super(message);
+    this.name = 'OfflineError';
+  }
+}
+
+/** Throws an OfflineError when there is no connection. */
+export function assertOnline(message?: string): void {
+  if (!isOnline()) throw new OfflineError(message);
+}
+
+/** True for « no connection » failures: OfflineError, or an HTTP call that got no response. */
+export function isNetworkError(err: any): boolean {
+  if (!err) return false;
+  if (err instanceof OfflineError || err.code === 'offline') return true;
+  if (err.isAxiosError && !err.response) return err.code !== 'ECONNABORTED' && err.code !== 'ETIMEDOUT';
+  return err.message === 'Network Error' || err.code === 'ERR_NETWORK';
+}
+
+/** True when an HTTP call timed out (no answer in time). */
+export function isTimeoutError(err: any): boolean {
+  return !!err && !err.response && (err.code === 'ECONNABORTED' || err.code === 'ETIMEDOUT' || /timeout/i.test(String(err.message ?? '')));
 }
 
 export function onConnectivityChange(cb: (online: boolean) => void) {

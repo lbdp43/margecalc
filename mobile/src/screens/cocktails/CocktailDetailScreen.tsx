@@ -4,11 +4,12 @@ import { alert, confirm } from '../../utils/alert';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { useQueryClient } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
-import { RecipeWithCost, formatPercent, formatPrice, MARGIN_COLOR_MAP } from '@margebar/shared';
+import { RecipeWithCost, MARGIN_COLOR_MAP } from '@margebar/shared';
+import { formatCoeff, formatEuro, formatPercent, toInputString } from '../../utils/format';
 import { ScreenWrapper } from '../../components/ui/ScreenWrapper';
 import { useOfflineQuery } from '../../hooks/useOfflineQuery';
 import * as recipeService from '../../services/recipe.service';
-import { colors, spacing, borderRadius, typography, shadows, fonts } from '../../theme';
+import { colors, spacing, borderRadius, typography, shadows, fontFamily } from '../../theme';
 
 export function CocktailDetailScreen() {
   const navigation = useNavigation<any>();
@@ -101,26 +102,26 @@ export function CocktailDetailScreen() {
             </View>
             <View style={styles.marginItem}>
               <Text style={styles.marginLabel}>Prix TTC</Text>
-              <Text style={styles.marginValue}>{formatPrice(recipe.sellingPriceTTC)}</Text>
+              <Text style={styles.marginValue}>{formatEuro(recipe.sellingPriceTTC)}</Text>
             </View>
             <View style={styles.marginItem}>
               <Text style={styles.marginLabel}>Coeff</Text>
-              <Text style={styles.marginValue}>x {recipe.computed.coefficient.toFixed(1)}</Text>
+              <Text style={styles.marginValue}>{formatCoeff(recipe.computed.coefficient, 1)}</Text>
             </View>
           </View>
           <View style={styles.marginRow}>
             <View style={styles.marginItem}>
               <Text style={styles.marginLabel}>Coût total HT</Text>
-              <Text style={styles.marginValue}>{formatPrice(recipe.computed.totalCostHT)}</Text>
+              <Text style={styles.marginValue}>{formatEuro(recipe.computed.totalCostHT)}</Text>
             </View>
             <View style={styles.marginItem}>
               <Text style={styles.marginLabel}>Prix HT</Text>
-              <Text style={styles.marginValue}>{formatPrice(recipe.computed.sellingPriceHT)}</Text>
+              <Text style={styles.marginValue}>{formatEuro(recipe.computed.sellingPriceHT)}</Text>
             </View>
             <View style={styles.marginItem}>
               <Text style={styles.marginLabel}>Gain</Text>
               <Text style={[styles.marginValue, { color: accent }]}>
-                {formatPrice(recipe.computed.marginHT)}
+                {formatEuro(recipe.computed.marginHT)}
               </Text>
             </View>
           </View>
@@ -144,12 +145,12 @@ export function CocktailDetailScreen() {
               ) : null}
             </View>
             <Text style={styles.ingQty}>{ing.quantityCl} cl</Text>
-            <Text style={styles.ingCost}>{formatPrice(ing.costPerUnit)}</Text>
+            <Text style={styles.ingCost}>{formatEuro(ing.costPerUnit)}</Text>
           </View>
         ))}
         <View style={styles.totalRow}>
           <Text style={styles.totalLabel}>Total ingrédients</Text>
-          <Text style={styles.totalValue}>{formatPrice(recipe.computed.totalIngredientCost)}</Text>
+          <Text style={styles.totalValue}>{formatEuro(recipe.computed.totalIngredientCost)}</Text>
         </View>
       </View>
 
@@ -166,12 +167,12 @@ export function CocktailDetailScreen() {
             <View key={c.id} style={styles.ingRow}>
               <Text style={[styles.ingName, { flex: 1 }]}>{c.name}</Text>
               <Text style={styles.ingQty}>x{c.quantity}</Text>
-              <Text style={styles.ingCost}>{formatPrice(c.unitCost * c.quantity)}</Text>
+              <Text style={styles.ingCost}>{formatEuro(c.unitCost * c.quantity)}</Text>
             </View>
           ))}
           <View style={styles.totalRow}>
             <Text style={styles.totalLabel}>Total consommables</Text>
-            <Text style={styles.totalValue}>{formatPrice(recipe.computed.totalConsumableCost)}</Text>
+            <Text style={styles.totalValue}>{formatEuro(recipe.computed.totalConsumableCost)}</Text>
           </View>
         </View>
       )}
@@ -225,7 +226,6 @@ const styles = StyleSheet.create({
   authorText: {
     ...typography.caption,
     color: colors.tabBarInactive,
-    fontStyle: 'italic',
     marginTop: spacing.xs,
   },
 
@@ -250,12 +250,12 @@ const styles = StyleSheet.create({
   },
   marginBig: {
     ...typography.h2,
-    fontWeight: '800',
+    fontFamily: fontFamily.extrabold,
     marginTop: 2,
   },
   marginValue: {
     ...typography.body,
-    fontWeight: '700',
+    fontFamily: fontFamily.bold,
     color: colors.text,
     marginTop: 2,
   },
@@ -280,9 +280,7 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     ...typography.h3,
-    fontFamily: fonts.serif,
-    fontStyle: 'italic',
-    fontWeight: '500',
+    fontFamily: fontFamily.bold,
     color: colors.text,
     letterSpacing: -0.3,
   },
@@ -296,7 +294,7 @@ const styles = StyleSheet.create({
   },
   ingName: {
     ...typography.bodySmall,
-    fontWeight: '600',
+    fontFamily: fontFamily.semibold,
     color: colors.text,
   },
   ingLinked: {
@@ -313,7 +311,7 @@ const styles = StyleSheet.create({
   },
   ingCost: {
     ...typography.bodySmall,
-    fontWeight: '700',
+    fontFamily: fontFamily.bold,
     color: colors.text,
     minWidth: 55,
     textAlign: 'right',
@@ -327,12 +325,12 @@ const styles = StyleSheet.create({
   },
   totalLabel: {
     ...typography.bodySmall,
-    fontWeight: '700',
+    fontFamily: fontFamily.bold,
     color: colors.textSecondary,
   },
   totalValue: {
     ...typography.bodySmall,
-    fontWeight: '800',
+    fontFamily: fontFamily.extrabold,
     color: colors.primary,
   },
 });

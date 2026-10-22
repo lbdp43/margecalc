@@ -7,16 +7,17 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import {
   ProductWithMargin, RecipeWithCost,
-  calculateRecipeMargin, formatPercent, formatPrice, MARGIN_COLOR_MAP,
+  calculateRecipeMargin, MARGIN_COLOR_MAP,
   parseLocaleFloat,
   CreateRecipeIngredientInput, CreateRecipeConsumableInput,
 } from '@margebar/shared';
+import { formatCoeff, formatEuro, formatPercent, toInputString } from '../../utils/format';
 import { ScreenWrapper } from '../../components/ui/ScreenWrapper';
 import { useOfflineQuery } from '../../hooks/useOfflineQuery';
 import { alert } from '../../utils/alert';
 import * as recipeService from '../../services/recipe.service';
 import * as productService from '../../services/product.service';
-import { colors, spacing, borderRadius, typography, shadows, fonts } from '../../theme';
+import { colors, spacing, borderRadius, typography, shadows, fontFamily } from '../../theme';
 import { useAuthStore } from '../../store/auth.store';
 
 interface IngredientRow {
@@ -128,7 +129,7 @@ export function CocktailFormScreen() {
         ...i,
         productId: product.id,
         name: product.name,
-        costPerUnit: (costPerCl * (qty || 1)).toFixed(2).replace('.', ','),
+        costPerUnit: toInputString(costPerCl * (qty || 1), 2),
       };
     }));
     setShowProductPicker(null);
@@ -142,7 +143,7 @@ export function CocktailFormScreen() {
     if (!product) return;
     const costPerCl = product.purchasePriceHT / product.containerVolumeCl;
     const qty = parseLocaleFloat(newQty) || 0;
-    updateIngredient(key, 'costPerUnit', (costPerCl * qty).toFixed(2).replace('.', ','));
+    updateIngredient(key, 'costPerUnit', toInputString(costPerCl * qty, 2));
   };
 
   const addConsumable = () => {
@@ -247,10 +248,10 @@ export function CocktailFormScreen() {
   };
 
   const TVA_OPTIONS = [
-    { label: '20 %', value: 0.20 },
-    { label: '10 %', value: 0.10 },
-    { label: '5,5 %', value: 0.055 },
-    { label: '0 %', value: 0 },
+    { label: '20 %', value: 0.20 },
+    { label: '10 %', value: 0.10 },
+    { label: '5,5 %', value: 0.055 },
+    { label: '0 %', value: 0 },
   ];
 
   return (
@@ -339,7 +340,7 @@ export function CocktailFormScreen() {
                     >
                       <Text style={styles.pickerItemText}>{p.name}</Text>
                       <Text style={styles.pickerItemSub}>
-                        {formatPrice(p.purchasePriceHT)} / {p.containerVolumeCl} cl
+                        {formatEuro(p.purchasePriceHT)} / {p.containerVolumeCl} cl
                       </Text>
                     </TouchableOpacity>
                   ))}
@@ -489,11 +490,11 @@ export function CocktailFormScreen() {
             <View style={styles.previewGrid}>
               <View style={styles.previewItem}>
                 <Text style={styles.previewLabel}>Coût total HT</Text>
-                <Text style={styles.previewValue}>{formatPrice(preview.totalCostHT)}</Text>
+                <Text style={styles.previewValue}>{formatEuro(preview.totalCostHT)}</Text>
               </View>
               <View style={styles.previewItem}>
                 <Text style={styles.previewLabel}>Prix vente HT</Text>
-                <Text style={styles.previewValue}>{formatPrice(preview.sellingPriceHT)}</Text>
+                <Text style={styles.previewValue}>{formatEuro(preview.sellingPriceHT)}</Text>
               </View>
               <View style={styles.previewItem}>
                 <Text style={styles.previewLabel}>Marge</Text>
@@ -503,11 +504,11 @@ export function CocktailFormScreen() {
               </View>
               <View style={styles.previewItem}>
                 <Text style={styles.previewLabel}>Coefficient</Text>
-                <Text style={styles.previewValue}>x {preview.coefficient.toFixed(1)}</Text>
+                <Text style={styles.previewValue}>{formatCoeff(preview.coefficient, 1)}</Text>
               </View>
               <View style={styles.previewItem}>
                 <Text style={styles.previewLabel}>Gain / cocktail</Text>
-                <Text style={styles.previewValue}>{formatPrice(preview.marginHT)}</Text>
+                <Text style={styles.previewValue}>{formatEuro(preview.marginHT)}</Text>
               </View>
             </View>
           </View>
@@ -528,9 +529,7 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     ...typography.h2,
-    fontFamily: fonts.serif,
-    fontStyle: 'italic',
-    fontWeight: '500',
+    fontFamily: fontFamily.bold,
     color: colors.text,
     letterSpacing: -0.3,
   },
@@ -561,16 +560,14 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     ...typography.h3,
-    fontFamily: fonts.serif,
-    fontStyle: 'italic',
-    fontWeight: '500',
+    fontFamily: fontFamily.bold,
     color: colors.text,
     letterSpacing: -0.3,
   },
 
   label: {
     ...typography.bodySmall,
-    fontWeight: '600',
+    fontFamily: fontFamily.semibold,
     color: colors.textSecondary,
     marginBottom: spacing.xs,
   },
@@ -648,7 +645,7 @@ const styles = StyleSheet.create({
   },
   pickerItemText: {
     ...typography.bodySmall,
-    fontWeight: '600',
+    fontFamily: fontFamily.semibold,
     color: colors.text,
   },
   pickerItemSub: {
@@ -676,7 +673,7 @@ const styles = StyleSheet.create({
   },
   addBtnText: {
     ...typography.bodySmall,
-    fontWeight: '600',
+    fontFamily: fontFamily.semibold,
     color: colors.primary,
   },
 
@@ -706,7 +703,7 @@ const styles = StyleSheet.create({
   },
   tvaText: {
     ...typography.bodySmall,
-    fontWeight: '600',
+    fontFamily: fontFamily.semibold,
     color: colors.textSecondary,
   },
   tvaTextActive: {
@@ -743,13 +740,13 @@ const styles = StyleSheet.create({
   },
   previewValue: {
     ...typography.body,
-    fontWeight: '700',
+    fontFamily: fontFamily.bold,
     color: colors.text,
     marginTop: 2,
   },
   previewValueBig: {
     ...typography.h2,
-    fontWeight: '800',
+    fontFamily: fontFamily.extrabold,
     marginTop: 2,
   },
 });

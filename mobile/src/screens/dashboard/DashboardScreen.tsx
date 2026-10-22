@@ -1,532 +1,244 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, useWindowDimensions, Modal, ScrollView, KeyboardAvoidingView, Platform as RNPlatform } from 'react-native';
-import { alert, confirm } from '../../utils/alert';
-import type { SaveProductData } from '../../components/ui/DroitsCalculator';
-import Svg, { Path } from 'react-native-svg';
+/**
+ * Tableau de bord (D1 « Émeraude Signature », spec §4.2, FOUNDATION §8).
+ *
+ *   HeroHeader  avatar · « Bonjour, » / « Bonsoir, » + établissement · Aide & retours
+ *               « Marge moyenne » count-up · gap to the objective · distribution bar
+ *   StatTiles   Produits · Meilleur produit (overlap the hero by 28)
+ *   Card        « Calculer les droits d’alcool » → Calculateur (Tableau de bord stack)
+ *   Meters      « Marge par catégorie » with objective ticks + legend
+ *   Top & flop  SegmentedControl, rows open the product
+ *
+ * States: skeletons on first load (never for cached data), empty account
+ * (three entry points), error (backend message + Réessayer), offline without
+ * cache. Entrances are mount-only, so refetches never replay them.
+ */
+import React, { useCallback, useMemo, useState } from 'react';
+import { StyleSheet, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
+import type { ProductWithMargin } from '@margebar/shared';
 import {
-  ProductWithMargin,
-  formatPercent, formatPrice, MARGIN_COLOR_MAP,
-  calculateServingMargin,
-} from '@margebar/shared';
-import { ScreenWrapper } from '../../components/ui/ScreenWrapper';
-import { ErrorBoundary } from '../../components/ui/ErrorBoundary';
-import { DecorativeCurve } from '../../components/ui/DecorativeCurve';
+  Button,
+  Card,
+  EmptyState,
+  ErrorBoundary,
+  FadeIn,
+  Screen,
+  Skeleton,
+  SkeletonStatTile,
+  countByZone,
+  useDelayedLoading,
+} from '../../components/ui';
+import { FeedbackModal } from '../../components/ui/FeedbackModal';
+import { palette, type } from '../../theme';
 import { useOfflineQuery } from '../../hooks/useOfflineQuery';
 import * as productService from '../../services/product.service';
 import { useAuthStore } from '../../store/auth.store';
-import { colors, spacing, borderRadius, typography, shadows, fonts } from '../../theme';
-import { DroitsCalculator } from '../../components/ui/DroitsCalculator';
-import { ProductDashboardCard } from './ProductDashboardCard';
-import { CategoryChart } from './CategoryChart';
-import { TopFlopSection } from './TopFlopSection';
-import { Eyebrow, Display, InkStamp, Script, Num, Scribble } from '../../components/ui/atelier';
+import { useRatesStore } from '../../store/rates.store';
+import { useSystemParamsStore } from '../../store/systemParams.store';
+import { useMarginThresholds } from '../../utils/marginThresholds';
+import { goToProduct, goToProductList, openDutyCalculator, openInvoiceScan, openProductForm } from '../../navigation/routes';
+import { DashboardHero, HeroKpi } from './parts/DashboardHero';
+import { KpiTiles } from './parts/KpiTiles';
+import { DutyActionCard } from './parts/DutyActionCard';
+import { CategoryMeters } from './parts/CategoryMeters';
+import { TopFlopCard } from './parts/TopFlopCard';
+import { averageMargin, categoryStats, errorMessage, greeting as greetingFor, topFlop, withMargin } from './parts/dashboardData';
 
-const WELCOME_DISMISSED_KEY = 'margebar_welcome_dismissed';
-const CURVE_HEIGHT = 40;
+const OVERLAP = 28;
 
 export function DashboardScreen() {
-  const user = useAuthStore((s) => s.user);
   const navigation = useNavigation<any>();
-  const { width } = useWindowDimensions();
-  const { data: products = [], refetch, isFetching } = useOfflineQuery<ProductWithMargin[]>(
-    ['products'],
-    () => productService.getProducts(),
-  );
+  const user = useAuthStore((s) => s.user);
+  const thresholds = useMarginThresholds();
+  const rateCount = useRatesStore((s) => s.rates.length) || 13;
+  const year = useSystemParamsStore((s) => s.params.find((p) => p.key === 'tarif_annee')?.value || '2026');
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
 
-  const handleRefresh = useCallback(() => { refetch(); }, [refetch]);
+  const query = useOfflineQuery<ProductWithMargin[]>(['products'], () => productService.getProducts());
+  const products = query.data as ProductWithMargin[] | undefined;
+  const hasData = Array.isArray(products);
+  const showSkeleton = useDelayedLoading(!hasData && query.isLoading);
 
-  const [welcomeVisible, setWelcomeVisible] = useState(true);
-  const [loadingPref, setLoadingPref] = useState(true);
+  const businessName = user?.businessName?.trim() || 'Mon établissement';
+  // Recomputed on every render: the dashboard stays mounted across 18 h.
+  const hello = greetingFor();
 
-  const [calcVisible, setCalcVisible] = useState(false);
-  const [savedCalcs, setSavedCalcs] = useState<(SaveProductData & { id: string })[]>([]);
-
-  // Load saved calculations
-  useEffect(() => {
-    AsyncStorage.getItem('margebar_saved_calcs').then((val) => {
-      if (val) {
-        try { setSavedCalcs(JSON.parse(val)); } catch { /* ignore */ }
-      }
-    });
-  }, []);
-
-  const handleSaveCalc = useCallback((data: SaveProductData) => {
-    const entry = { ...data, id: Date.now().toString() };
-    setSavedCalcs((prev) => {
-      const updated = [entry, ...prev];
-      AsyncStorage.setItem('margebar_saved_calcs', JSON.stringify(updated)).catch(() => {});
-      return updated;
-    });
-    setCalcVisible(false);
-    alert('Enregistre', `${data.name} a ete ajoute a vos calculs`);
-  }, []);
-
-  const handleDeleteCalc = useCallback((id: string) => {
-    setSavedCalcs((prev) => {
-      const updated = prev.filter((c) => c.id !== id);
-      AsyncStorage.setItem('margebar_saved_calcs', JSON.stringify(updated)).catch(() => {});
-      return updated;
-    });
-  }, []);
-
-  useEffect(() => {
-    let mounted = true;
-    AsyncStorage.getItem(WELCOME_DISMISSED_KEY).then((val) => {
-      if (!mounted) return;
-      if (val === 'true') setWelcomeVisible(false);
-      setLoadingPref(false);
-    });
-    return () => { mounted = false; };
-  }, []);
-
-  const handleDismiss = useCallback(() => {
-    setWelcomeVisible(false);
-    confirm(
-      'Masquer le message de bienvenue',
-      'Voulez-vous le masquer définitivement ?',
-      () => AsyncStorage.setItem(WELCOME_DISMISSED_KEY, 'true'),
-      'Masquer',
-    );
-  }, []);
-
-  const navigateToProduct = useCallback((productId: string) => {
-    navigation.navigate('Produits', {
-      screen: 'ProductDetail',
-      params: { productId },
-      initial: false, // keep ProductList under the detail (RC5)
-    });
-  }, [navigation]);
-
-  // Combined sorted + top5 + flop5 in a single memo
-  const { sorted, top5, flop5, avgMargin } = useMemo(() => {
-    const s = [...products].sort((a, b) => b.computed.marginPercent - a.computed.marginPercent);
-    const avg = products.length > 0
-      ? products.reduce((sum, p) => sum + p.computed.marginPercent, 0) / products.length
-      : 0;
+  const view = useMemo(() => {
+    const list = hasData ? withMargin(products as ProductWithMargin[]) : [];
+    const avg = averageMargin(list);
+    const counts = countByZone(list, thresholds);
+    const { top, flop } = topFlop(list, 5);
     return {
-      sorted: s,
-      top5: s.slice(0, 5),
-      flop5: s.length > 5 ? s.slice(-5).reverse() : [],
-      avgMargin: avg,
+      list,
+      counts,
+      kpi: avg !== null ? ({ avg, total: list.length, counts } as HeroKpi) : null,
+      stats: categoryStats(list),
+      top,
+      flop,
+      best: top[0] ?? null,
     };
-  }, [products]);
+  }, [hasData, products, thresholds]);
 
-  // Category margin data for bar chart
-  const categoryData = useMemo(() => {
-    const catMap = new Map<string, { name: string; margins: number[] }>();
-    products.forEach((p) => {
-      const catName = p.category?.name || 'Autre';
-      if (!catMap.has(catName)) catMap.set(catName, { name: catName, margins: [] });
-      catMap.get(catName)!.margins.push(p.computed.marginPercent);
-    });
-    return Array.from(catMap.values())
-      .map((c) => ({
-        name: c.name,
-        avgMargin: c.margins.reduce((s, m) => s + m, 0) / c.margins.length,
-        count: c.margins.length,
-      }))
-      .sort((a, b) => b.avgMargin - a.avgMargin);
-  }, [products]);
+  const state: 'ready' | 'loading' | 'empty' | 'error' | 'offline' = hasData
+    ? view.list.length > 0
+      ? 'ready'
+      : 'empty'
+    : query.isOffline
+      ? 'offline'
+      : query.isError
+        ? 'error'
+        : 'loading';
 
-  // Pre-compute serving margins for all products
-  const productsWithServingMargins = useMemo(() => {
-    return sorted.map((p) => ({
-      product: p,
-      accent: MARGIN_COLOR_MAP[p.computed.colorCode],
-      servingMargins: (p.servings || []).map((s) => ({
-        serving: s,
-        margin: calculateServingMargin(
-          p.purchasePriceHT, p.containerVolumeCl, p.tvaRate,
-          s.servingType, s.sellingPriceTTC,
-        ),
-      })),
-    }));
-  }, [sorted]);
+  // Navigation callbacks (stable, rows are memoised)
+  const openProduct = useCallback((id: string) => goToProduct(navigation, id), [navigation]);
+  const openList = useCallback(() => goToProductList(navigation), [navigation]);
+  const openCalculator = useCallback(() => openDutyCalculator(navigation), [navigation]);
+  const openFeedback = useCallback(() => setFeedbackOpen(true), []);
+  const scanBottle = useCallback(() => openProductForm(navigation, {}), [navigation]);
+  const scanInvoice = useCallback(() => openInvoiceScan(navigation), [navigation]);
+  const addManually = useCallback(() => openProductForm(navigation, { scanData: {} }), [navigation]);
+  const { refetch } = query;
+  const retry = useCallback(() => {
+    refetch();
+  }, [refetch]);
 
   return (
-    <ScreenWrapper onRefresh={handleRefresh} refreshing={isFetching}>
-      {/* Hero Header — emerald ink stamp on cream paper */}
-      <View style={styles.heroCard}>
-        <View style={styles.heroDecor}>
-          <Svg width={120} height={120} viewBox="0 0 120 120">
-            <Path d="M60 14 a46 46 0 1 1 0 92 a46 46 0 1 1 0 -92" stroke="#FFFFFF22" strokeWidth={1} strokeDasharray="3 3" fill="none" />
-            <Path d="M60 28 a32 32 0 1 1 0 64 a32 32 0 1 1 0 -64" stroke="#FFFFFF18" strokeWidth={1} fill="none" />
-          </Svg>
-        </View>
-        <View style={styles.heroContent}>
-          <View style={styles.heroTopRow}>
-            <InkStamp size={36} color={colors.onAccent} rotate={-6} />
-            <View style={{ marginLeft: spacing.sm + 2, flex: 1 }}>
-              <Eyebrow color="rgba(243,248,236,0.78)" size={9.5} track={1.8}>
-                {user?.businessName?.toUpperCase() || 'MON ÉTABLISSEMENT'}
-              </Eyebrow>
-              <Display size={22} color={colors.onAccent} style={{ marginTop: 2 }}>
-                Tableau de bord
-              </Display>
-            </View>
-          </View>
+    <Screen safeTop={false} padded={false} refreshing={query.isRefetching} onRefresh={retry} testID="dashboard-screen">
+      <DashboardHero
+        greeting={hello}
+        businessName={businessName}
+        thresholds={thresholds}
+        kpi={state === 'ready' ? view.kpi : null}
+        state={state === 'offline' ? 'error' : state}
+        onFeedback={openFeedback}
+        paddingBottom={OVERLAP + 20}
+      />
 
-          {welcomeVisible && !loadingPref ? (
-            <View style={styles.welcomeSection}>
-              <TouchableOpacity
-                style={styles.closeBtn}
-                onPress={handleDismiss}
-                accessibilityRole="button"
-                accessibilityLabel="Fermer le message de bienvenue"
-              >
-                <Ionicons name="close" size={14} color={colors.textLight} />
-              </TouchableOpacity>
-              <Script size={26} color="#F3FBE6">Bienvenue sur MargeBar Pro.</Script>
-              <Text style={styles.welcomeText}>
-                Calculez vos marges sur chaque produit : spiritueux, vins, bières, softs.
-                Ajoutez vos produits, choisissez votre méthode et visualisez votre rentabilité.
-              </Text>
-              <Text style={styles.welcomePrivacy}>
-                Vos produits et vos marges restent privés vis-à-vis des autres utilisateurs.
-              </Text>
-            </View>
-          ) : null}
-        </View>
+      <View style={styles.body}>
+        {state === 'ready' ? (
+          <>
+            <KpiTiles count={view.list.length} best={view.best} onProducts={openList} onBest={openProduct} />
+            <FadeIn delay={180} style={styles.gap12}>
+              <DutyActionCard onPress={openCalculator} categories={rateCount} year={year} />
+            </FadeIn>
+            <ErrorBoundary fallbackMessage="La marge par catégorie n’a pas pu s’afficher.">
+              <FadeIn delay={240} style={styles.section}>
+                <CategoryMeters stats={view.stats} thresholds={thresholds} counts={view.counts} delay={300} onDetails={openList} />
+              </FadeIn>
+            </ErrorBoundary>
+            <ErrorBoundary fallbackMessage="Le classement n’a pas pu s’afficher.">
+              <FadeIn delay={300} style={styles.section}>
+                <TopFlopCard top={view.top} flop={view.flop} thresholds={thresholds} onOpen={openProduct} onSeeAll={openList} />
+              </FadeIn>
+            </ErrorBoundary>
+          </>
+        ) : state === 'loading' ? (
+          showSkeleton ? <DashboardSkeleton /> : <View style={styles.loadingSpacer} />
+        ) : (
+          <>
+            <FadeIn delay={60}>
+              <DutyActionCard onPress={openCalculator} categories={rateCount} year={year} />
+            </FadeIn>
+            {state === 'empty' ? (
+              <EmptyState
+                marquee
+                style={styles.empty}
+                title="Aucun produit pour l’instant"
+                text="Scannez une bouteille ou une facture : vos marges apparaîtront ici."
+                primary={{ label: 'Scanner une bouteille', icon: 'scan', onPress: scanBottle }}
+                secondary={[
+                  { label: 'Facture', icon: 'receipt-outline', onPress: scanInvoice },
+                  { label: 'À la main', icon: 'create-outline', onPress: addManually },
+                ]}
+              />
+            ) : state === 'offline' ? (
+              <EmptyState variant="offline" style={styles.empty} primary={{ label: 'Réessayer', icon: 'refresh', onPress: retry }} />
+            ) : (
+              <FadeIn delay={120} style={styles.section}>
+                <ErrorCard
+                  message={errorMessage(query.error, 'Le serveur ne répond pas pour le moment. Réessayez dans un instant.')}
+                  onRetry={retry}
+                  retrying={query.isFetching}
+                />
+              </FadeIn>
+            )}
+          </>
+        )}
       </View>
 
-      {/* S-curve bottom edge of hero */}
-      <View style={styles.heroCurve}>
-        <Svg width={width} height={CURVE_HEIGHT}>
-          <Path
-            d={`M0,0 L0,${CURVE_HEIGHT} C${width * 0.35},${CURVE_HEIGHT} ${width * 0.35},0 ${width},0 Z`}
-            fill={colors.primary}
-          />
-        </Svg>
-      </View>
+      <FeedbackModal visible={feedbackOpen} onClose={() => setFeedbackOpen(false)} screenName="Tableau de bord" />
+    </Screen>
+  );
+}
 
-      {/* Stats Row */}
-      <View style={styles.statsRow}>
-        <View style={styles.statCard} accessibilityLabel={`${products.length} produits`}>
-          <Eyebrow color={colors.textMuted} size={9} track={1.4}>Produits</Eyebrow>
-          <Num size={30} color={colors.text} weight="500" style={{ marginTop: 4 }}>
-            {products.length}
-          </Num>
-          <Text style={styles.statSub}>au comptoir</Text>
+function ErrorCard({ message, onRetry, retrying }: { message: string; onRetry: () => void; retrying: boolean }) {
+  return (
+    <Card accessibilityLabel={`Impossible de charger vos produits. ${message}`}>
+      <View style={styles.errorHead}>
+        <View style={styles.errorIcon}>
+          <Ionicons name="cloud-offline-outline" size={20} color={palette.bad} />
         </View>
-        <View style={styles.statCard} accessibilityLabel={`Marge moyenne ${formatPercent(avgMargin)}`}>
-          <Eyebrow color={colors.textMuted} size={9} track={1.4}>Marge moy.</Eyebrow>
-          <View style={styles.statValueRow}>
-            <Num size={28} color={colors.text} weight="500">
-              {avgMargin.toFixed(1).replace('.', ',')}
-            </Num>
-            <Script size={22} color={colors.accent} style={{ marginLeft: 2 }}>%</Script>
-          </View>
-          <Text style={styles.statSub}>{products.length > 0 ? 'pas mal du tout' : 'à venir'}</Text>
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Text style={styles.errorTitle}>Impossible de charger vos produits</Text>
+          <Text style={styles.errorText}>{message}</Text>
         </View>
-        <TouchableOpacity
-          style={styles.calcButton}
-          onPress={() => setCalcVisible(true)}
-          activeOpacity={0.85}
-          accessibilityRole="button"
-          accessibilityLabel="Calculer vos droits d'alcool"
-        >
-          <Eyebrow color="rgba(243,248,236,0.85)" size={9} track={1.4}>Calcul</Eyebrow>
-          <Script size={20} color={colors.onAccent} style={{ marginTop: 6 }}>vos droits</Script>
-          <View style={styles.calcButtonRow}>
-            <Text style={styles.calcButtonSub}>d'alcool</Text>
-            <Ionicons name="add" size={16} color={colors.onAccent} />
-          </View>
-        </TouchableOpacity>
       </View>
+      <Button title="Réessayer" icon="refresh" variant="secondary" size="sm" onPress={onRetry} loading={retrying} style={styles.errorBtn} />
+    </Card>
+  );
+}
 
-      {/* Alcohol Tax Calculator Modal */}
-      {calcVisible && (
-        <Modal visible transparent animationType="slide" onRequestClose={() => setCalcVisible(false)}>
-          <KeyboardAvoidingView style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' }} behavior={RNPlatform.OS === 'ios' ? 'padding' : undefined}>
-            <View style={{ backgroundColor: colors.cardBackground, borderTopLeftRadius: 28, borderTopRightRadius: 28, maxHeight: '90%' }}>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: spacing.lg, paddingTop: spacing.lg, paddingBottom: spacing.sm }}>
-                <Display size={22} color={colors.primary}>Calculateur</Display>
-                <TouchableOpacity onPress={() => setCalcVisible(false)} style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.border }}>
-                  <Ionicons name="close" size={18} color={colors.text} />
-                </TouchableOpacity>
-              </View>
-              <ScrollView style={{ paddingHorizontal: spacing.md, paddingBottom: spacing.xxl }} keyboardShouldPersistTaps="handled">
-                <DroitsCalculator compact onSaveProduct={handleSaveCalc} />
-              </ScrollView>
-            </View>
-          </KeyboardAvoidingView>
-        </Modal>
-      )}
-
-      {/* Saved calculations */}
-      {savedCalcs.length > 0 && (
-        <View style={styles.savedSection}>
-          <View style={styles.savedHeader}>
-            <Scribble width={28} color={colors.primary} style={{ marginRight: spacing.sm }} />
-            <Text style={styles.savedTitle}>Mes calculs enregistrés</Text>
-          </View>
-          {savedCalcs.map((c) => (
-            <View key={c.id} style={styles.savedCard}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.savedName}>{c.name}</Text>
-                <Text style={styles.savedDetail}>{c.volumeCl} cl · {c.degree}° · {c.fiscalCategory}</Text>
-              </View>
-              <View style={{ alignItems: 'flex-end' }}>
-                <Text style={styles.savedPriceLabel}>HT hors droit</Text>
-                <Text style={styles.savedPrice}>{formatPrice(c.prixHTHorsDroit)}</Text>
-                <Text style={styles.savedPriceLabel}>HT avec droits</Text>
-                <Text style={[styles.savedPriceStrong, { color: colors.primary }]}>{formatPrice(c.prixHTAvecDroits)}</Text>
-                <Text style={styles.savedPriceLabel}>TTC (20%)</Text>
-                <Text style={styles.savedPrice}>{formatPrice(c.prixTTC)}</Text>
-              </View>
-              <TouchableOpacity
-                onPress={() => handleDeleteCalc(c.id)}
-                style={{ paddingLeft: spacing.sm, justifyContent: 'center' }}
-              >
-                <Ionicons name="trash-outline" size={18} color={colors.marginRed} />
-              </TouchableOpacity>
+function DashboardSkeleton() {
+  return (
+    <View accessibilityLabel="Chargement du tableau de bord">
+      <View style={styles.skeletonTiles}>
+        <SkeletonStatTile style={{ flex: 1 }} />
+        <SkeletonStatTile style={{ flex: 1.25 }} />
+      </View>
+      <View style={[styles.skeletonCard, styles.gap12]}>
+        <Skeleton width={48} height={48} radius={14} />
+        <View style={{ flex: 1, gap: 8 }}>
+          <Skeleton height={14} width="70%" />
+          <Skeleton height={10} width="45%" />
+        </View>
+      </View>
+      <View style={styles.section}>
+        <Skeleton height={18} width={180} radius={6} style={{ marginBottom: 14 }} />
+        <View style={[styles.skeletonCard, { flexDirection: 'column', alignItems: 'stretch', gap: 18 }]}>
+          {[0, 1, 2, 3].map((i) => (
+            <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              <Skeleton height={14} width={100} />
+              <Skeleton height={6} style={{ flex: 1 }} radius={3} />
+              <Skeleton height={14} width={52} />
             </View>
           ))}
         </View>
-      )}
-
-      {/* Margin by Category Chart */}
-      <ErrorBoundary fallbackMessage="Impossible d'afficher le graphique">
-        <CategoryChart data={categoryData} />
-      </ErrorBoundary>
-
-      {/* Top 5 Rentabilité */}
-      <TopFlopSection
-        title="Top rentabilité"
-        indicatorColor={colors.marginGreen}
-        products={top5}
-        onPress={navigateToProduct}
-      />
-
-      {/* Flop 5 Rentabilité */}
-      <TopFlopSection
-        title="Flop rentabilité"
-        indicatorColor={colors.marginRed}
-        products={flop5}
-        onPress={navigateToProduct}
-      />
-
-      <DecorativeCurve variant="middle" />
-
-      {/* All products with serving tables */}
-      <ErrorBoundary fallbackMessage="Impossible d'afficher les produits">
-        {productsWithServingMargins.map((item) => (
-          <ProductDashboardCard
-            key={item.product.id}
-            product={item.product}
-            accent={item.accent}
-            servingMargins={item.servingMargins}
-            onPress={navigateToProduct}
-          />
-        ))}
-      </ErrorBoundary>
-
-      {products.length === 0 && !loadingPref && (
-        <View style={styles.emptyState}>
-          <InkStamp size={64} color={colors.primary} rotate={-6} />
-          <Display size={20} style={{ marginTop: spacing.md, textAlign: 'center' }}>
-            Le carnet est vide
-          </Display>
-          <Text style={styles.emptyText}>
-            Ajoutez vos premiers produits pour voir vos statistiques.
-          </Text>
-        </View>
-      )}
-
-    </ScreenWrapper>
+      </View>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  savedSection: {
-    marginBottom: spacing.lg,
-  },
-  savedHeader: {
+  body: { paddingHorizontal: 20, marginTop: -OVERLAP },
+  gap12: { marginTop: 12 },
+  section: { marginTop: 24 },
+  empty: { marginTop: 8 },
+  loadingSpacer: { height: 120 },
+  errorHead: { flexDirection: 'row', gap: 14, alignItems: 'flex-start' },
+  errorIcon: { width: 40, height: 40, borderRadius: 20, backgroundColor: palette.badBg, alignItems: 'center', justifyContent: 'center' },
+  errorTitle: { ...type.headline, color: palette.ink },
+  errorText: { ...type.callout, color: palette.text2, marginTop: 4 },
+  errorBtn: { marginTop: 16, alignSelf: 'flex-start' },
+  skeletonTiles: { flexDirection: 'row', gap: 12 },
+  skeletonCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: spacing.sm,
-  },
-  savedTitle: {
-    ...typography.h3,
-    fontFamily: fonts.serif,
-    fontStyle: 'italic',
-    fontWeight: '500',
-    color: colors.text,
-  },
-  savedCard: {
-    flexDirection: 'row',
-    backgroundColor: colors.cardBackground,
-    borderRadius: borderRadius.md,
-    padding: spacing.md,
-    marginBottom: spacing.sm,
-    borderWidth: 1.5,
-    borderColor: colors.border,
-    ...shadows.paper,
-  },
-  savedName: {
-    ...typography.body,
-    fontWeight: '700',
-    color: colors.text,
-    marginBottom: 2,
-  },
-  savedDetail: {
-    ...typography.caption,
-    color: colors.textSecondary,
-  },
-  savedPriceLabel: {
-    fontSize: 9.5,
-    fontWeight: '700',
-    letterSpacing: 1.2,
-    textTransform: 'uppercase',
-    color: colors.textMuted,
-  },
-  savedPrice: {
-    fontFamily: fonts.serif,
-    fontStyle: 'italic',
-    fontSize: 14,
-    fontWeight: '500',
-    color: colors.text,
-    marginBottom: 2,
-  },
-  savedPriceStrong: {
-    fontFamily: fonts.serif,
-    fontStyle: 'italic',
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 2,
-  },
-  heroCard: {
-    backgroundColor: colors.primary,
-    borderTopLeftRadius: borderRadius.xxl,
-    borderTopRightRadius: borderRadius.xxl,
-    overflow: 'hidden',
-    ...shadows.lg,
-  },
-  heroDecor: {
-    position: 'absolute',
-    top: -20,
-    right: -20,
-    opacity: 0.6,
-  },
-  heroContent: {
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.lg,
-    paddingBottom: spacing.md,
-  },
-  heroTopRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  heroCurve: {
-    marginTop: -1,
-    marginBottom: spacing.md,
-    height: CURVE_HEIGHT,
-  },
-  welcomeSection: {
-    marginTop: spacing.md,
-    backgroundColor: 'rgba(255,255,255,0.10)',
-    borderRadius: borderRadius.md,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
+    gap: 14,
+    padding: 14,
+    backgroundColor: palette.surface,
+    borderRadius: 20,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.18)',
-    position: 'relative',
-  },
-  closeBtn: {
-    position: 'absolute',
-    top: spacing.sm,
-    right: spacing.sm,
-    width: 26,
-    height: 26,
-    borderRadius: borderRadius.full,
-    backgroundColor: 'rgba(255,255,255,0.15)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 1,
-  },
-  welcomeText: {
-    ...typography.bodySmall,
-    color: 'rgba(255,255,255,0.88)',
-    lineHeight: 20,
-    marginTop: spacing.sm,
-  },
-  welcomePrivacy: {
-    ...typography.caption,
-    color: 'rgba(255,255,255,0.6)',
-    fontStyle: 'italic',
-    lineHeight: 16,
-    marginTop: spacing.sm,
-  },
-  statsRow: {
-    flexDirection: 'row',
-    gap: spacing.sm + 2,
-    marginBottom: spacing.lg,
-  },
-  statCard: {
-    flex: 1,
-    alignItems: 'flex-start',
-    backgroundColor: colors.cardBackground,
-    borderRadius: borderRadius.md,
-    paddingVertical: spacing.md - 2,
-    paddingHorizontal: spacing.sm + 4,
-    borderWidth: 1.5,
-    borderColor: colors.border,
-    ...shadows.paper,
-    minHeight: 88,
-    justifyContent: 'space-between',
-  },
-  statValueRow: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    marginTop: 4,
-  },
-  statSub: {
-    fontFamily: fonts.serif,
-    fontStyle: 'italic',
-    fontSize: 11,
-    fontWeight: '500',
-    color: colors.textFaint,
-    marginTop: 4,
-  },
-  calcButton: {
-    flex: 1,
-    alignItems: 'flex-start',
-    backgroundColor: colors.primary,
-    borderRadius: borderRadius.md,
-    paddingVertical: spacing.md - 2,
-    paddingHorizontal: spacing.sm + 4,
-    borderWidth: 1.5,
-    borderColor: colors.secondary,
-    ...shadows.paper,
-    minHeight: 88,
-    justifyContent: 'space-between',
-  },
-  calcButtonRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    width: '100%',
-    marginTop: 4,
-  },
-  calcButtonSub: {
-    ...typography.caption,
-    color: 'rgba(255,255,255,0.85)',
-    fontSize: 10.5,
-  },
-  emptyState: {
-    alignItems: 'center',
-    paddingTop: spacing.xxl,
-    paddingHorizontal: spacing.lg,
-  },
-  emptyText: {
-    ...typography.body,
-    color: colors.textMuted,
-    textAlign: 'center',
-    marginTop: spacing.sm,
-    maxWidth: 260,
-    lineHeight: 22,
+    borderColor: palette.line,
   },
 });

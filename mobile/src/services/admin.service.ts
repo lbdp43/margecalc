@@ -38,7 +38,8 @@ export interface AdminRevenue {
 
 export interface AdminUsersResponse {
   stats: AdminUsersStats;
-  revenue: AdminRevenue;
+  /** Legacy (subscriptions): the app is free, the UI ignores it. */
+  revenue?: AdminRevenue;
   users: AdminUser[];
 }
 

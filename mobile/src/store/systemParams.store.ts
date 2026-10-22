@@ -19,6 +19,8 @@ interface SystemParamsState {
   getParam: (key: string) => string | null;
   getParamNum: (key: string) => number;
   updateParam: (key: string, value: string) => Promise<void>;
+  /** Admin: saves several params; returns the keys that failed with their error. */
+  updateParams: (values: Record<string, string>) => Promise<{ key: string; error: unknown }[]>;
 }
 
 export const useSystemParamsStore = create<SystemParamsState>((set, get) => ({
@@ -77,9 +79,25 @@ export const useSystemParamsStore = create<SystemParamsState>((set, get) => ({
     }));
     // Update cache
     const state = get();
-    await AsyncStorage.setItem(
-      CACHE_KEY,
-      JSON.stringify({ params: state.params, fetchedAt: Date.now() }),
-    );
+    try {
+      await AsyncStorage.setItem(
+        CACHE_KEY,
+        JSON.stringify({ params: state.params, fetchedAt: Date.now() }),
+      );
+    } catch {
+      // ignore cache write errors
+    }
+  },
+
+  updateParams: async (values: Record<string, string>) => {
+    const failed: { key: string; error: unknown }[] = [];
+    for (const [key, value] of Object.entries(values)) {
+      try {
+        await get().updateParam(key, value);
+      } catch (error) {
+        failed.push({ key, error });
+      }
+    }
+    return failed;
   },
 }));

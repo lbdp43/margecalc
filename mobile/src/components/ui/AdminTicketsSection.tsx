@@ -1,598 +1,363 @@
-import React, { useState, useCallback, useEffect, useMemo } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Image, Modal, ScrollView, TextInput, KeyboardAvoidingView, Platform } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { alert, confirm } from '../../utils/alert';
+/**
+ * Administration › Demandes (admins only), opened from Réglages.
+ *
+ *   const tickets = useAdminTickets(isAdmin);
+ *   <AdminTicketsSheet visible={open} onClose={() => setOpen(false)} />
+ *
+ * One full-height BottomSheet, two views: the list (Ouvertes / Résolues /
+ * Toutes) and the detail (message, screenshot, reply, status, delete).
+ */
+import React, { useEffect, useMemo, useState } from 'react';
+import { Image, StyleSheet, Text, View } from 'react-native';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import * as ticketService from '../../services/ticket.service';
-import { TICKET_TYPE_META } from '../../services/ticket.service';
+import { TICKET_MESSAGE_MAX, TICKET_TYPE_META } from '../../services/ticket.service';
 import type { Ticket, TicketStatus } from '../../services/ticket.service';
-import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
+import { isOnline } from '../../services/offline';
+import { palette, radius, type } from '../../theme';
+import { haptics } from '../../theme/haptics';
+import { formatNumber, plural } from '../../utils/format';
+import { Badge } from './Badge';
+import { BottomSheet } from './BottomSheet';
+import { Button } from './Button';
+import { dialog } from './Dialog';
+import { EmptyState } from './EmptyState';
+import { ListRow } from './ListRow';
+import { SegmentedControl } from './SegmentedControl';
+import { Skeleton } from './Skeleton';
+import { TextField } from './TextField';
+import { FadeIn, SwapFade } from './motion';
+import { toast } from './Toast';
 
-interface Props {
-  refreshKey?: number;
+const TICKETS_KEY = ['admin', 'tickets'];
+type Filter = 'open' | 'resolved' | 'all';
+
+function errorText(err: any, fallback: string): string {
+  if (!err?.response) return isOnline() ? fallback : 'Hors ligne : vérifiez votre connexion puis réessayez.';
+  const msg = err.response.data?.error;
+  return typeof msg === 'string' && msg.trim() ? msg : fallback;
 }
 
-export function AdminTicketsSection({ refreshKey }: Props) {
-  const [tickets, setTickets] = useState<Ticket[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [filter, setFilter] = useState<'all' | TicketStatus>('open');
-  const [previewTicket, setPreviewTicket] = useState<Ticket | null>(null);
-  const [replyDraft, setReplyDraft] = useState('');
-  const [sendingReply, setSendingReply] = useState(false);
+function when(iso: string | null | undefined): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return `${d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })} à ${d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`;
+}
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const data = await ticketService.getTickets();
-      setTickets(data);
-    } catch {
-      alert('Erreur', 'Impossible de charger les tickets.');
-    } finally {
-      setLoading(false);
+export function useAdminTickets(enabled: boolean) {
+  return useQuery<Ticket[]>({
+    queryKey: TICKETS_KEY,
+    queryFn: ticketService.getTickets,
+    enabled,
+    staleTime: 30_000,
+    retry: 1,
+  });
+}
+
+/** « 3 ouvertes · 10 au total » */
+export function ticketsSummary(tickets?: Ticket[]): string | undefined {
+  if (!tickets) return undefined;
+  const open = tickets.filter((t) => t.status === 'open').length;
+  return `${plural(open, 'ouverte', 'ouvertes')} · ${formatNumber(tickets.length)} au total`;
+}
+
+const TicketRow = React.memo(function TicketRow({ ticket, onPress, divider }: { ticket: Ticket; onPress: (t: Ticket) => void; divider: boolean }) {
+  const meta = TICKET_TYPE_META[ticket.type] ?? TICKET_TYPE_META.bug;
+  const who = ticket.user.businessName || ticket.user.email;
+  return (
+    <ListRow
+      icon={meta.icon}
+      iconTone={meta.tone}
+      title={ticket.message.replace(/\s+/g, ' ').trim()}
+      titleStyle={styles.rowTitle}
+      subtitle={`${meta.label} · ${who} · ${when(ticket.createdAt)}${ticket.adminReply ? ' · répondu' : ''}`}
+      subtitleLines={1}
+      right={ticket.status === 'open' ? <Badge zone="orange" label="Ouverte" size="sm" noDot /> : <Badge zone="green" label="Résolue" size="sm" noDot />}
+      onPress={() => onPress(ticket)}
+      divider={divider}
+      accessibilityLabel={`${meta.label} de ${who}, ${when(ticket.createdAt)}, ${ticket.status === 'open' ? 'ouverte' : 'résolue'} : ${ticket.message.slice(0, 120)}`}
+      testID="admin-ticket-row"
+    />
+  );
+});
+
+export function AdminTicketsSheet({ visible, onClose }: { visible: boolean; onClose: () => void }) {
+  const qc = useQueryClient();
+  const tickets = useAdminTickets(visible);
+  const [filter, setFilter] = useState<Filter>('open');
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [reply, setReply] = useState('');
+  const [busy, setBusy] = useState<'reply' | 'status' | 'delete' | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [sent, setSent] = useState(false);
+
+  useEffect(() => {
+    if (visible) {
+      setSelectedId(null);
+      setError(null);
     }
-  }, []);
+  }, [visible]);
 
-  useEffect(() => { load(); }, [load, refreshKey]);
+  const all = tickets.data ?? [];
+  const counts = useMemo(() => ({ open: all.filter((t) => t.status === 'open').length, resolved: all.filter((t) => t.status === 'resolved').length }), [all]);
+  const list = useMemo(() => (filter === 'all' ? all : all.filter((t) => t.status === filter)), [all, filter]);
+  const selected = selectedId ? all.find((t) => t.id === selectedId) ?? null : null;
 
-  const handleToggleStatus = async (ticket: Ticket) => {
-    const newStatus: TicketStatus = ticket.status === 'open' ? 'resolved' : 'open';
-    try {
-      await ticketService.updateTicketStatus(ticket.id, newStatus);
-      setTickets((prev) => prev.map((t) => (t.id === ticket.id ? { ...t, status: newStatus } : t)));
-    } catch {
-      alert('Erreur', 'Impossible de mettre a jour le ticket.');
-    }
+  const open = (t: Ticket) => {
+    setSelectedId(t.id);
+    setReply(t.adminReply ?? '');
+    setError(null);
+    setSent(false);
   };
 
-  const handleDelete = (ticket: Ticket) => {
-    confirm(
-      'Supprimer le ticket',
-      `Supprimer ce ticket de ${ticket.user.email} ?`,
-      async () => {
-        try {
-          await ticketService.deleteTicket(ticket.id);
-          setTickets((prev) => prev.filter((t) => t.id !== ticket.id));
-          if (previewTicket?.id === ticket.id) setPreviewTicket(null);
-        } catch {
-          alert('Erreur', 'Impossible de supprimer.');
-        }
-      },
-      'Supprimer',
-      true,
-    );
-  };
+  const patch = (id: string, p: Partial<Ticket> | null) =>
+    qc.setQueryData<Ticket[]>(TICKETS_KEY, (prev) => (prev ? (p === null ? prev.filter((t) => t.id !== id) : prev.map((t) => (t.id === id ? { ...t, ...p } : t))) : prev));
 
-  const openPreview = (ticket: Ticket) => {
-    setPreviewTicket(ticket);
-    setReplyDraft(ticket.adminReply || '');
-  };
-
-  const closePreview = () => {
-    setPreviewTicket(null);
-    setReplyDraft('');
-  };
-
-  const handleSendReply = async () => {
-    if (!previewTicket) return;
-    if (!replyDraft.trim()) {
-      alert('Reponse vide', 'Ecrivez une reponse avant de l\'envoyer.');
+  const sendReply = async () => {
+    if (!selected) return;
+    const text = reply.trim();
+    if (!text) {
+      haptics.warning();
+      setError('Écrivez une réponse avant de l’envoyer.');
       return;
     }
-    setSendingReply(true);
+    setBusy('reply');
+    setError(null);
     try {
-      await ticketService.replyToTicket(previewTicket.id, replyDraft.trim());
-      const now = new Date().toISOString();
-      setTickets((prev) =>
-        prev.map((t) =>
-          t.id === previewTicket.id
-            ? { ...t, adminReply: replyDraft.trim(), repliedAt: now, readByUser: false }
-            : t,
-        ),
-      );
-      setPreviewTicket((prev) =>
-        prev ? { ...prev, adminReply: replyDraft.trim(), repliedAt: now, readByUser: false } : null,
-      );
-      alert('Reponse envoyee', 'L\'utilisateur la verra a sa prochaine connexion.');
-    } catch (err: any) {
-      alert('Erreur', err?.response?.data?.error || 'Impossible d\'envoyer la reponse.');
+      await ticketService.replyToTicket(selected.id, text);
+      patch(selected.id, { adminReply: text, repliedAt: new Date().toISOString(), readByUser: false });
+      haptics.success();
+      setSent(true);
+      setTimeout(() => setSent(false), 1200);
+      toast.success('Réponse envoyée');
+    } catch (err) {
+      haptics.warning();
+      setError(errorText(err, 'La réponse n’a pas pu être envoyée.'));
     } finally {
-      setSendingReply(false);
+      setBusy(null);
     }
   };
 
-  const filtered = useMemo(
-    () => filter === 'all' ? tickets : tickets.filter((t) => t.status === filter),
-    [tickets, filter],
-  );
-  const openCount = useMemo(
-    () => tickets.filter((t) => t.status === 'open').length,
-    [tickets],
-  );
+  const toggleStatus = async () => {
+    if (!selected) return;
+    const next: TicketStatus = selected.status === 'open' ? 'resolved' : 'open';
+    setBusy('status');
+    setError(null);
+    try {
+      await ticketService.updateTicketStatus(selected.id, next);
+      patch(selected.id, { status: next });
+      haptics.success();
+      toast.success(next === 'resolved' ? 'Demande marquée résolue' : 'Demande rouverte');
+    } catch (err) {
+      haptics.warning();
+      setError(errorText(err, 'Le statut n’a pas pu être modifié.'));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const remove = async () => {
+    if (!selected) return;
+    const ok = await dialog.confirm({
+      title: 'Supprimer cette demande ?',
+      message: `La demande de ${selected.user.businessName || selected.user.email} et sa réponse seront supprimées. Cette action est définitive.`,
+      confirmLabel: 'Supprimer',
+      destructive: true,
+    });
+    if (!ok) return;
+    setBusy('delete');
+    try {
+      await ticketService.deleteTicket(selected.id);
+      haptics.success();
+      patch(selected.id, null);
+      setSelectedId(null);
+      toast.success('Demande supprimée');
+    } catch (err) {
+      haptics.warning();
+      setError(errorText(err, 'La demande n’a pas pu être supprimée.'));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const footer = selected ? (
+    <View style={styles.footerRow}>
+      <Button
+        title={selected.status === 'open' ? 'Résolue' : 'Rouvrir'}
+        variant="secondary"
+        icon={selected.status === 'open' ? 'checkmark-done' : 'arrow-undo-outline'}
+        onPress={toggleStatus}
+        loading={busy === 'status'}
+        disabled={!!busy && busy !== 'status'}
+        style={{ flex: 1 }}
+        testID="admin-ticket-status"
+      />
+      <Button
+        title={selected.adminReply ? 'Mettre à jour' : 'Répondre'}
+        icon="send"
+        onPress={sendReply}
+        loading={busy === 'reply'}
+        success={sent}
+        disabled={(!!busy && busy !== 'reply') || !reply.trim() || reply.trim() === (selected.adminReply ?? '').trim()}
+        style={{ flex: 1.3 }}
+        testID="admin-ticket-reply"
+      />
+    </View>
+  ) : undefined;
 
   return (
-    <View style={styles.card}>
-      <View style={styles.header}>
-        <View style={[styles.accent, { backgroundColor: colors.primary }]} />
-        <Text style={styles.title}>Tickets / Retours beta</Text>
-        <View style={styles.badge}>
-          <Ionicons name="shield-checkmark" size={14} color={colors.textLight} />
-          <Text style={styles.badgeText}>Admin</Text>
-        </View>
-      </View>
-      <View style={styles.body}>
-        <Text style={styles.desc}>
-          {openCount} ticket{openCount > 1 ? 's' : ''} ouvert{openCount > 1 ? 's' : ''} · {tickets.length} au total
-        </Text>
-
-        {/* Filter */}
-        <View style={styles.filterRow}>
-          {(['open', 'resolved', 'all'] as const).map((f) => (
-            <TouchableOpacity
-              key={f}
-              style={[styles.filterBtn, filter === f && styles.filterBtnActive]}
-              onPress={() => setFilter(f)}
-            >
-              <Text style={[styles.filterText, filter === f && styles.filterTextActive]}>
-                {f === 'open' ? 'Ouverts' : f === 'resolved' ? 'Resolus' : 'Tous'}
-              </Text>
-            </TouchableOpacity>
-          ))}
-          <TouchableOpacity
-            style={styles.reloadBtn}
-            onPress={load}
-            disabled={loading}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          >
-            <Ionicons name="refresh" size={16} color={colors.primary} />
-          </TouchableOpacity>
-        </View>
-
-        {filtered.length === 0 ? (
-          <Text style={styles.emptyText}>
-            {loading ? 'Chargement...' : 'Aucun ticket dans cette vue.'}
-          </Text>
+    <BottomSheet
+      visible={visible}
+      onClose={onClose}
+      title={selected ? `${(TICKET_TYPE_META[selected.type] ?? TICKET_TYPE_META.bug).label} · ${selected.user.businessName || selected.user.email}` : 'Demandes des utilisateurs'}
+      subline={selected ? `${selected.user.email} · ${when(selected.createdAt)}` : ticketsSummary(tickets.data) ?? 'Bugs, idées et questions'}
+      snap="full"
+      contentPadding={selected ? 20 : 8}
+      footer={footer}
+      testID="sheet-admin-tickets"
+    >
+      <SwapFade value={selected ? `t-${selected.id}` : 'list'}>
+        {selected ? (
+          <TicketDetail
+            ticket={selected}
+            reply={reply}
+            onReply={(t) => {
+              setReply(t);
+              if (error) setError(null);
+            }}
+            error={error}
+            onBack={() => setSelectedId(null)}
+            onDelete={remove}
+            deleting={busy === 'delete'}
+          />
         ) : (
-          filtered.map((t) => {
-            const meta = TICKET_TYPE_META[t.type] || TICKET_TYPE_META.bug;
-            return (
-              <TouchableOpacity
-                key={t.id}
-                style={[styles.ticket, t.status === 'resolved' && styles.ticketResolved]}
-                onPress={() => openPreview(t)}
-                activeOpacity={0.7}
-              >
-                <View style={styles.ticketHeader}>
-                  <Ionicons name={meta.icon as any} size={16} color={meta.color} />
-                  <Text style={[styles.ticketType, { color: meta.color }]}>{meta.label}</Text>
-                  <Text style={styles.ticketDate}>
-                    {new Date(t.createdAt).toLocaleDateString('fr-FR')} · {new Date(t.createdAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
-                  </Text>
-                  {t.screenshotBase64 && (
-                    <Ionicons name="image" size={14} color={colors.textSecondary} style={{ marginLeft: 6 }} />
-                  )}
-                  {t.adminReply && (
-                    <Ionicons
-                      name="chatbubble-ellipses"
-                      size={14}
-                      color={t.readByUser ? colors.textSecondary : colors.primary}
-                      style={{ marginLeft: 4 }}
-                    />
-                  )}
-                </View>
-                <Text style={styles.ticketMessage} numberOfLines={2}>{t.message}</Text>
-                <View style={styles.ticketFooter}>
-                  <Text style={styles.ticketMeta} numberOfLines={1}>
-                    {t.user.businessName || t.user.email}
-                    {t.screenName ? ` · ${t.screenName}` : ''}
-                  </Text>
-                  <View style={[styles.statusBadge, t.status === 'open' ? styles.statusOpen : styles.statusResolved]}>
-                    <Text style={styles.statusText}>{t.status === 'open' ? 'Ouvert' : 'Resolu'}</Text>
-                  </View>
-                </View>
-              </TouchableOpacity>
-            );
-          })
-        )}
-      </View>
-
-      {/* Detail preview modal */}
-      <Modal
-        visible={!!previewTicket}
-        transparent
-        animationType="slide"
-        onRequestClose={closePreview}
-      >
-        <KeyboardAvoidingView
-          style={styles.previewOverlay}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        >
-          <View style={styles.previewSheet}>
-            <View style={styles.previewHeader}>
-              <Text style={styles.previewTitle}>Detail du ticket</Text>
-              <TouchableOpacity
-                onPress={closePreview}
-                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-              >
-                <Ionicons name="close" size={24} color={colors.textSecondary} />
-              </TouchableOpacity>
+          <View>
+            <View style={{ paddingHorizontal: 12, marginBottom: 8 }}>
+              <SegmentedControl
+                options={[
+                  { key: 'open', label: 'Ouvertes', hint: tickets.data ? String(counts.open) : undefined },
+                  { key: 'resolved', label: 'Résolues', hint: tickets.data ? String(counts.resolved) : undefined },
+                  { key: 'all', label: 'Toutes' },
+                ]}
+                value={filter}
+                onChange={(k) => setFilter(k as Filter)}
+                accessibilityLabel="Filtrer les demandes"
+              />
             </View>
-            <ScrollView contentContainerStyle={styles.previewContent} keyboardShouldPersistTaps="handled">
-              {previewTicket && (
-                <>
-                  <View style={styles.previewTopRow}>
-                    <Ionicons
-                      name={(TICKET_TYPE_META[previewTicket.type] || TICKET_TYPE_META.bug).icon as any}
-                      size={18}
-                      color={(TICKET_TYPE_META[previewTicket.type] || TICKET_TYPE_META.bug).color}
-                    />
-                    <Text
-                      style={[styles.previewTypeLabel, { color: (TICKET_TYPE_META[previewTicket.type] || TICKET_TYPE_META.bug).color }]}
-                    >
-                      {(TICKET_TYPE_META[previewTicket.type] || TICKET_TYPE_META.bug).label}
-                    </Text>
-                    <View style={[styles.statusBadge, previewTicket.status === 'open' ? styles.statusOpen : styles.statusResolved]}>
-                      <Text style={styles.statusText}>{previewTicket.status === 'open' ? 'Ouvert' : 'Resolu'}</Text>
-                    </View>
-                  </View>
-
-                  <Text style={styles.previewMeta}>
-                    {previewTicket.user.email}
-                    {previewTicket.user.businessName ? ` — ${previewTicket.user.businessName}` : ''}
-                  </Text>
-                  <Text style={styles.previewMeta}>
-                    {new Date(previewTicket.createdAt).toLocaleString('fr-FR')}
-                    {previewTicket.screenName ? ` · ${previewTicket.screenName}` : ''}
-                  </Text>
-
-                  <Text style={styles.previewLabel}>Message</Text>
-                  <Text style={styles.previewMessage}>{previewTicket.message}</Text>
-
-                  {previewTicket.screenshotBase64 && (
-                    <>
-                      <Text style={styles.previewLabel}>Capture d'ecran</Text>
-                      <Image
-                        source={{ uri: previewTicket.screenshotBase64 }}
-                        style={styles.previewScreenshot}
-                        resizeMode="contain"
-                      />
-                    </>
-                  )}
-
-                  {/* Admin reply */}
-                  <Text style={styles.previewLabel}>
-                    {previewTicket.adminReply ? 'Modifier la reponse' : 'Repondre a l\'utilisateur'}
-                  </Text>
-                  {previewTicket.adminReply && previewTicket.repliedAt && (
-                    <Text style={styles.replyInfo}>
-                      Derniere reponse le {new Date(previewTicket.repliedAt).toLocaleString('fr-FR')}
-                      {previewTicket.readByUser ? ' · Lue' : ' · Non lue'}
-                    </Text>
-                  )}
-                  <TextInput
-                    style={styles.replyInput}
-                    value={replyDraft}
-                    onChangeText={setReplyDraft}
-                    placeholder="Votre reponse..."
-                    placeholderTextColor={colors.textSecondary}
-                    multiline
-                    textAlignVertical="top"
-                    maxLength={4000}
-                  />
-                  <TouchableOpacity
-                    style={[styles.replySendBtn, (!replyDraft.trim() || sendingReply) && styles.replySendBtnDisabled]}
-                    onPress={handleSendReply}
-                    disabled={!replyDraft.trim() || sendingReply}
-                    activeOpacity={0.8}
-                  >
-                    <Ionicons name="send" size={14} color={colors.white} />
-                    <Text style={styles.replySendBtnText}>
-                      {sendingReply
-                        ? 'Envoi...'
-                        : previewTicket.adminReply
-                          ? 'Mettre a jour la reponse'
-                          : 'Envoyer la reponse'}
-                    </Text>
-                  </TouchableOpacity>
-
-                  <View style={styles.previewActions}>
-                    <TouchableOpacity
-                      style={[styles.actionBtn, styles.actionBtnPrimary]}
-                      onPress={() => {
-                        handleToggleStatus(previewTicket);
-                        setPreviewTicket((prev) => prev ? { ...prev, status: prev.status === 'open' ? 'resolved' : 'open' } : null);
-                      }}
-                    >
-                      <Ionicons
-                        name={previewTicket.status === 'open' ? 'checkmark-circle' : 'arrow-undo'}
-                        size={16}
-                        color={colors.white}
-                      />
-                      <Text style={styles.actionBtnText}>
-                        {previewTicket.status === 'open' ? 'Marquer resolu' : 'Rouvrir'}
-                      </Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[styles.actionBtn, styles.actionBtnDanger]}
-                      onPress={() => handleDelete(previewTicket)}
-                    >
-                      <Ionicons name="trash-outline" size={16} color={colors.white} />
-                      <Text style={styles.actionBtnText}>Supprimer</Text>
-                    </TouchableOpacity>
-                  </View>
-                </>
-              )}
-            </ScrollView>
+            {tickets.isLoading && !tickets.data ? (
+              <View style={{ paddingHorizontal: 12, gap: 10, paddingTop: 4 }}>
+                {[0, 1, 2, 3].map((i) => <Skeleton key={i} height={52} radius={12} />)}
+              </View>
+            ) : tickets.error && !tickets.data ? (
+              <EmptyState surface="surface" icon="cloud-offline-outline" title="Chargement impossible" text={errorText(tickets.error, 'Les demandes n’ont pas pu être chargées.')} primary={{ label: 'Réessayer', icon: 'refresh', onPress: () => tickets.refetch() }} />
+            ) : list.length === 0 ? (
+              <EmptyState
+                surface="surface"
+                icon="checkmark-done-outline"
+                title={filter === 'open' ? 'Aucune demande ouverte' : 'Aucune demande'}
+                text={filter === 'open' ? 'Tout est traité. Les nouvelles demandes apparaîtront ici.' : 'Les bugs, idées et questions des utilisateurs apparaîtront ici.'}
+              />
+            ) : (
+              list.map((t, i) => <TicketRow key={t.id} ticket={t} onPress={open} divider={i < list.length - 1} />)
+            )}
           </View>
-        </KeyboardAvoidingView>
-      </Modal>
+        )}
+      </SwapFade>
+    </BottomSheet>
+  );
+}
+
+function TicketDetail({
+  ticket,
+  reply,
+  onReply,
+  error,
+  onBack,
+  onDelete,
+  deleting,
+}: {
+  ticket: Ticket;
+  reply: string;
+  onReply: (t: string) => void;
+  error: string | null;
+  onBack: () => void;
+  onDelete: () => void;
+  deleting: boolean;
+}) {
+  const meta = TICKET_TYPE_META[ticket.type] ?? TICKET_TYPE_META.bug;
+  // The list never carries the screenshot: load it on demand (null when there is none).
+  const shot = useQuery({
+    queryKey: ['admin', 'ticketShot', ticket.id],
+    queryFn: () => ticketService.getTicketScreenshot(ticket.id),
+    staleTime: Infinity,
+    retry: 0,
+  });
+  return (
+    <View style={{ gap: 16 }}>
+      <View style={styles.backRow}>
+        <Button title="Toutes les demandes" variant="text" size="sm" icon="chevron-back" onPress={onBack} haptic="select" testID="admin-ticket-back" />
+      </View>
+      <View style={styles.badges}>
+        <Badge variant="neutral" icon={meta.icon} label={meta.label} size="sm" />
+        {ticket.status === 'open' ? <Badge zone="orange" label="Ouverte" size="sm" noDot /> : <Badge zone="green" label="Résolue" size="sm" noDot />}
+        {ticket.screenName ? <Badge variant="neutral" icon="phone-portrait-outline" label={ticket.screenName} size="sm" /> : null}
+      </View>
+      <View style={styles.message}>
+        <Text style={styles.messageText} selectable>
+          {ticket.message}
+        </Text>
+      </View>
+      {shot.isLoading ? (
+        <Skeleton height={160} radius={16} />
+      ) : shot.data ? (
+        <FadeIn>
+          <Image source={{ uri: shot.data }} style={styles.shot} resizeMode="contain" accessibilityLabel="Capture d’écran jointe" />
+        </FadeIn>
+      ) : null}
+      <View>
+        <TextField
+          label="Votre réponse"
+          meta={`${formatNumber(reply.length)} / ${formatNumber(TICKET_MESSAGE_MAX)}`}
+          value={reply}
+          onChangeText={onReply}
+          placeholder="Bonjour, merci pour votre message…"
+          multiline
+          maxLength={TICKET_MESSAGE_MAX}
+          height={132}
+          fieldStyle={styles.multiField}
+          inputStyle={styles.multiInput}
+          textAlignVertical="top"
+          error={error}
+          helper={
+            ticket.adminReply && ticket.repliedAt
+              ? `Répondu le ${when(ticket.repliedAt)} · ${ticket.readByUser ? 'lue' : 'pas encore lue'}`
+              : 'L’utilisateur la lira dans Réglages › Aide & retours.'
+          }
+          testID="admin-ticket-reply-input"
+        />
+      </View>
+      <Button
+        title="Supprimer la demande"
+        variant="text"
+        size="sm"
+        icon="trash-outline"
+        onPress={onDelete}
+        loading={deleting}
+        textStyle={{ color: palette.bad }}
+        testID="admin-ticket-delete"
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  card: {
-    backgroundColor: colors.cardBackground,
-    borderRadius: borderRadius.lg,
-    marginBottom: spacing.md,
-    ...shadows.sm,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: spacing.md,
-    paddingTop: spacing.md,
-    paddingBottom: spacing.sm,
-    gap: spacing.sm,
-  },
-  accent: {
-    width: 4,
-    height: 20,
-    borderRadius: 2,
-  },
-  title: {
-    ...typography.h3,
-    color: colors.text,
-    flex: 1,
-  },
-  badge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: colors.primary,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 3,
-    borderRadius: borderRadius.full,
-  },
-  badgeText: {
-    ...typography.caption,
-    color: colors.textLight,
-    fontWeight: '700',
-  },
-  body: {
-    padding: spacing.md,
-  },
-  desc: {
-    ...typography.bodySmall,
-    color: colors.textSecondary,
-    marginBottom: spacing.sm,
-  },
-  filterRow: {
-    flexDirection: 'row',
-    gap: spacing.xs,
-    marginBottom: spacing.md,
-    alignItems: 'center',
-  },
-  filterBtn: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: 6,
-    borderRadius: borderRadius.full,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.background,
-  },
-  filterBtnActive: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
-  },
-  filterText: {
-    ...typography.caption,
-    fontWeight: '600',
-    color: colors.textSecondary,
-  },
-  filterTextActive: {
-    color: colors.white,
-  },
-  reloadBtn: {
-    marginLeft: 'auto',
-    padding: 4,
-  },
-  emptyText: {
-    ...typography.bodySmall,
-    color: colors.textSecondary,
-    textAlign: 'center',
-    paddingVertical: spacing.md,
-  },
-  ticket: {
-    backgroundColor: colors.background,
-    borderRadius: borderRadius.md,
-    padding: spacing.md,
-    marginBottom: spacing.sm,
-    borderLeftWidth: 3,
-    borderLeftColor: colors.primary,
-  },
-  ticketResolved: {
-    opacity: 0.6,
-    borderLeftColor: colors.textSecondary,
-  },
-  ticketHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    marginBottom: spacing.xs,
-  },
-  ticketType: {
-    ...typography.caption,
-    fontWeight: '700',
-    marginLeft: 4,
-  },
-  ticketDate: {
-    ...typography.caption,
-    color: colors.textSecondary,
-    marginLeft: 'auto',
-  },
-  ticketMessage: {
-    ...typography.bodySmall,
-    color: colors.text,
-    marginBottom: spacing.xs,
-  },
-  ticketFooter: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-  },
-  ticketMeta: {
-    ...typography.caption,
-    color: colors.textSecondary,
-    flex: 1,
-  },
-  statusBadge: {
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 2,
-    borderRadius: borderRadius.full,
-  },
-  statusOpen: {
-    backgroundColor: colors.marginOrange,
-  },
-  statusResolved: {
-    backgroundColor: colors.marginGreen,
-  },
-  statusText: {
-    ...typography.caption,
-    fontWeight: '700',
-    color: colors.white,
-    fontSize: 10,
-  },
-  previewOverlay: {
-    flex: 1,
-    backgroundColor: colors.overlay,
-    justifyContent: 'flex-end',
-  },
-  previewSheet: {
-    backgroundColor: colors.background,
-    borderTopLeftRadius: borderRadius.xl,
-    borderTopRightRadius: borderRadius.xl,
-    maxHeight: '90%',
-  },
-  previewHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: spacing.lg,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  previewTitle: {
-    ...typography.h3,
-    color: colors.primary,
-  },
-  previewContent: {
-    padding: spacing.lg,
-  },
-  previewTopRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    marginBottom: spacing.sm,
-  },
-  previewTypeLabel: {
-    ...typography.bodySmall,
-    fontWeight: '700',
-  },
-  previewMeta: {
-    ...typography.caption,
-    color: colors.textSecondary,
-    marginBottom: 2,
-  },
-  previewLabel: {
-    ...typography.bodySmall,
-    fontWeight: '700',
-    color: colors.text,
-    marginTop: spacing.md,
-    marginBottom: spacing.xs,
-  },
-  previewMessage: {
-    ...typography.body,
-    color: colors.text,
-    backgroundColor: colors.cardBackground,
-    padding: spacing.md,
-    borderRadius: borderRadius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  previewScreenshot: {
-    width: '100%',
-    height: 300,
-    borderRadius: borderRadius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.cardBackground,
-  },
-  replyInfo: {
-    ...typography.caption,
-    color: colors.textSecondary,
-    marginBottom: spacing.xs,
-    fontStyle: 'italic',
-  },
-  replyInput: {
-    backgroundColor: colors.cardBackground,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: borderRadius.md,
-    padding: spacing.md,
-    minHeight: 100,
-    ...typography.body,
-    color: colors.text,
-  },
-  replySendBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.sm,
-    backgroundColor: colors.primary,
-    borderRadius: borderRadius.md,
-    paddingVertical: spacing.sm + 2,
-    marginTop: spacing.sm,
-  },
-  replySendBtnDisabled: {
-    opacity: 0.5,
-  },
-  replySendBtnText: {
-    ...typography.bodySmall,
-    fontWeight: '700',
-    color: colors.white,
-  },
-  previewActions: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-    marginTop: spacing.lg,
-  },
-  actionBtn: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.xs,
-    paddingVertical: spacing.md,
-    borderRadius: borderRadius.md,
-  },
-  actionBtnPrimary: {
-    backgroundColor: colors.primary,
-  },
-  actionBtnDanger: {
-    backgroundColor: colors.marginRed,
-  },
-  actionBtnText: {
-    ...typography.bodySmall,
-    fontWeight: '700',
-    color: colors.white,
-  },
+  footerRow: { flexDirection: 'row', gap: 10 },
+  rowTitle: { ...type.callout, color: palette.ink },
+  backRow: { flexDirection: 'row', marginLeft: -12, marginTop: -4 },
+  badges: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  message: { backgroundColor: palette.surface2, borderRadius: radius.md, padding: 14 },
+  messageText: { ...type.body, color: palette.ink },
+  shot: { width: '100%', height: 260, borderRadius: radius.md, backgroundColor: palette.surface2 },
+  multiField: { alignItems: 'stretch', paddingTop: 12, paddingBottom: 12 },
+  multiInput: { height: '100%', textAlignVertical: 'top', lineHeight: 22 },
 });
