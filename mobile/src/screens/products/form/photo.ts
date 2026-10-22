@@ -16,6 +16,7 @@ import { Platform } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
 import { PRODUCT_IMAGE_MAX_CHARS, PRODUCT_THUMBNAIL_MAX_CHARS } from '@margebar/shared';
+import { palette } from '../../../theme';
 
 export type PickSource = 'camera' | 'library';
 
@@ -162,7 +163,7 @@ function webFit(src: any, sw: number, sh: number, max: number): WebCanvas {
   const scale = Math.min(1, max / Math.max(sw, sh));
   const c = webCanvas(sw * scale, sh * scale);
   const ctx = c.getContext('2d');
-  ctx.fillStyle = '#FFFFFF';
+  ctx.fillStyle = palette.surface;
   ctx.fillRect(0, 0, c.width, c.height);
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';

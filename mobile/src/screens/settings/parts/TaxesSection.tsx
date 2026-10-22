@@ -1,14 +1,13 @@
 /**
  * « Taxes & droits » — the 13 fiscal rates (official barème of the customs).
- * Read-only for users (with the official source), editable for admins
- * (save + « Rétablir les valeurs officielles »).
+ * Read-only for users (the sheet links to the official source), editable for
+ * admins (save + « Rétablir les valeurs officielles »).
  */
 import React, { useEffect, useMemo, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { Rate } from '@margebar/shared';
 import {
   Badge,
-  BottomSheet,
   Button,
   ListGroup,
   ListRow,
@@ -25,7 +24,7 @@ import { formatDegree, formatRate, parseLocaleFloat, plural, toInputString } fro
 import { useRatesStore } from '../../../store/rates.store';
 import { useSystemParamsStore } from '../../../store/systemParams.store';
 import { formatDateTime, OFFICIAL_RATES_URL, openExternal, readableError } from './helpers';
-import { ErrorLine, InfoNote, SettingsSection } from './ui';
+import { ErrorLine, InfoNote, SettingsSection, Sheet } from './ui';
 
 const UNIT: Record<string, string> = { 'euro/hl': 'hl', 'euro/hl_degree': 'hl/degré', 'euro/hlap': 'hl AP' };
 const unitOf = (u: string | null | undefined) => (u ? UNIT[u] ?? u.replace(/^euro\//, '') : '');
@@ -75,35 +74,23 @@ export function TaxesSection({ index, isAdmin }: { index: number; isAdmin: boole
       title="Taxes & droits"
       index={index}
       right={<Badge variant="brand" icon="shield-checkmark" label={`Tarifs ${year}`} size="sm" />}
-      footer={
-        isAdmin
-          ? 'Administrateur : vos modifications s’appliquent à tous les comptes.'
-          : 'Barème officiel des douanes, tenu à jour pour vous.'
-      }
       testID="settings-taxes"
     >
       <ListGroup>
         <ListRow
           icon="shield-checkmark-outline"
           title={`Barème des droits ${year}`}
-          subtitle={`${plural(rates.length, 'catégorie fiscale', 'catégories fiscales')} · accise et cotisation sécurité sociale`}
-          value={isAdmin ? 'Modifier' : undefined}
+          subtitle={isAdmin ? 'Modifiable · appliqué à tous les comptes' : `${plural(rates.length, 'catégorie', 'catégories')} · accise et sécu.`}
+          subtitleLines={1}
           onPress={() => setOpen(true)}
           testID="settings-rates"
-        />
-        <ListRow
-          icon="open-outline"
-          title="Source officielle"
-          subtitle="service-public.fr · Taxes sur les boissons alcoolisées"
-          onPress={() => openOfficialSource(link)}
-          right="none"
-          testID="settings-official-link"
         />
         <ListRow
           icon="refresh-outline"
           iconTone="neutral"
           title={refreshing ? 'Actualisation…' : 'Actualiser les tarifs'}
-          subtitle={lastFetched ? `Dernière vérification : ${formatDateTime(lastFetched)}` : 'Vérifier le barème en vigueur'}
+          subtitle={lastFetched ? `Vérifiés le ${formatDateTime(lastFetched)}` : 'Barème officiel des douanes'}
+          subtitleLines={1}
           onPress={refreshing ? undefined : refresh}
           right="none"
           testID="settings-refresh-rates"
@@ -122,7 +109,7 @@ export function TaxesSection({ index, isAdmin }: { index: number; isAdmin: boole
 function RatesSheet({ visible, onClose, rates, year, link }: { visible: boolean; onClose: () => void; rates: Rate[]; year: string; link: string }) {
   const groups = useMemo(() => groupFiscalRates(rates), [rates]);
   return (
-    <BottomSheet
+    <Sheet
       visible={visible}
       onClose={onClose}
       title={`Barème des droits ${year}`}
@@ -149,7 +136,7 @@ function RatesSheet({ visible, onClose, rates, year, link }: { visible: boolean;
           ))}
         </View>
       ))}
-    </BottomSheet>
+    </Sheet>
   );
 }
 
@@ -253,7 +240,7 @@ function RatesEditorSheet({ visible, onClose, rates, year }: { visible: boolean;
   };
 
   return (
-    <BottomSheet
+    <Sheet
       visible={visible}
       onClose={onClose}
       title={`Barème des droits ${year}`}
@@ -278,7 +265,6 @@ function RatesEditorSheet({ visible, onClose, rates, year }: { visible: boolean;
             onPress={reset}
             loading={busy === 'reset'}
             disabled={busy === 'save'}
-            textStyle={{ color: palette.text2 }}
             testID="rates-reset"
           />
         </View>
@@ -340,7 +326,7 @@ function RatesEditorSheet({ visible, onClose, rates, year }: { visible: boolean;
           })}
         </View>
       ))}
-    </BottomSheet>
+    </Sheet>
   );
 }
 

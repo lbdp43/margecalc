@@ -11,25 +11,16 @@
  */
 import React, { useEffect, useMemo, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import * as adminService from '../../services/admin.service';
-import type { AdminProduct, AdminUser, AdminUsersResponse } from '../../services/admin.service';
-import { isOnline } from '../../services/offline';
-import { useAuthStore } from '../../store/auth.store';
-import { palette, radius, type } from '../../theme';
-import { haptics } from '../../theme/haptics';
-import { formatNumber, formatVolumeCl, NBSP, plural } from '../../utils/format';
-import { Avatar } from './Brand';
-import { Badge } from './Badge';
-import { BottomSheet } from './BottomSheet';
-import { Button } from './Button';
-import { dialog } from './Dialog';
-import { EmptyState } from './EmptyState';
-import { ListRow, SectionHeader, ValueRow } from './ListRow';
-import { SegmentedControl } from './SegmentedControl';
-import { Skeleton } from './Skeleton';
-import { FadeIn, SwapFade } from './motion';
+import * as adminService from '../../../services/admin.service';
+import type { AdminProduct, AdminUser, AdminUsersResponse } from '../../../services/admin.service';
+import { useAuthStore } from '../../../store/auth.store';
+import { Avatar, Badge, Button, EmptyState, ListRow, SectionHeader, SegmentedControl, Skeleton, SwapFade, ValueRow, dialog } from '../../../components/ui';
+import { palette, radius, type } from '../../../theme';
+import { haptics } from '../../../theme/haptics';
+import { formatNumber, formatVolumeCl, plural } from '../../../utils/format';
+import { formatDate, formatLongDate, formatRelative, matches, readableError } from './helpers';
+import { ErrorLine, MiniStat, Sheet, SheetBack, SheetFlash, SheetFlashValue, useSheetFlash } from './ui';
 
 type Period = '1m' | '3m' | '12m' | '24m';
 const PERIODS: { key: Period; label: string; months: number }[] = [
@@ -51,29 +42,8 @@ function rangeOf(period: Period): { from: string; to: string } {
   return { from: fmt(from), to: fmt(to) };
 }
 
-function errorText(err: any, fallback: string): string {
-  if (!err?.response) return isOnline() ? fallback : 'Hors ligne : vérifiez votre connexion puis réessayez.';
-  const msg = err.response.data?.error;
-  return typeof msg === 'string' && msg.trim() ? msg : fallback;
-}
-
-function relative(iso: string | null): string {
-  if (!iso) return 'jamais connecté';
-  const min = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
-  if (min < 1) return 'actif à l’instant';
-  if (min < 60) return `actif il y a ${min}${NBSP}min`;
-  const h = Math.floor(min / 60);
-  if (h < 24) return `actif il y a ${h}${NBSP}h`;
-  const d = Math.floor(h / 24);
-  if (d < 30) return `actif il y a ${d}${NBSP}j`;
-  if (d < 365) return `actif il y a ${Math.floor(d / 30)}${NBSP}mois`;
-  return `actif il y a ${Math.floor(d / 365)}${NBSP}an${d >= 730 ? 's' : ''}`;
-}
-
-const dateFr = (iso: string | null | undefined) =>
-  iso ? new Date(iso).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }) : '–';
-
-const strip = (s: string) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+/** « Actif il y a 3 j », « Jamais connecté » */
+const activity = (iso: string | null) => (iso ? `Actif ${formatRelative(iso)}` : 'Jamais connecté');
 
 /** The admin users query (shared by the Réglages row and the sheet). */
 export function useAdminUsers(enabled: boolean) {
@@ -91,42 +61,6 @@ export function usersSummary(data?: AdminUsersResponse): string | undefined {
   if (!data) return undefined;
   const active = data.users.filter((u) => u.loginsThisMonth > 0).length;
   return `${plural(data.users.length, 'compte')} · ${plural(active, 'actif', 'actifs')} ce mois`;
-}
-
-// ─── Inline confirmation (toasts never show over a sheet) ──────────────────
-export interface SheetFlashValue {
-  id: number;
-  text: string;
-  tone?: 'good' | 'bad';
-}
-
-/** Inline confirmation shown inside a sheet for ~3 s. */
-export function useSheetFlash(): [SheetFlashValue | null, (text: string, tone?: 'good' | 'bad') => void, () => void] {
-  const [flash, setFlash] = useState<SheetFlashValue | null>(null);
-  const timer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => () => {
-    if (timer.current) clearTimeout(timer.current);
-  }, []);
-  const show = React.useCallback((text: string, tone: 'good' | 'bad' = 'good') => {
-    if (timer.current) clearTimeout(timer.current);
-    setFlash({ id: Date.now(), text, tone });
-    timer.current = setTimeout(() => setFlash(null), 3600);
-  }, []);
-  const clear = React.useCallback(() => setFlash(null), []);
-  return [flash, show, clear];
-}
-
-export function SheetFlash({ flash, style }: { flash: SheetFlashValue | null; style?: any }) {
-  if (!flash) return null;
-  const bad = flash.tone === 'bad';
-  return (
-    <FadeIn key={flash.id} offset={6} style={[styles.flash, bad && { backgroundColor: palette.badBg }, style]}>
-      <Ionicons name={bad ? 'alert-circle' : 'checkmark-circle'} size={18} color={bad ? palette.bad : palette.good} />
-      <Text style={[styles.flashText, bad && { color: palette.bad }]} accessibilityLiveRegion="polite">
-        {flash.text}
-      </Text>
-    </FadeIn>
-  );
 }
 
 // ─── Logins chart ──────────────────────────────────────────────────────────
@@ -184,7 +118,7 @@ function LoginsCard({ title, userId }: { title: string; userId?: string }) {
         style={{ marginTop: 12 }}
       />
       {q.error && !data ? (
-        <Text style={[styles.cardMeta, { marginTop: 12, color: palette.bad }]}>{errorText(q.error, 'Connexions indisponibles.')}</Text>
+        <Text style={[styles.cardMeta, { marginTop: 12, color: palette.bad }]}>{readableError(q.error, 'Connexions indisponibles.').message}</Text>
       ) : data && data.total === 0 ? (
         <Text style={[styles.cardMeta, { marginTop: 12 }]}>Aucune connexion sur la période.</Text>
       ) : data && data.series.length > 1 ? (
@@ -207,12 +141,12 @@ const UserRow = React.memo(function UserRow({ user, onPress, divider }: { user: 
     <ListRow
       leading={<Avatar name={user.businessName || user.email} size={40} />}
       title={user.businessName || user.email}
-      subtitle={`${user.businessName ? `${user.email}\n` : ''}${relative(user.lastSeenAt).replace(/^./, (c) => c.toUpperCase())}`}
+      subtitle={`${user.businessName ? `${user.email}\n` : ''}${activity(user.lastSeenAt)}`}
       subtitleLines={2}
       right={right}
       onPress={() => onPress(user)}
       divider={divider}
-      accessibilityLabel={`${user.businessName || user.email}, ${user.email}, ${relative(user.lastSeenAt)}${banned ? ', suspendu' : ''}${isAdmin ? ', administrateur' : ''}`}
+      accessibilityLabel={`${user.businessName || user.email}, ${user.email}, ${activity(user.lastSeenAt).toLowerCase()}${banned ? ', suspendu' : ''}${isAdmin ? ', administrateur' : ''}`}
       testID="admin-user-row"
     />
   );
@@ -241,11 +175,7 @@ export function AdminUsersSheet({ visible, onClose }: { visible: boolean; onClos
   }, [visible, clearFlash]);
 
   const all = users.data?.users ?? [];
-  const filtered = useMemo(() => {
-    const q = strip(query.trim());
-    if (!q) return all;
-    return all.filter((u) => strip(`${u.businessName ?? ''} ${u.email}`).includes(q));
-  }, [all, query]);
+  const filtered = useMemo(() => (query.trim() ? all.filter((u) => matches([u.businessName, u.email], query)) : all), [all, query]);
   const selected = selectedId ? all.find((u) => u.id === selectedId) ?? null : null;
 
   const stats = useMemo(
@@ -292,7 +222,7 @@ export function AdminUsersSheet({ visible, onClose }: { visible: boolean; onClos
       showFlash(banned ? `Compte réactivé : ${name} peut de nouveau se connecter.` : `Compte suspendu : ${name} ne peut plus se connecter.`);
     } catch (err) {
       haptics.warning();
-      setActionError(errorText(err, banned ? 'Le compte n’a pas pu être réactivé.' : 'Le compte n’a pas pu être suspendu.'));
+      setActionError(readableError(err, banned ? 'Le compte n’a pas pu être réactivé.' : 'Le compte n’a pas pu être suspendu.').message);
     } finally {
       setBusy(null);
     }
@@ -318,7 +248,7 @@ export function AdminUsersSheet({ visible, onClose }: { visible: boolean; onClos
       qc.invalidateQueries({ queryKey: ['admin'] });
     } catch (err) {
       haptics.warning();
-      setActionError(errorText(err, 'Le compte n’a pas pu être supprimé.'));
+      setActionError(readableError(err, 'Le compte n’a pas pu être supprimé.').message);
     } finally {
       setBusy(null);
     }
@@ -355,7 +285,7 @@ export function AdminUsersSheet({ visible, onClose }: { visible: boolean; onClos
     : undefined;
 
   return (
-    <BottomSheet
+    <Sheet
       visible={visible}
       onClose={onClose}
       title={selected ? selected.businessName || selected.email : 'Utilisateurs'}
@@ -377,16 +307,16 @@ export function AdminUsersSheet({ visible, onClose }: { visible: boolean; onClos
             {[0, 1, 2, 3].map((i) => <Skeleton key={i} height={44} radius={12} />)}
           </View>
         ) : users.error && !users.data ? (
-          <EmptyState surface="surface" icon="cloud-offline-outline" title="Chargement impossible" text={errorText(users.error, 'Les utilisateurs n’ont pas pu être chargés.')} primary={{ label: 'Réessayer', icon: 'refresh', onPress: () => users.refetch() }} />
+          <EmptyState surface="surface" icon="cloud-offline-outline" title="Chargement impossible" text={readableError(users.error, 'Les utilisateurs n’ont pas pu être chargés.').message} primary={{ label: 'Réessayer', icon: 'refresh', onPress: () => users.refetch() }} />
         ) : (
           <View>
             <SheetFlash flash={flash} style={{ marginHorizontal: 12, marginBottom: 12 }} />
             {!query ? (
               <View style={{ paddingHorizontal: 12, gap: 12, marginBottom: 12 }}>
                 <View style={styles.statsRow}>
-                  <Mini label="Comptes" value={formatNumber(stats.total)} />
-                  <Mini label="Actifs" value={formatNumber(stats.active)} tone="good" />
-                  <Mini label="Suspendus" value={formatNumber(stats.banned)} tone={stats.banned ? 'bad' : undefined} />
+                  <MiniStat label="Comptes" value={formatNumber(stats.total)} />
+                  <MiniStat label="Actifs" value={formatNumber(stats.active)} tone="good" />
+                  <MiniStat label="Suspendus" value={formatNumber(stats.banned)} tone={stats.banned ? 'bad' : undefined} />
                 </View>
                 <LoginsCard title="Connexions · tous les comptes" />
               </View>
@@ -415,18 +345,7 @@ export function AdminUsersSheet({ visible, onClose }: { visible: boolean; onClos
           </View>
         )}
       </SwapFade>
-    </BottomSheet>
-  );
-}
-
-function Mini({ label, value, tone }: { label: string; value: string; tone?: 'good' | 'bad' }) {
-  return (
-    <View style={styles.mini} accessible accessibilityLabel={`${label} : ${value}`}>
-      <Text style={styles.miniLabel} numberOfLines={1}>
-        {label}
-      </Text>
-      <Text style={[styles.miniValue, tone === 'good' ? { color: palette.good } : tone === 'bad' ? { color: palette.bad } : null]}>{value}</Text>
-    </View>
+    </Sheet>
   );
 }
 
@@ -441,27 +360,21 @@ function UserDetail({ user, onBack, actionError, flash }: { user: AdminUser; onB
   const shown = list.slice(0, 30);
   return (
     <View style={{ gap: 16 }}>
-      <View style={styles.backRow}>
-        <Button title="Tous les utilisateurs" variant="text" size="sm" icon="chevron-back" onPress={onBack} haptic="select" testID="admin-user-back" />
-      </View>
+      <SheetBack label="Tous les utilisateurs" onPress={onBack} testID="admin-user-back" />
       <View style={styles.profile}>
         <Avatar name={user.businessName || user.email} size={56} />
         <View style={{ flex: 1, minWidth: 0, gap: 6 }}>
           <View style={styles.badges}>
             {user.role === 'admin' ? <Badge variant="brand" icon="shield-checkmark" label="Administrateur" size="sm" /> : <Badge variant="neutral" label="Utilisateur" size="sm" />}
-            {user.bannedAt ? <Badge zone="red" label={`Suspendu le ${new Date(user.bannedAt).toLocaleDateString('fr-FR')}`} size="sm" noDot /> : <Badge zone="green" label="Actif" size="sm" />}
+            {user.bannedAt ? <Badge zone="red" label={`Suspendu le ${formatDate(user.bannedAt)}`} size="sm" noDot /> : <Badge zone="green" label="Actif" size="sm" />}
           </View>
-          <Text style={styles.profileMeta}>Inscrit le {dateFr(user.createdAt)}</Text>
+          <Text style={styles.profileMeta}>Inscrit le {formatLongDate(user.createdAt)}</Text>
         </View>
       </View>
       <SheetFlash flash={flash} />
-      {actionError ? (
-        <FadeIn offset={4} style={styles.errorBox}>
-          <Text style={styles.errorText}>{actionError}</Text>
-        </FadeIn>
-      ) : null}
+      <ErrorLine message={actionError} style={{ marginTop: 0 }} />
       <View style={styles.card}>
-        <ValueRow label="Dernière activité" value={user.lastSeenAt ? relative(user.lastSeenAt).replace(/^actif /, '') : 'jamais'} />
+        <ValueRow label="Dernière activité" value={formatRelative(user.lastSeenAt)} />
         <ValueRow label="Connexions ce mois" value={formatNumber(user.loginsThisMonth)} />
         <ValueRow label="Connexions au total" value={formatNumber(user.loginsTotal)} />
         <ValueRow label="Produits" value={products.data ? formatNumber(list.length) : '…'} last />
@@ -474,7 +387,7 @@ function UserDetail({ user, onBack, actionError, flash }: { user: AdminUser; onB
             {[0, 1, 2].map((i) => <Skeleton key={i} height={52} radius={12} />)}
           </View>
         ) : products.error && !products.data ? (
-          <Text style={[styles.profileMeta, { color: palette.bad }]}>{errorText(products.error, 'Les produits n’ont pas pu être chargés.')}</Text>
+          <ErrorLine message={readableError(products.error, 'Les produits n’ont pas pu être chargés.').message} style={{ marginTop: 0 }} />
         ) : list.length === 0 ? (
           <Text style={styles.profileMeta}>Aucun produit enregistré.</Text>
         ) : (
@@ -503,9 +416,6 @@ function UserDetail({ user, onBack, actionError, flash }: { user: AdminUser; onB
 const styles = StyleSheet.create({
   footerRow: { flexDirection: 'row', gap: 10 },
   statsRow: { flexDirection: 'row', gap: 8 },
-  mini: { flex: 1, minWidth: 0, backgroundColor: palette.surface2, borderRadius: radius.md, paddingHorizontal: 12, paddingVertical: 10, gap: 2 },
-  miniLabel: { ...type.footnote, color: palette.text3 },
-  miniValue: { ...type.numM, color: palette.ink },
   card: { borderRadius: radius.lg, borderWidth: 1, borderColor: palette.line, backgroundColor: palette.surface, paddingHorizontal: 14, paddingVertical: 12 },
   cardHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
   cardTitle: { ...type.headline, color: palette.ink, flexShrink: 1 },
@@ -517,23 +427,10 @@ const styles = StyleSheet.create({
   barValue: { ...type.footnote, fontSize: 11, lineHeight: 14, color: palette.text2, marginBottom: 2 },
   barLabel: { ...type.footnote, fontSize: 11, lineHeight: 14, color: palette.text3, marginTop: 4 },
   rowRight: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  backRow: { flexDirection: 'row', marginLeft: -12, marginTop: -4 },
   profile: { flexDirection: 'row', alignItems: 'center', gap: 14 },
   badges: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   profileMeta: { ...type.footnote, color: palette.text3 },
-  errorBox: { backgroundColor: palette.badBg, borderRadius: radius.md, padding: 12 },
-  errorText: { ...type.footnoteStrong, color: palette.bad },
   productRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10 },
   divider: { borderBottomWidth: 1, borderBottomColor: palette.line },
   productName: { ...type.headline, color: palette.ink },
-  flash: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: radius.sm,
-    backgroundColor: palette.goodBg,
-  },
-  flashText: { ...type.calloutStrong, color: palette.good, flex: 1 },
 });

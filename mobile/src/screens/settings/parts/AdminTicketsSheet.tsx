@@ -10,39 +10,18 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Image, StyleSheet, Text, View } from 'react-native';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import * as ticketService from '../../services/ticket.service';
-import { TICKET_MESSAGE_MAX, TICKET_TYPE_META } from '../../services/ticket.service';
-import type { Ticket, TicketStatus } from '../../services/ticket.service';
-import { isOnline } from '../../services/offline';
-import { palette, radius, type } from '../../theme';
-import { haptics } from '../../theme/haptics';
-import { formatNumber, plural } from '../../utils/format';
-import { Badge } from './Badge';
-import { BottomSheet } from './BottomSheet';
-import { Button } from './Button';
-import { dialog } from './Dialog';
-import { EmptyState } from './EmptyState';
-import { ListRow } from './ListRow';
-import { SegmentedControl } from './SegmentedControl';
-import { Skeleton } from './Skeleton';
-import { TextField } from './TextField';
-import { FadeIn, SwapFade } from './motion';
-import { SheetFlash, useSheetFlash } from './AdminUsersSection';
+import * as ticketService from '../../../services/ticket.service';
+import { TICKET_MESSAGE_MAX, TICKET_TYPE_META } from '../../../services/ticket.service';
+import type { Ticket, TicketStatus } from '../../../services/ticket.service';
+import { Badge, Button, EmptyState, FadeIn, ListRow, SegmentedControl, Skeleton, SwapFade, TextField, dialog } from '../../../components/ui';
+import { palette, radius, type } from '../../../theme';
+import { haptics } from '../../../theme/haptics';
+import { formatNumber, plural } from '../../../utils/format';
+import { formatShortDateTime as when, readableError } from './helpers';
+import { Sheet, SheetBack, SheetFlash, SheetFlashValue, useSheetFlash } from './ui';
 
 const TICKETS_KEY = ['admin', 'tickets'];
 type Filter = 'open' | 'resolved' | 'all';
-
-function errorText(err: any, fallback: string): string {
-  if (!err?.response) return isOnline() ? fallback : 'Hors ligne : vérifiez votre connexion puis réessayez.';
-  const msg = err.response.data?.error;
-  return typeof msg === 'string' && msg.trim() ? msg : fallback;
-}
-
-function when(iso: string | null | undefined): string {
-  if (!iso) return '';
-  const d = new Date(iso);
-  return `${d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })} à ${d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`;
-}
 
 export function useAdminTickets(enabled: boolean) {
   return useQuery<Ticket[]>({
@@ -135,7 +114,7 @@ export function AdminTicketsSheet({ visible, onClose }: { visible: boolean; onCl
       showFlash('Réponse envoyée : l’utilisateur la lira dans Aide & retours.');
     } catch (err) {
       haptics.warning();
-      setError(errorText(err, 'La réponse n’a pas pu être envoyée.'));
+      setError(readableError(err, 'La réponse n’a pas pu être envoyée.').message);
     } finally {
       setBusy(null);
     }
@@ -153,7 +132,7 @@ export function AdminTicketsSheet({ visible, onClose }: { visible: boolean; onCl
       showFlash(next === 'resolved' ? 'Demande marquée résolue' : 'Demande rouverte');
     } catch (err) {
       haptics.warning();
-      setError(errorText(err, 'Le statut n’a pas pu être modifié.'));
+      setError(readableError(err, 'Le statut n’a pas pu être modifié.').message);
     } finally {
       setBusy(null);
     }
@@ -177,7 +156,7 @@ export function AdminTicketsSheet({ visible, onClose }: { visible: boolean; onCl
       showFlash('Demande supprimée');
     } catch (err) {
       haptics.warning();
-      setError(errorText(err, 'La demande n’a pas pu être supprimée.'));
+      setError(readableError(err, 'La demande n’a pas pu être supprimée.').message);
     } finally {
       setBusy(null);
     }
@@ -209,7 +188,7 @@ export function AdminTicketsSheet({ visible, onClose }: { visible: boolean; onCl
   ) : undefined;
 
   return (
-    <BottomSheet
+    <Sheet
       visible={visible}
       onClose={onClose}
       title={selected ? `${(TICKET_TYPE_META[selected.type] ?? TICKET_TYPE_META.bug).label} · ${selected.user.businessName || selected.user.email}` : 'Demandes des utilisateurs'}
@@ -257,7 +236,7 @@ export function AdminTicketsSheet({ visible, onClose }: { visible: boolean; onCl
                 {[0, 1, 2, 3].map((i) => <Skeleton key={i} height={52} radius={12} />)}
               </View>
             ) : tickets.error && !tickets.data ? (
-              <EmptyState surface="surface" icon="cloud-offline-outline" title="Chargement impossible" text={errorText(tickets.error, 'Les demandes n’ont pas pu être chargées.')} primary={{ label: 'Réessayer', icon: 'refresh', onPress: () => tickets.refetch() }} />
+              <EmptyState surface="surface" icon="cloud-offline-outline" title="Chargement impossible" text={readableError(tickets.error, 'Les demandes n’ont pas pu être chargées.').message} primary={{ label: 'Réessayer', icon: 'refresh', onPress: () => tickets.refetch() }} />
             ) : list.length === 0 ? (
               <EmptyState
                 surface="surface"
@@ -271,7 +250,7 @@ export function AdminTicketsSheet({ visible, onClose }: { visible: boolean; onCl
           </View>
         )}
       </SwapFade>
-    </BottomSheet>
+    </Sheet>
   );
 }
 
@@ -289,7 +268,7 @@ function TicketDetail({
   reply: string;
   onReply: (t: string) => void;
   error: string | null;
-  flash: React.ComponentProps<typeof SheetFlash>['flash'];
+  flash: SheetFlashValue | null;
   onBack: () => void;
   onDelete: () => void;
   deleting: boolean;
@@ -304,9 +283,7 @@ function TicketDetail({
   });
   return (
     <View style={{ gap: 16 }}>
-      <View style={styles.backRow}>
-        <Button title="Toutes les demandes" variant="text" size="sm" icon="chevron-back" onPress={onBack} haptic="select" testID="admin-ticket-back" />
-      </View>
+      <SheetBack label="Toutes les demandes" onPress={onBack} testID="admin-ticket-back" />
       <SheetFlash flash={flash} />
       <View style={styles.badges}>
         <Badge variant="neutral" icon={meta.icon} label={meta.label} size="sm" />
@@ -349,12 +326,11 @@ function TicketDetail({
       </View>
       <Button
         title="Supprimer la demande"
-        variant="text"
+        variant="destructive"
         size="sm"
         icon="trash-outline"
         onPress={onDelete}
         loading={deleting}
-        textStyle={{ color: palette.bad }}
         testID="admin-ticket-delete"
       />
     </View>
@@ -364,7 +340,6 @@ function TicketDetail({
 const styles = StyleSheet.create({
   footerRow: { flexDirection: 'row', gap: 10 },
   rowTitle: { ...type.callout, color: palette.ink },
-  backRow: { flexDirection: 'row', marginLeft: -12, marginTop: -4 },
   badges: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   message: { backgroundColor: palette.surface2, borderRadius: radius.md, padding: 14 },
   messageText: { ...type.body, color: palette.ink },

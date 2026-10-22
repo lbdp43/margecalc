@@ -1,29 +1,22 @@
 /**
  * Manager sheet for named volumes: serving types (« Shot 3 cl ») and purchase
- * containers (« 70 cl », « Fût 30 L »). One full-height BottomSheet with three
- * views — list → add / edit — so sheets never stack. Deletions are confirmed
- * with a destructive dialog. In-sheet successes show an inline note (toasts
- * never appear over an open sheet).
+ * containers (« 70 cl », « Fût 30 L »). One sheet (content height) with three
+ * views — list → add / edit — so sheets never stack. Duplicates are refused
+ * before anything is sent (same name for a service, same volume or name for a
+ * container). Deletions are confirmed with a destructive dialog. In-sheet
+ * successes show an inline note (toasts never appear over an open sheet).
  */
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import {
-  BottomSheet,
-  Button,
-  EmptyState,
-  FadeIn,
-  IconName,
-  ListRow,
-  SwapFade,
-  TextField,
-  dialog,
-} from '../../../components/ui';
-import { palette, radius, type } from '../../../theme';
+import React, { useEffect, useMemo, useState } from 'react';
+import { StyleSheet, View } from 'react-native';
+import { Button, EmptyState, IconName, ListRow, SwapFade, TextField, dialog } from '../../../components/ui';
 import { haptics } from '../../../theme/haptics';
 import { formatVolumeCl, parseLocaleFloat, plural, toInputString } from '../../../utils/format';
-import { readableError } from './helpers';
-import { ErrorLine, RowSkeleton, SheetBack } from './ui';
+import { readableError, sameName } from './helpers';
+import { ErrorLine, RowSkeleton, Sheet, SheetBack, SheetFlash, useSheetFlash } from './ui';
+
+const compact = (s: string) => s.replace(/\s/g, '').toLowerCase();
+/** « 70 cl », « Fût 30 L »: the name already says the volume, so the value column would repeat it. */
+export const nameIsVolume = (item: Pick<VolumeItem, 'name' | 'volumeCl'>) => compact(item.name).includes(compact(formatVolumeCl(item.volumeCl)));
 
 export interface VolumeItem {
   id: string;
@@ -46,6 +39,8 @@ export interface VolumeManagerCopy {
   volumeHelper: string;
   emptyTitle: string;
   emptyText: string;
+  /** Refuse a second item with the same name (services) / volume (containers). */
+  unique: { name?: string; volumeCl?: string };
   created: (name: string) => string;
   updated: (name: string) => string;
   deleted: (name: string) => string;
@@ -93,25 +88,14 @@ export function VolumeManagerSheet({
   const [volume, setVolume] = useState('');
   const [errors, setErrors] = useState<{ name?: string; volumeCl?: string; form?: string }>({});
   const [busy, setBusy] = useState<'save' | 'delete' | null>(null);
-  const [flash, setFlash] = useState<{ id: number; text: string } | null>(null);
-  const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [flash, showFlash, clearFlash] = useSheetFlash();
 
   useEffect(() => {
     if (visible) {
       setView({ mode: 'list' });
-      setFlash(null);
+      clearFlash();
     }
-  }, [visible]);
-
-  useEffect(() => () => {
-    if (flashTimer.current) clearTimeout(flashTimer.current);
-  }, []);
-
-  const showFlash = (text: string) => {
-    if (flashTimer.current) clearTimeout(flashTimer.current);
-    setFlash({ id: Date.now(), text });
-    flashTimer.current = setTimeout(() => setFlash(null), 3200);
-  };
+  }, [visible, clearFlash]);
 
   const openAdd = () => {
     setName('');
@@ -139,12 +123,16 @@ export function VolumeManagerSheet({
     if (!n) next.name = 'Indiquez un nom.';
     if (!isFinite(parsedVolume) || parsedVolume <= 0) next.volumeCl = 'Indiquez un volume supérieur à 0 cl.';
     else if (parsedVolume > maxVolumeCl) next.volumeCl = `Le volume ne peut pas dépasser ${formatVolumeCl(maxVolumeCl)}.`;
+    const volumeCl = Math.round(parsedVolume * 100) / 100;
+    const others = (items ?? []).filter((it) => view.mode !== 'edit' || it.id !== view.item.id);
+    if (!next.name && copy.unique.name && others.some((it) => sameName(it.name, n))) next.name = copy.unique.name;
+    if (!next.volumeCl && copy.unique.volumeCl && others.some((it) => Math.abs(it.volumeCl - volumeCl) < 0.005)) next.volumeCl = copy.unique.volumeCl;
     setErrors(next);
     if (next.name || next.volumeCl) {
       haptics.warning();
       return null;
     }
-    return { name: n, volumeCl: Math.round(parsedVolume * 100) / 100 };
+    return { name: n, volumeCl };
   };
 
   const submit = async () => {
@@ -197,7 +185,9 @@ export function VolumeManagerSheet({
         ? `${copy.count(list.length)} · ${copy.listSubline}`
         : copy.listSubline
       : view.mode === 'edit'
-        ? `${view.item.name} · ${formatVolumeCl(view.item.volumeCl)}`
+        ? nameIsVolume(view.item)
+          ? view.item.name
+          : `${view.item.name} · ${formatVolumeCl(view.item.volumeCl)}`
         : copy.listSubline;
 
   const footer =
@@ -237,7 +227,8 @@ export function VolumeManagerSheet({
           icon={icon(item)}
           title={item.name}
           subtitle={rowSubtitle?.(item)}
-          value={formatVolumeCl(item.volumeCl)}
+          subtitleLines={1}
+          value={nameIsVolume(item) ? undefined : formatVolumeCl(item.volumeCl)}
           onPress={() => openEdit(item)}
           divider={i < list.length - 1}
           accessibilityLabel={`${item.name}, ${formatVolumeCl(item.volumeCl)}. Modifier`}
@@ -249,12 +240,11 @@ export function VolumeManagerSheet({
   );
 
   return (
-    <BottomSheet
+    <Sheet
       visible={visible}
       onClose={onClose}
       title={title}
       subline={subline}
-      snap="full"
       contentPadding={view.mode === 'list' ? 8 : 20}
       footer={footer}
       testID={testID}
@@ -262,14 +252,7 @@ export function VolumeManagerSheet({
       <SwapFade value={view.mode === 'edit' ? `edit-${view.item.id}` : view.mode}>
         {view.mode === 'list' ? (
           <View>
-            {flash ? (
-              <FadeIn key={flash.id} offset={6} style={styles.flash}>
-                <Ionicons name="checkmark-circle" size={18} color={palette.good} />
-                <Text style={styles.flashText} accessibilityLiveRegion="polite">
-                  {flash.text}
-                </Text>
-              </FadeIn>
-            ) : null}
+            <SheetFlash flash={flash} style={styles.flash} />
             {!items && loading ? (
               <>
                 <RowSkeleton />
@@ -329,7 +312,7 @@ export function VolumeManagerSheet({
           </View>
         )}
       </SwapFade>
-    </BottomSheet>
+    </Sheet>
   );
 }
 
@@ -346,6 +329,7 @@ export const SERVING_COPY: VolumeManagerCopy = {
   volumeHelper: 'Le volume servi au client, en centilitres.',
   emptyTitle: 'Aucun service',
   emptyText: 'Ajoutez vos formats : shot, verre, demi, pinte…',
+  unique: { name: 'Un service porte déjà ce nom.' },
   created: (n) => `« ${n} » ajouté`,
   updated: (n) => `« ${n} » enregistré`,
   deleted: (n) => `« ${n} » supprimé`,
@@ -368,6 +352,7 @@ export const CONTAINER_COPY: VolumeManagerCopy = {
   volumeHelper: 'La contenance achetée, en centilitres (1 L = 100 cl).',
   emptyTitle: 'Aucun contenant',
   emptyText: 'Ajoutez les formats que vous achetez : bouteille, fût, BIB…',
+  unique: { name: 'Un contenant porte déjà ce nom.', volumeCl: 'Un contenant de ce volume existe déjà.' },
   created: (n) => `« ${n} » ajouté`,
   updated: (n) => `« ${n} » enregistré`,
   deleted: (n) => `« ${n} » supprimé`,
@@ -379,16 +364,5 @@ export const CONTAINER_COPY: VolumeManagerCopy = {
 
 const styles = StyleSheet.create({
   footerRow: { flexDirection: 'row', gap: 10 },
-  flash: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginHorizontal: 12,
-    marginBottom: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: radius.sm,
-    backgroundColor: palette.goodBg,
-  },
-  flashText: { ...type.calloutStrong, color: palette.good, flex: 1 },
+  flash: { marginHorizontal: 12, marginBottom: 8 },
 });

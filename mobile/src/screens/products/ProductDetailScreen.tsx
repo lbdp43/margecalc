@@ -1,9 +1,9 @@
 /**
  * Product detail (Produits › ProductDetail).
  *
- *   NavBar (back · title once scrolled · « … » actions)
- *   hero: photo (GET /api/products/:id imageUrl, cross-fade) or emerald placeholder
- *   name · category badge · meta
+ *   NavBar (back · title once the name scrolls away · « … » actions)
+ *   with a photo: the whole bottle (contain) over its blurred thumbnail, then the name
+ *   without one: icon tile · name · category · meta · « Ajouter une photo »
  *   key numbers with count-up: Marge · Coefficient · Gain par dose · Gain par bouteille/fût
  *   services: Prix TTC / HT · Coût · Gain · margin badge (tap → quick price change)
  *   Achat & fiscalité facts · purchase-price history (sparkline)
@@ -11,16 +11,17 @@
  *
  * Opens instantly from the list cache (placeholder), then refreshes: detail and
  * history use staleTime 0 + refetchOnMount 'always', and refetch on focus, so an
- * edit made in the form shows at once (RC3).
+ * edit made in the form shows at once (RC3). What the detail learns is merged
+ * back into the list, so the two never disagree. The offline copy never holds
+ * the full photo (list/detailCache).
  */
-import React, { useCallback, useMemo, useRef, useState } from 'react';
-import { NativeScrollEvent, NativeSyntheticEvent, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { LayoutChangeEvent, NativeScrollEvent, NativeSyntheticEvent, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
 import { useQueryClient } from '@tanstack/react-query';
 import { calculateServingMargin, ProductWithMargin } from '@margebar/shared';
 import {
-  Badge,
   Button,
   Card,
   EmptyState,
@@ -34,19 +35,32 @@ import {
   categoryIcon,
   servingLabel,
   sortedServings,
+  toast,
   useDelayedLoading,
 } from '../../components/ui';
 import type { IconName } from '../../components/ui';
-import { marginColors, palette, type } from '../../theme';
+import { layout, marginColors, palette, type } from '../../theme';
 import { formatCoeff, formatDegree, formatEuro, formatNumber, formatPercent, formatVolumeCl, NBSP, plural } from '../../utils/format';
 import { getMarginZone, useMarginThresholds } from '../../utils/marginThresholds';
 import { afterProductDeleted, goToProduct, goToProductList, openProductForm } from '../../navigation/routes';
 import { useOfflineQuery } from '../../hooks/useOfflineQuery';
 import * as productService from '../../services/product.service';
 import type { PriceHistoryEntry } from '../../services/product.service';
-import { DetailHero, DetailSkeleton, formatShortDate, HERO_HEIGHT, KeyTile, PriceHistoryCard, ServiceFigures, ServiceRow } from './list/DetailParts';
+import {
+  DetailIdentity,
+  DetailSkeleton,
+  dosesLabel,
+  formatShortDate,
+  KeyTile,
+  keyValueSize,
+  PhotoHero,
+  PriceHistoryCard,
+  ServiceFigures,
+  ServiceRow,
+} from './list/DetailParts';
+import { persistableProduct, pruneDetailCaches, useLeanOfflineQuery } from './list/detailCache';
 import { PriceEditSheet, PriceEditTarget } from './list/PriceEditSheet';
-import { apiErrorMessage, apiStatus, useProductActions } from './list/productActions';
+import { apiStatus, loadErrorMessage, useProductActions } from './list/productActions';
 
 type Props = NativeStackScreenProps<any, 'ProductDetail'>;
 
@@ -64,6 +78,9 @@ function serviceIcon(name: string, fallback: IconName): IconName {
 function containerNoun(cl: number): string {
   return cl >= 1000 ? 'fût' : 'bouteille';
 }
+
+/** A long supplier reads better under its label than squeezed beside it. */
+const LONG_VALUE = 24;
 
 function servicesOf(product: ProductWithMargin): ServiceFigures[] {
   const list = sortedServings(product);
@@ -108,6 +125,12 @@ function servicesOf(product: ProductWithMargin): ServiceFigures[] {
   ];
 }
 
+/** What the list card shows: when it differs, the list entry is refreshed from the detail. */
+function listSignature(p: ProductWithMargin): string {
+  const servings = (p.servings ?? []).map((s) => `${s.servingTypeId}:${s.sellingPriceTTC}`).join(',');
+  return [p.updatedAt, p.name, p.categoryId, p.purchasePriceHT, p.sellingPriceTTC, p.containerVolumeCl, p.computed?.marginPercent, servings, p.thumbnailUrl?.length ?? 0].join('|');
+}
+
 export function ProductDetailScreen({ route, navigation: nav }: Props) {
   const navigation = nav as any;
   const productId = (route.params as { productId?: string } | undefined)?.productId;
@@ -121,23 +144,38 @@ export function ProductDetailScreen({ route, navigation: nav }: Props) {
   const [titleShown, setTitleShown] = useState(false);
   const [pulling, setPulling] = useState(false);
   const titleRef = useRef(false);
-  // Narrow phones: the tile labels need the room the decorative icons take.
+  /** Scroll offset past which the name is hidden under the NavBar (measured). */
+  const titleAfter = useRef(Number.POSITIVE_INFINITY);
   const { width } = useWindowDimensions();
+  // Narrow phones: the tile labels need the room the decorative icons take.
   const tileIcons = width >= 380;
+  // The content column (Screen gutters), and the text width inside one of the two
+  // tile columns (gap 10, padding 14, border 1).
+  const contentWidth = width - layout.gutter * 2;
+  const tileTextWidth = (contentWidth - 10) / 2 - 30;
+
+  useEffect(() => {
+    pruneDetailCaches();
+  }, []);
 
   // Open instantly with what the list already knows (no photo yet), then refresh.
   const fromList = useMemo(
-    () => queryClient.getQueryData<ProductWithMargin[]>(['products'])?.find((p) => p.id === productId),
+    () => queryClient.getQueryData<ProductWithMargin[]>(productService.productKeys.list)?.find((p) => p.id === productId),
     [queryClient, productId],
   );
 
-  const q = useOfflineQuery<ProductWithMargin>(['product', productId], () => productService.getProduct(productId as string), {
-    enabled: !!productId && !deleted,
-    staleTime: 0,
-    refetchOnMount: 'always',
-    placeholderData: fromList,
-  });
-  const history = useOfflineQuery<PriceHistoryEntry[]>(['priceHistory', productId], () => productService.getPriceHistory(productId as string), {
+  const q = useLeanOfflineQuery<ProductWithMargin>(
+    productService.productKeys.detail(productId ?? ''),
+    () => productService.getProduct(productId as string),
+    persistableProduct,
+    {
+      enabled: !!productId && !deleted,
+      staleTime: 0,
+      refetchOnMount: 'always',
+      placeholderData: fromList,
+    },
+  );
+  const history = useOfflineQuery<PriceHistoryEntry[]>(productService.productKeys.priceHistory(productId ?? ''), () => productService.getPriceHistory(productId as string), {
     enabled: !!productId && !deleted,
     staleTime: 0,
     refetchOnMount: 'always',
@@ -147,7 +185,20 @@ export function ProductDetailScreen({ route, navigation: nav }: Props) {
   const last = useRef<ProductWithMargin | undefined>(undefined);
   if (q.data) last.current = q.data;
   const product = q.data ?? last.current;
-  const isFull = !!q.data && !q.isPlaceholderData;
+  const isFull = !!q.data && !q.isPlaceholderData && !q.isCachedData;
+
+  // The detail just learnt something the list card does not show yet (a price
+  // changed on another device): update that card, so the two never disagree.
+  useEffect(() => {
+    const d = q.data;
+    if (!d || !isFull || deleted || !q.isFetchedAfterMount) return;
+    const list = queryClient.getQueryData<ProductWithMargin[]>(productService.productKeys.list);
+    const i = list ? list.findIndex((p) => p.id === d.id) : -1;
+    if (!list || i < 0 || listSignature(list[i]) === listSignature(d)) return;
+    const next = [...list];
+    next[i] = { ...list[i], ...persistableProduct(d) };
+    queryClient.setQueryData(productService.productKeys.list, next);
+  }, [q.data, isFull, deleted, q.isFetchedAfterMount, queryClient]);
 
   // Coming back from the form (or another tab): refresh at once.
   const refetchRef = useRef(() => {});
@@ -177,11 +228,18 @@ export function ProductDetailScreen({ route, navigation: nav }: Props) {
   );
 
   const onScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
-    const show = e.nativeEvent.contentOffset.y > HERO_HEIGHT + 56;
+    const show = e.nativeEvent.contentOffset.y > titleAfter.current;
     if (show !== titleRef.current) {
       titleRef.current = show;
       setTitleShown(show);
     }
+  }, []);
+  // Show the NavBar title once the name has scrolled under the bar (above
+  // « Ajouter une photo » when there is no photo).
+  const belowName = useRef(0);
+  const onTopLayout = useCallback((e: LayoutChangeEvent) => {
+    const { y, height } = e.nativeEvent.layout;
+    titleAfter.current = y + height - 24 - belowName.current;
   }, []);
 
   const edit = useCallback(() => {
@@ -197,6 +255,12 @@ export function ProductDetailScreen({ route, navigation: nav }: Props) {
     else setDeleting(false);
   }, [actions, navigation, product, deleting]);
 
+  // A toast left over from an earlier action must not come back after a sheet.
+  const openActions = useCallback(() => {
+    toast.clear();
+    setActionsOpen(true);
+  }, []);
+
   const services = useMemo(() => (product ? servicesOf(product) : []), [product]);
   const hasRealServings = !!product?.servings?.length;
 
@@ -211,7 +275,7 @@ export function ProductDetailScreen({ route, navigation: nav }: Props) {
       title={titleShown && product ? product.name : ''}
       trailing={
         product && !deleted ? (
-          <IconButton icon="ellipsis-horizontal" onPress={() => setActionsOpen(true)} accessibilityLabel="Plus d’actions" testID="detail-more" />
+          <IconButton icon="ellipsis-horizontal" onPress={openActions} accessibilityLabel="Plus d’actions" testID="detail-more" />
         ) : null
       }
     />
@@ -235,7 +299,7 @@ export function ProductDetailScreen({ route, navigation: nav }: Props) {
         <EmptyState
           icon="alert-circle-outline"
           title="Impossible d’afficher ce produit"
-          text={apiErrorMessage(q.error, 'Le serveur ne répond pas. Réessayez dans un instant.')}
+          text={loadErrorMessage(q.error)}
           primary={{ label: 'Réessayer', icon: 'refresh', onPress: () => q.refetch() }}
         />
       );
@@ -249,81 +313,98 @@ export function ProductDetailScreen({ route, navigation: nav }: Props) {
   const zone = getMarginZone(c.marginPercent, t);
   const noun = containerNoun(product.containerVolumeCl);
   const primary = services[0];
+  const icon = categoryIcon(product.category?.slug);
   const meta = [formatVolumeCl(product.containerVolumeCl), product.alcoholDegree > 0 ? formatDegree(product.alcoholDegree) : null, product.supplier || null]
     .filter(Boolean)
     .join(' · ');
   const tva = product.tvaRate * 100;
   const historyEntries = history.data ?? [];
-  const waitingForPhoto = !isFull && !!(product.hasImage || product.thumbnailUrl);
+  // A photo is known from the detail (imageUrl) or already from the list (thumbnail / hasImage).
+  const hasPhoto = !!(product.imageUrl || product.thumbnailUrl || product.hasImage);
   const updated = formatShortDate(product.updatedAt);
+  const doses = dosesLabel(c.glassesPerContainer);
+  // A free product (tap water…) has no cost: a coefficient means nothing there.
+  const coeffKnown = c.costPerDoseHT > 0 && isFinite(c.coefficient);
+  const fmtMargin = (n: number) => formatPercent(n);
+  const fmtCoeff = (n: number) => formatCoeff(n);
+  const fmtGain = (n: number) => formatEuro(n, { sign: true });
+  const tileSize = keyValueSize(
+    [fmtMargin(c.marginPercent), coeffKnown ? fmtCoeff(c.coefficient) : '—', fmtGain(c.marginPerDoseHT), fmtGain(c.marginPerContainer)],
+    tileTextWidth,
+  );
+  const supplierLong = (product.supplier ?? '').length > LONG_VALUE;
+  belowName.current = hasPhoto ? 0 : 58; // the tonal button (44) and its margin (14)
 
   return (
     <Screen header={header} onScroll={onScroll} refreshing={pulling} onRefresh={onPull}>
       <FadeIn>
-        <DetailHero
-          imageUrl={isFull ? product.imageUrl : null}
-          thumbnailUrl={product.thumbnailUrl}
-          icon={categoryIcon(product.category?.slug)}
-          waitingForPhoto={waitingForPhoto}
-          name={product.name}
-        />
-      </FadeIn>
-
-      <FadeIn delay={40} style={styles.identity}>
-        <Text style={styles.name} accessibilityRole="header">
-          {product.name}
-        </Text>
-        <View style={styles.metaRow}>
-          {product.category ? <Badge variant="brand" icon={categoryIcon(product.category.slug)} label={product.category.name} size="sm" /> : null}
-          {meta ? (
-            <Text style={styles.meta} numberOfLines={2}>
-              {meta}
-            </Text>
+        <View onLayout={onTopLayout}>
+          {hasPhoto ? (
+            <View style={styles.photo}>
+              <PhotoHero
+                imageUrl={isFull ? product.imageUrl : null}
+                thumbnailUrl={product.thumbnailUrl}
+                name={product.name}
+                pending={!isFull && !q.isOffline && q.isFetching}
+              />
+            </View>
           ) : null}
+          <DetailIdentity
+            name={product.name}
+            categoryName={product.category?.name}
+            icon={icon}
+            meta={meta}
+            withTile={!hasPhoto}
+            onAddPhoto={!hasPhoto && !deleted ? edit : undefined}
+          />
         </View>
       </FadeIn>
 
-      <FadeIn delay={80} style={styles.tiles}>
+      <FadeIn delay={60} style={styles.tiles}>
         <View style={styles.tileRow}>
           <KeyTile
             label="Marge"
             value={c.marginPercent}
-            format={(n) => formatPercent(n)}
+            format={fmtMargin}
+            size={tileSize}
             zone={zone}
             highlight
             icon={tileIcons ? 'pie-chart-outline' : undefined}
             caption={`objectif ${formatPercent(t.good, 0)}`}
-            a11y={`Marge ${formatPercent(c.marginPercent).replace(/ /g, ' ').replace('%', 'pour cent')}, ${marginColors[zone].label}`}
+            a11y={`Marge ${formatNumber(c.marginPercent, 1)} pour cent, ${marginColors[zone].label}, objectif ${formatNumber(t.good, 0)} pour cent`}
           />
           <KeyTile
             label="Coefficient"
-            value={c.coefficient}
-            format={(n) => formatCoeff(n)}
+            value={coeffKnown ? c.coefficient : null}
+            format={fmtCoeff}
+            size={tileSize}
             icon={tileIcons ? 'layers-outline' : undefined}
-            caption="prix HT ÷ coût"
+            caption={coeffKnown ? 'prix HT ÷ coût' : 'coût nul'}
             delay={60}
-            a11y={`Coefficient ${formatNumber(c.coefficient, 2)}`}
+            a11y={coeffKnown ? `Coefficient ${formatNumber(c.coefficient, 2)}, prix hors taxes divisé par le coût` : 'Coefficient non calculable, coût nul'}
           />
         </View>
         <View style={styles.tileRow}>
           <KeyTile
             label="Gain par dose"
             value={c.marginPerDoseHT}
-            format={(n) => formatEuro(n, { sign: true })}
+            format={fmtGain}
+            size={tileSize}
             valueColor={marginColors[zone].fg}
             icon={tileIcons ? 'cash-outline' : undefined}
             caption={primary ? `HT · ${primary.label}` : 'HT'}
             delay={120}
-            a11y={`Gain par dose ${formatEuro(c.marginPerDoseHT)} hors taxes`}
+            a11y={`Gain par dose ${formatEuro(c.marginPerDoseHT)} hors taxes${primary ? `, ${primary.label}` : ''}`}
           />
           <KeyTile
             label={`Gain par ${noun}`}
             value={c.marginPerContainer}
-            format={(n) => formatEuro(n, { sign: true })}
+            format={fmtGain}
+            size={tileSize}
             icon={tileIcons ? (noun === 'fût' ? 'beer-outline' : 'wine-outline') : undefined}
-            caption={plural(Math.floor(c.glassesPerContainer + 1e-6), 'dose')}
+            caption={doses}
             delay={180}
-            a11y={`Gain par ${noun} ${formatEuro(c.marginPerContainer)} hors taxes, ${plural(Math.floor(c.glassesPerContainer + 1e-6), 'dose')}`}
+            a11y={`Gain par ${noun} ${formatEuro(c.marginPerContainer)} hors taxes, ${doses}`}
           />
         </View>
       </FadeIn>
@@ -341,12 +422,15 @@ export function ProductDetailScreen({ route, navigation: nav }: Props) {
               s={s}
               zone={getMarginZone(s.margin, t)}
               containerNoun={noun}
+              contentWidth={contentWidth}
               last={i === services.length - 1}
               onPress={
                 hasRealServings
                   ? () => {
                       const ps = sortedServings(product).find((x) => x.servingTypeId === s.key);
-                      if (ps?.servingType) setPriceTarget({ servingType: ps.servingType, label: s.label, price: ps.sellingPriceTTC });
+                      if (!ps?.servingType) return;
+                      toast.clear();
+                      setPriceTarget({ servingType: ps.servingType, label: s.label, price: ps.sellingPriceTTC });
                     }
                   : edit
               }
@@ -362,13 +446,19 @@ export function ProductDetailScreen({ route, navigation: nav }: Props) {
           <ValueRow label="Contenance" value={formatVolumeCl(product.containerVolumeCl)} />
           <ValueRow label="Degré d’alcool" value={product.alcoholDegree > 0 ? formatDegree(product.alcoholDegree) : 'Sans alcool'} />
           <ValueRow label="TVA" value={formatPercent(tva, Number.isInteger(Math.round(tva * 10) / 10) ? 0 : 1)} />
-          <ValueRow label="Fournisseur" value={product.supplier || 'Non renseigné'} valueColor={product.supplier ? undefined : palette.text3} last />
+          <ValueRow
+            label="Fournisseur"
+            value={product.supplier || 'Non renseigné'}
+            valueColor={product.supplier ? undefined : palette.text3}
+            style={supplierLong ? styles.stackedRow : undefined}
+            last
+          />
         </Card>
       </FadeIn>
 
       {historyEntries.length ? (
         <FadeIn delay={40}>
-          <SectionHeader title="Prix d’achat" meta={plural(historyEntries.length, 'changement')} style={styles.section} />
+          <SectionHeader title="Historique du prix d’achat" meta={plural(historyEntries.length, 'changement')} style={styles.section} />
           <PriceHistoryCard entries={historyEntries} />
         </FadeIn>
       ) : null}
@@ -392,15 +482,14 @@ export function ProductDetailScreen({ route, navigation: nav }: Props) {
 }
 
 const styles = StyleSheet.create({
-  identity: { marginTop: 20 },
-  name: { ...type.title1, color: palette.ink },
-  metaRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 10, marginTop: 10 },
-  meta: { ...type.footnote, color: palette.text3, flexShrink: 1 },
+  photo: { marginBottom: 20 },
   tiles: { marginTop: 20, gap: 10 },
   tileRow: { flexDirection: 'row', gap: 10 },
   section: { marginTop: 28, marginBottom: 10 },
   servicesCard: { overflow: 'hidden' },
   factsCard: { paddingVertical: 4 },
+  // ValueRow with its value under the label (a long supplier never truncates the label).
+  stackedRow: { flexDirection: 'column', alignItems: 'flex-start', justifyContent: 'center', gap: 2 },
   actions: { marginTop: 28, gap: 6 },
   updated: { ...type.footnote, color: palette.text3, textAlign: 'center', marginTop: 6 },
 });

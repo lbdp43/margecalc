@@ -7,23 +7,28 @@
  * A full-height BottomSheet with two views:
  * - « Nouveau message »: type chips (Bug · Idée · Question), the message, an
  *   optional screenshot; « Envoyer » closes the sheet and shows a toast.
- * - « Mes demandes »: the user's requests with the team's replies (a reply is
- *   marked read when it is opened).
+ * - « Mes demandes »: the user's requests with the team's replies. Showing
+ *   the list marks every reply as read (the replies are visible right away);
+ *   the « Nouvelle réponse » badge stays on them until the sheet closes.
+ *
+ * Browser/Android back closes the sheet first, and it closes when its screen
+ * loses focus (`useSheetLifecycle`, shared with the Réglages sheets).
  */
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Image, Platform, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
 import { Ionicons } from '@expo/vector-icons';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 import * as ticketService from '../../services/ticket.service';
 import { TICKET_MESSAGE_MAX, TICKET_TYPE_META } from '../../services/ticket.service';
 import type { MyTicket, TicketType } from '../../services/ticket.service';
-import { isOnline } from '../../services/offline';
 import { palette, radius, type } from '../../theme';
 import { haptics } from '../../theme/haptics';
 import { formatNumber } from '../../utils/format';
-import { BottomSheet } from './BottomSheet';
+import { SETTINGS_KEYS, useMyTickets } from '../../screens/settings/parts/data';
+import { formatLongDate, readableError } from '../../screens/settings/parts/helpers';
+import { ErrorLine, Sheet } from '../../screens/settings/parts/ui';
 import { Button, IconButton } from './Button';
 import { Chip } from './Chip';
 import { EmptyState } from './EmptyState';
@@ -54,19 +59,9 @@ const PLACEHOLDERS: Record<TicketType, string> = {
   question: 'Posez votre question, nous répondons dans l’app.',
 };
 
-const MINE_KEY = ['tickets', 'mine'];
-const UNREAD_KEY = ['tickets', 'unread'];
-
-function errorText(err: any, fallback: string): string {
-  if (!err?.response) return isOnline() ? fallback : 'Hors ligne : vérifiez votre connexion puis réessayez.';
-  const msg = err.response.data?.error;
-  return typeof msg === 'string' && msg.trim() ? msg : fallback;
-}
-
-function shortDate(iso: string): string {
-  const d = new Date(iso);
-  return isNaN(d.getTime()) ? '' : d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
-}
+const MINE_KEY = [...SETTINGS_KEYS.mine];
+const UNREAD_KEY = [...SETTINGS_KEYS.unread];
+const shortDate = formatLongDate;
 
 export const FeedbackModal = React.memo(function FeedbackModal({ visible, onClose, screenName, initialTab = 'new' }: FeedbackModalProps) {
   const qc = useQueryClient();
@@ -81,21 +76,39 @@ export const FeedbackModal = React.memo(function FeedbackModal({ visible, onClos
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  /** Replies marked read while this sheet is open: they keep their badge until it closes. */
+  const [fresh, setFresh] = useState<Set<string>>(() => new Set());
+  const marking = useRef(new Set<string>());
+
   useEffect(() => {
     if (visible) {
       setTab(initialTab);
       setError(null);
+    } else {
+      setFresh(new Set());
     }
   }, [visible, initialTab]);
 
-  const mine = useQuery({
-    queryKey: MINE_KEY,
-    queryFn: ticketService.getMyTickets,
-    enabled: visible,
-    staleTime: 0,
-    retry: 1,
-  });
+  const mine = useMyTickets(visible);
   const unreadCount = useMemo(() => (mine.data ?? []).filter((t) => t.adminReply && !t.readByUser).length, [mine.data]);
+
+  // « Mes demandes » shows every reply in full: showing the list reads them.
+  useEffect(() => {
+    if (!visible || tab !== 'mine' || !mine.data) return;
+    const ids = mine.data.filter((t) => t.adminReply && !t.readByUser && !marking.current.has(t.id)).map((t) => t.id);
+    if (!ids.length) return;
+    ids.forEach((id) => marking.current.add(id));
+    setFresh((prev) => new Set([...prev, ...ids]));
+    Promise.allSettled(ids.map((id) => ticketService.markTicketRead(id))).then((results) => {
+      const done = new Set(ids.filter((_, i) => results[i].status === 'fulfilled'));
+      ids.forEach((id) => {
+        if (!done.has(id)) marking.current.delete(id); // retried next time
+      });
+      if (!done.size) return;
+      qc.setQueryData<MyTicket[]>(MINE_KEY, (prev) => prev?.map((t) => (done.has(t.id) ? { ...t, readByUser: true } : t)));
+      qc.invalidateQueries({ queryKey: UNREAD_KEY });
+    });
+  }, [visible, tab, mine.data, qc]);
 
   const reset = () => {
     setKind('bug');
@@ -164,7 +177,7 @@ export const FeedbackModal = React.memo(function FeedbackModal({ visible, onClos
       toast.success('Merci ! Votre message a bien été envoyé.');
     } catch (err) {
       haptics.warning();
-      setError(errorText(err, 'Le message n’a pas pu être envoyé. Réessayez.'));
+      setError(readableError(err, 'Le message n’a pas pu être envoyé. Réessayez.').message);
       setSending(false);
     }
   };
@@ -182,7 +195,7 @@ export const FeedbackModal = React.memo(function FeedbackModal({ visible, onClos
     ) : undefined;
 
   return (
-    <BottomSheet
+    <Sheet
       visible={visible}
       onClose={close}
       title="Aide & retours"
@@ -257,26 +270,20 @@ export const FeedbackModal = React.memo(function FeedbackModal({ visible, onClos
                 />
               )}
             </View>
-            {error ? (
-              <FadeIn offset={4} style={styles.errorRow}>
-                <Ionicons name="alert-circle" size={16} color={palette.bad} style={{ marginTop: 1 }} />
-                <Text style={styles.errorText} accessibilityLiveRegion="polite">
-                  {error}
-                </Text>
-              </FadeIn>
-            ) : null}
+            <ErrorLine message={error} style={{ marginTop: -8 }} />
           </View>
         ) : (
           <MyRequests
             loading={mine.isLoading}
-            error={mine.error ? errorText(mine.error, 'Vos demandes n’ont pas pu être chargées.') : null}
+            error={mine.error ? readableError(mine.error, 'Vos demandes n’ont pas pu être chargées.').message : null}
             tickets={mine.data}
+            fresh={fresh}
             onRetry={() => mine.refetch()}
             onWrite={() => setTab('new')}
           />
         )}
       </SwapFade>
-    </BottomSheet>
+    </Sheet>
   );
 });
 
@@ -285,12 +292,14 @@ function MyRequests({
   loading,
   error,
   tickets,
+  fresh,
   onRetry,
   onWrite,
 }: {
   loading: boolean;
   error: string | null;
   tickets?: MyTicket[];
+  fresh: Set<string>;
   onRetry: () => void;
   onWrite: () => void;
 }) {
@@ -325,34 +334,24 @@ function MyRequests({
     <View style={{ gap: 10 }}>
       {tickets.map((t, i) => (
         <FadeIn key={t.id} index={i}>
-          <TicketCard ticket={t} />
+          <TicketCard ticket={t} isNew={fresh.has(t.id) || (!!t.adminReply && !t.readByUser)} />
         </FadeIn>
       ))}
     </View>
   );
 }
 
-const TicketCard = React.memo(function TicketCard({ ticket }: { ticket: MyTicket }) {
-  const qc = useQueryClient();
+const TicketCard = React.memo(function TicketCard({ ticket, isNew }: { ticket: MyTicket; isNew: boolean }) {
   const [expanded, setExpanded] = useState(false);
   const [screenshot, setScreenshot] = useState<string | null>(ticket.screenshotBase64);
   const meta = TICKET_TYPE_META[ticket.type] ?? TICKET_TYPE_META.bug;
-  const unread = !!ticket.adminReply && !ticket.readByUser;
+  const unread = isNew;
 
-  const toggle = async () => {
+  const toggle = () => {
     const next = !expanded;
     setExpanded(next);
-    if (next && !screenshot) {
+    if (next && !screenshot && ticket.hasScreenshot) {
       ticketService.getTicketScreenshot(ticket.id).then(setScreenshot).catch(() => {});
-    }
-    if (next && unread) {
-      try {
-        await ticketService.markTicketRead(ticket.id);
-        qc.setQueryData<MyTicket[]>(MINE_KEY, (prev) => prev?.map((t) => (t.id === ticket.id ? { ...t, readByUser: true } : t)));
-        qc.invalidateQueries({ queryKey: UNREAD_KEY });
-      } catch {
-        // stays unread; retried next time
-      }
     }
   };
 
@@ -416,8 +415,6 @@ const styles = StyleSheet.create({
   shotThumb: { width: 56, height: 56, borderRadius: 12, backgroundColor: palette.surface2 },
   shotTitle: { ...type.headline, color: palette.ink },
   shotMeta: { ...type.footnote, color: palette.text3 },
-  errorRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
-  errorText: { ...type.footnote, color: palette.bad, flex: 1 },
   ticket: {
     borderRadius: radius.lg,
     borderWidth: 1,

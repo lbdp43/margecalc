@@ -12,7 +12,8 @@
  * all its services (inline `servings`). See BRIEF §2 for RC1–RC13.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -35,7 +36,7 @@ import {
 } from '../../components/ui';
 import { fontFamily, marginColors, palette, type } from '../../theme';
 import { haptics } from '../../theme/haptics';
-import { formatCoeff, formatPercent, plural } from '../../utils/format';
+import { NBSP, formatCoeff, plural } from '../../utils/format';
 import { getMarginZone, useMarginThresholds } from '../../utils/marginThresholds';
 import { afterProductDeleted, afterProductSaved } from '../../navigation/routes';
 import { useOfflineQuery } from '../../hooks/useOfflineQuery';
@@ -74,14 +75,16 @@ import {
   derive,
   emptyValues,
   fingerprint,
+  lossServices,
   prefsFromValues,
   resolveCategoryId,
+  serviceName,
   summaryOf,
   validate,
   valuesFromProduct,
 } from './form/model';
 import { PhotoError, PickSource, PickedImage, pickImage, preparePhoto, recoverPendingImage } from './form/photo';
-import { priceFromMode, round2, suggestedPrice, defaultFiscalSlug } from './form/pricing';
+import { defaultFiscalSlug, formatMargin, priceFromMode, round2, suggestedPrice } from './form/pricing';
 
 type Props = NativeStackScreenProps<any, 'ProductForm'>;
 type SectionKey = 'identity' | 'purchase' | 'pricing';
@@ -108,6 +111,8 @@ const CLEARS: Array<[keyof FormValues, FieldKey]> = [
   ['horsDroits', 'purchase'],
   ['fiscalSlug', 'purchase'],
   ['degree', 'degree'],
+  ['horsDroits', 'degree'],
+  ['fiscalSlug', 'degree'],
   ['tvaRate', 'tva'],
   ['services', 'services'],
   ['customDoseCl', 'services'],
@@ -115,6 +120,28 @@ const CLEARS: Array<[keyof FormValues, FieldKey]> = [
 ];
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** « nom », « nom et degré », « nom, contenance et degré ». */
+const joinFr = (list: string[]) => (list.length <= 1 ? list.join('') : `${list.slice(0, -1).join(', ')} et ${list[list.length - 1]}`);
+
+/** A draft younger than this is resumed directly after a page reload. */
+const RELOAD_RESUME_MS = 10 * 60 * 1000;
+
+/**
+ * Web: the page was reloaded on the new-product form. Read once when the app
+ * loads (the URL is then the reloaded one) and consumed by the first form that
+ * mounts, so a reload elsewhere never resumes a draft later on.
+ */
+let reloadedOnFormPending: boolean = (() => {
+  if (Platform.OS !== 'web') return false;
+  try {
+    const g = globalThis as any;
+    const nav = g.performance?.getEntriesByType?.('navigation')?.[0];
+    return nav?.type === 'reload' && /\/produits\/nouveau/.test(g.location?.pathname ?? '');
+  } catch {
+    return false;
+  }
+})();
 
 /** A draft is kept once there is real work in it (a photo alone is not worth one). */
 const draftWorthy = (v: FormValues) => !!v.name.trim() || v.purchase !== null || Object.keys(v.services).length > 0;
@@ -170,15 +197,38 @@ export function ProductFormScreen({ route, navigation }: Props) {
   const [scanPhoto, setScanPhoto] = useState<string | null>(null);
   const [photoReady, setPhotoReady] = useState(false);
   const [scanResult, setScanResult] = useState<BottleScanResult | null>(null);
+  const scanResultRef = useRef<BottleScanResult | null>(null);
+  scanResultRef.current = scanResult;
   const [scanError, setScanError] = useState<ScanStepProps['error']>(null);
   const [draft, setDraft] = useState<{ name: string; savedAt: number; form: FormValues } | null>(null);
   const [savedCalcs, setSavedCalcs] = useState<SavedCalc[]>([]);
   const [calcsOpen, setCalcsOpen] = useState(false);
 
+  // « Continuer sans attendre »: the read keeps going in the background.
+  const [lateReading, setLateReading] = useState(false);
+
   const scanToken = useRef(0);
+  const scanAbort = useRef<AbortController | null>(null);
+  /** Token of a read the user skipped: its result only fills the fields still empty. */
+  const lateScan = useRef<number | null>(null);
   const saving = useRef(false);
+  const mounted = useRef(true);
   const createdId = useRef<string | null>(null);
   const allowLeave = useRef(false);
+  /** The validation toast is on screen (it goes as soon as a field it pointed at changes). */
+  const validationToast = useRef(false);
+  /** An « Annuler » toast of this screen may be up: it must not outlive the form (its undo would do nothing). */
+  const undoToast = useRef(false);
+  const markUndoToast = useCallback(() => {
+    undoToast.current = true;
+  }, []);
+  const clearUndoToast = useCallback(() => {
+    if (!undoToast.current) return;
+    undoToast.current = false;
+    toast.clear();
+  }, []);
+  /** The user chose a container (a late scan result then leaves it alone). */
+  const containerTouched = useRef(false);
   const baseline = useRef<string>(fingerprint(values));
   const valuesRef = useRef(values);
   valuesRef.current = values;
@@ -187,12 +237,28 @@ export function ProductFormScreen({ route, navigation }: Props) {
     prefill ? { categoryId: prefill.categoryId, category: prefill.category, fiscalCategory: prefill.fiscalCategory } : {},
   );
   const tvaTouched = useRef(false);
+  const wasReload = useRef<boolean | null>(null);
+  if (wasReload.current === null) {
+    wasReload.current = reloadedOnFormPending && !editing && !prefill;
+    reloadedOnFormPending = false;
+  }
   const scrollRef = useRef<ScrollView>(null);
   const sectionY = useRef<Record<SectionKey, number>>({ identity: 0, purchase: 0, pricing: 0 });
 
   const patch = useCallback((p: Partial<FormValues>) => {
     if ('tvaRate' in p) tvaTouched.current = true;
+    if ('containerCl' in p || 'containerOther' in p) containerTouched.current = true;
     setValues((v) => ({ ...v, ...p }));
+  }, []);
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      // Leaving the screen abandons a read in flight (nothing would show it).
+      scanAbort.current?.abort();
+      if (undoToast.current) toast.clear();
+    };
   }, []);
 
   const quotaQ = useQuery({
@@ -220,11 +286,18 @@ export function ProductFormScreen({ route, navigation }: Props) {
     };
   }, [editing, hydrated, productQ.data, productQ.isFetchedAfterMount, user, rates, seuilSS]);
 
-  // Category of a new product: the prefill / scan hint, else the first category.
+  // Category of a new product: only from the prefill / scan hint. Without one it
+  // stays empty and validation names the field — never a silent « Spiritueux »
+  // (it drives the filters, the dashboard and the softs TVA).
   useEffect(() => {
     if (editing || !categories.length) return;
     if (values.categoryId && categories.some((c) => c.id === values.categoryId)) return;
-    const id = resolveCategoryId(categories, categoryHint.current) ?? categories[0].id;
+    const hinted = resolveCategoryId(categories, categoryHint.current);
+    const id = hinted && categories.some((c) => c.id === hinted) ? hinted : null;
+    if (!id) {
+      if (values.categoryId) setValues((v) => ({ ...v, categoryId: null })); // a category that no longer exists
+      return;
+    }
     setValues((v) => {
       const next = { ...v, categoryId: id };
       if (v.horsDroits === false && !categoryHint.current.fiscalCategory) next.fiscalSlug = defaultFiscalSlug(categories.find((c) => c.id === id)?.slug);
@@ -260,8 +333,12 @@ export function ProductFormScreen({ route, navigation }: Props) {
     }
     if (changed) {
       setErrors(next);
-      // The validation toast is stale once everything it pointed at is fixed.
-      if (!Object.keys(next).length) toast.clear();
+      // The validation toast is stale as soon as a field it pointed at changes
+      // (the inline errors that remain say the rest).
+      if (validationToast.current) {
+        validationToast.current = false;
+        toast.clear();
+      }
     }
   }, [values]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -269,7 +346,7 @@ export function ProductFormScreen({ route, navigation }: Props) {
   const d = useMemo(() => derive(values, servingTypes, rates, seuilSS), [values, servingTypes, rates, seuilSS]);
 
   // Suggested prices follow the purchase price; Marge / Coeff services keep their value.
-  const costKey = `${d.purchaseHT}|${d.containerCl}|${values.tvaRate}|${values.customDoseCl}|${servingTypes.length}|${thresholds.good}`;
+  const costKey = `${d.costKnown}|${d.purchaseHT}|${d.containerCl}|${values.tvaRate}|${values.customDoseCl}|${servingTypes.length}|${thresholds.good}`;
   useEffect(() => {
     if (!hydrated) return;
     setValues((v) => {
@@ -323,9 +400,20 @@ export function ProductFormScreen({ route, navigation }: Props) {
     () =>
       navigation.addListener('beforeRemove', (e: any) => {
         if (allowLeave.current) return;
+        // A save in flight finishes here: leaving now would say « Brouillon
+        // conservé » and then jump to the saved product a few seconds later.
+        if (saving.current) {
+          e.preventDefault();
+          toast.info('Enregistrement en cours…');
+          return;
+        }
         const dirty = fingerprint(valuesRef.current) !== baseline.current;
-        if (!dirty || step !== 'form') return;
+        if (!dirty || step !== 'form') {
+          clearUndoToast();
+          return;
+        }
         if (!editing) {
+          clearUndoToast();
           // The draft keeps the work: save it now and say so.
           if (!draftWorthy(valuesRef.current)) return;
           saveProductDraft(user?.id, valuesRef.current.name.trim(), valuesRef.current);
@@ -335,7 +423,7 @@ export function ProductFormScreen({ route, navigation }: Props) {
         e.preventDefault();
         dialog
           .confirm({
-            title: 'Quitter sans enregistrer ?',
+            title: 'Quitter sans enregistrer ?',
             message: 'Vos modifications de ce produit seront perdues.',
             confirmLabel: 'Quitter sans enregistrer',
             cancelLabel: 'Continuer la modification',
@@ -345,17 +433,74 @@ export function ProductFormScreen({ route, navigation }: Props) {
           .then((ok) => {
             if (ok) {
               allowLeave.current = true;
+              clearUndoToast();
               navigation.dispatch(e.data.action);
             }
           });
       }),
-    [navigation, step, editing, user?.id],
+    [navigation, step, editing, user?.id, clearUndoToast],
   );
 
   // ─── Scan ────────────────────────────────────────────────────────────────
+  /**
+   * A read the user skipped (« Continuer sans attendre ») landed: fill only the
+   * fields that are still empty — the user's own entries always win — and say so.
+   * The quota it used is not wasted.
+   */
+  const applyLateScan = useCallback(
+    (res: BottleScanResult) => {
+      const cur = valuesRef.current;
+      const next: Partial<FormValues> = {};
+      const filled: string[] = [];
+      const name = res.name?.trim();
+      if (name && !cur.name.trim()) {
+        next.name = name;
+        filled.push('nom');
+      }
+      if (!cur.categoryId && res.category) {
+        const id = resolveCategoryId(categories, { category: res.category });
+        if (id && categories.some((c) => c.id === id)) {
+          next.categoryId = id;
+          categoryHint.current = { category: res.category };
+          filled.push('catégorie');
+        }
+      }
+      if (res.containerVolumeCl && res.containerVolumeCl > 0 && !containerTouched.current && cur.containerCl !== res.containerVolumeCl) {
+        next.containerCl = res.containerVolumeCl;
+        next.containerOther = false;
+        filled.push('contenance');
+      }
+      if (cur.degree === null && typeof res.alcoholDegree === 'number' && res.alcoholDegree > 0 && res.alcoholDegree <= 100) {
+        next.degree = res.alcoholDegree;
+        filled.push('degré');
+      }
+      if (cur.purchase === null && res.estimatedPriceHT && res.estimatedPriceHT > 0) {
+        next.purchase = round2(res.estimatedPriceHT);
+        filled.push('prix d’achat');
+      }
+      if (!filled.length) return;
+      // Re-check at apply time: a field typed meanwhile is never overwritten.
+      setValues((v) => ({
+        ...v,
+        ...(next.name && !v.name.trim() ? { name: next.name } : null),
+        ...(next.categoryId && !v.categoryId ? { categoryId: next.categoryId } : null),
+        ...(next.containerCl && !containerTouched.current ? { containerCl: next.containerCl, containerOther: false } : null),
+        ...(next.degree !== undefined && v.degree === null ? { degree: next.degree } : null),
+        ...(next.purchase !== undefined && v.purchase === null ? { purchase: next.purchase } : null),
+      }));
+      toast.success(`Étiquette lue${NBSP}: ${joinFr(filled)} pré-rempli${filled.length > 1 ? 's' : ''}`);
+    },
+    [categories],
+  );
+  const applyLateScanRef = useRef(applyLateScan);
+  applyLateScanRef.current = applyLateScan;
+
   const runScan = useCallback(
     async (img: PickedImage) => {
       const token = ++scanToken.current;
+      scanAbort.current?.abort();
+      lateScan.current = null;
+      setLateReading(false);
       setScanPhoto(img.uri);
       setScanResult(null);
       setScanError(null);
@@ -377,14 +522,32 @@ export function ProductFormScreen({ route, navigation }: Props) {
       setValues((v) => ({ ...v, photo: { imageUrl: prepared.imageUrl, thumbnailUrl: prepared.thumbnailUrl, changed: true, source: 'scan' } }));
       setPhotoReady(true);
       setPhase('reading');
+      const ctrl = new AbortController();
+      scanAbort.current = ctrl;
       try {
-        const res = await scanService.scanBottle(prepared.ocrBase64 as string);
+        const res = await scanService.scanBottle(prepared.ocrBase64 as string, { signal: ctrl.signal });
+        if (scanAbort.current === ctrl) scanAbort.current = null;
+        queryClient.invalidateQueries({ queryKey: ['scanQuota'] });
+        if (!mounted.current) return;
+        if (lateScan.current === token) {
+          lateScan.current = null;
+          setLateReading(false);
+          applyLateScanRef.current(res);
+          return;
+        }
         if (token !== scanToken.current) return;
         setScanResult(res);
         setPhase('result');
         haptics.success();
-        queryClient.invalidateQueries({ queryKey: ['scanQuota'] });
       } catch (err) {
+        if (scanAbort.current === ctrl) scanAbort.current = null;
+        if (!mounted.current || scanService.isScanCancelled(err)) return;
+        if (lateScan.current === token) {
+          // The user already moved on: a failed late read changes nothing.
+          lateScan.current = null;
+          setLateReading(false);
+          return;
+        }
         if (token !== scanToken.current) return;
         const info = scanService.describeScanError(err);
         setScanError({
@@ -431,27 +594,130 @@ export function ProductFormScreen({ route, navigation }: Props) {
     });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const continueFromScan = useCallback(() => {
-    scanToken.current++;
-    const res = scanResult;
-    if (res) {
-      categoryHint.current = { category: res.category };
-      setValues((v) => {
-        const next = applyPrefill(v, {
-          name: res.name || undefined,
-          category: res.category,
-          containerVolumeCl: res.containerVolumeCl,
-          alcoholDegree: res.alcoholDegree,
-          estimatedPriceHT: res.estimatedPriceHT,
-        }, categories);
-        return next;
+  const resumeFrom = useCallback(
+    (form: FormValues) => {
+      scanToken.current++;
+      scanAbort.current?.abort();
+      const v = { ...emptyValues(user), ...form, photo: form.photo ?? NO_PHOTO };
+      tvaTouched.current = true;
+      containerTouched.current = true;
+      setValues(v);
+      setDraftSaved(true);
+      setStep('form');
+    },
+    [user],
+  );
+
+  const resumeDraft = useCallback(() => {
+    if (draft) resumeFrom(draft.form);
+  }, [draft, resumeFrom]);
+
+  // Reloaded in the middle of a new product: put the work back on screen.
+  useEffect(() => {
+    if (!wasReload.current) return;
+    let cancelled = false;
+    getProductDraft<FormValues>(user?.id).then((dr) => {
+      if (cancelled || !dr || Date.now() - dr.savedAt > RELOAD_RESUME_MS) return;
+      resumeFrom(dr.form);
+      markUndoToast();
+      toast.info('Brouillon repris', {
+        action: {
+          label: 'Nouveau produit',
+          onPress: () => {
+            // The draft stays on the scan step's card: nothing is lost.
+            const fresh = emptyValues(user);
+            baseline.current = fingerprint(fresh);
+            prevValues.current = fresh;
+            tvaTouched.current = false;
+            containerTouched.current = false;
+            setValues(fresh);
+            setDraftSaved(false);
+            setPhase('intro');
+            setStep('scan');
+          },
+        },
       });
-    }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /**
+   * Starting a new product while a draft waits: say that the new one will
+   * replace it (it is overwritten as soon as the new form is saved as a draft)
+   * and offer to resume it instead. Resolves true to go on with the new product.
+   */
+  const confirmOverDraft = useCallback(async (): Promise<boolean> => {
+    if (!draft) return true;
+    const choice = await dialog.show<'new' | 'resume' | null>({
+      title: 'Un brouillon est en cours',
+      message: `« ${draft.name || 'Produit sans nom'} » n’est pas encore enregistré. Ce nouveau produit remplacera ce brouillon.`,
+      icon: 'document-text-outline',
+      actions: [
+        { label: 'Nouveau produit', value: 'new', style: 'primary' },
+        { label: 'Reprendre le brouillon', value: 'resume', style: 'secondary' },
+        { label: 'Annuler', value: null, style: 'cancel' },
+      ],
+    });
+    if (choice === 'resume') resumeDraft();
+    return choice === 'new';
+  }, [draft, resumeDraft]);
+
+  const prefillFromScan = useCallback(
+    (res: BottleScanResult) => {
+      categoryHint.current = { category: res.category };
+      setValues((v) =>
+        applyPrefill(
+          v,
+          {
+            name: res.name || undefined,
+            category: res.category,
+            containerVolumeCl: res.containerVolumeCl,
+            alcoholDegree: res.alcoholDegree,
+            estimatedPriceHT: res.estimatedPriceHT,
+          },
+          categories,
+        ),
+      );
+    },
+    [categories],
+  );
+
+  const continueFromScan = useCallback(async () => {
+    if (!(await confirmOverDraft())) return;
+    scanToken.current++;
+    if (scanResultRef.current) prefillFromScan(scanResultRef.current);
     setStep('form');
-  }, [scanResult, categories]);
+  }, [prefillFromScan, confirmOverDraft]);
+
+  /** « Continuer sans attendre »: go to the form now, the read fills the empty fields when it lands. */
+  const skipScan = useCallback(async () => {
+    const token = scanToken.current;
+    if (!(await confirmOverDraft())) return;
+    if (token !== scanToken.current) return; // retaken meanwhile
+    if (scanResultRef.current) {
+      // The read landed while the dialog was open: use it as « Continuer » would.
+      prefillFromScan(scanResultRef.current);
+    } else if (scanAbort.current) {
+      lateScan.current = token;
+      setLateReading(true);
+    }
+    scanToken.current++;
+    setStep('form');
+  }, [confirmOverDraft, prefillFromScan]);
+
+  const startManual = useCallback(async () => {
+    if (!(await confirmOverDraft())) return;
+    scanToken.current++;
+    scanAbort.current?.abort();
+    setStep('form');
+  }, [confirmOverDraft]);
 
   const retake = useCallback(() => {
     scanToken.current++;
+    scanAbort.current?.abort();
+    lateScan.current = null;
     setScanPhoto(null);
     setScanResult(null);
     setScanError(null);
@@ -460,28 +726,32 @@ export function ProductFormScreen({ route, navigation }: Props) {
     setPhase('intro');
   }, []);
 
-  const resumeDraft = useCallback(() => {
-    if (!draft) return;
-    const v = { ...emptyValues(user), ...draft.form, photo: draft.form.photo ?? NO_PHOTO };
-    tvaTouched.current = true;
-    setValues(v);
-    setDraftSaved(true);
-    setStep('form');
-  }, [draft, user]);
-
   const discardDraft = useCallback(() => {
+    const dr = draft;
+    if (!dr) return;
     clearProductDraft(user?.id);
     setDraft(null);
-    toast.info('Brouillon supprimé');
-  }, [user?.id]);
+    toast.clear();
+    markUndoToast();
+    toast.info('Brouillon supprimé', {
+      action: {
+        label: 'Annuler',
+        onPress: () => {
+          saveProductDraft(user?.id, dr.name, dr.form);
+          setDraft(dr);
+        },
+      },
+    });
+  }, [draft, user?.id, markUndoToast]);
 
   const pickCalc = useCallback(
-    (c: SavedCalc) => {
+    async (c: SavedCalc) => {
+      if (!(await confirmOverDraft())) return;
       categoryHint.current = { fiscalCategory: c.fiscalCategory };
       setValues((v) => applyPrefill(v, { name: c.name, fiscalCategory: c.fiscalCategory, prixHTHorsDroit: c.prixHTHorsDroit, volumeCl: c.volumeCl, degree: c.degree, prixHTAvecDroits: c.prixHTAvecDroits }, categories));
       setStep('form');
     },
-    [categories],
+    [categories, confirmOverDraft],
   );
 
   // ─── Photo in the form ───────────────────────────────────────────────────
@@ -517,8 +787,14 @@ export function ProductFormScreen({ route, navigation }: Props) {
   }, [values.photo.imageUrl]);
 
   const removePhoto = useCallback(() => {
+    const prev = valuesRef.current.photo;
     setValues((v) => ({ ...v, photo: { imageUrl: null, thumbnailUrl: null, changed: true, source: 'none' } }));
-  }, []);
+    toast.clear();
+    markUndoToast();
+    toast.info('Photo retirée', {
+      action: { label: 'Annuler', onPress: () => setValues((v) => (v.photo.imageUrl ? v : { ...v, photo: prev })) },
+    });
+  }, [markUndoToast]);
 
   // ─── Save ────────────────────────────────────────────────────────────────
   const scrollToField = useCallback((key: FieldKey | null) => {
@@ -536,10 +812,40 @@ export function ProductFormScreen({ route, navigation }: Props) {
       setErrors(check.fields);
       haptics.warning();
       scrollToField(check.first);
-      if (check.message) toast.error(check.message);
+      // One fresh toast (never queued behind a stale one): the field's own
+      // message, or « 3 champs à corriger » when there are several.
+      toast.clear();
+      if (check.message) {
+        toast.error(check.message);
+        validationToast.current = true;
+      }
       return;
     }
     saving.current = true;
+    clearUndoToast();
+    // Selling below cost is allowed, but never silently (a typo in a price).
+    const losses = lossServices(v, dv, servingTypes);
+    if (losses.length) {
+      const list = losses.map((l) => `« ${serviceName(l.key, v, servingTypes)} » (marge ${formatMargin(l.result.marginPercent)})`).join(', ');
+      haptics.warning();
+      const ok = await dialog.show<boolean>({
+        title: 'Prix inférieur au coût',
+        message: `${list} ${losses.length > 1 ? 'se vendent' : 'se vend'} à perte. Enregistrer quand même ?`,
+        icon: 'warning-outline',
+        tone: 'warn',
+        // No cancel action: the scrim and Android back resolve undefined, i.e. « Corriger ».
+        actions: [
+          { label: 'Corriger le prix', value: false, style: 'primary' },
+          { label: 'Enregistrer quand même', value: true, style: 'secondary' },
+        ],
+      });
+      if (!ok) {
+        saving.current = false;
+        setValues((cur) => (cur.services[losses[0].key] ? { ...cur, selected: losses[0].key } : cur));
+        scrollToField('services');
+        return;
+      }
+    }
     setErrors({});
     setSaveState('saving');
     const started = Date.now();
@@ -552,6 +858,12 @@ export function ProductFormScreen({ route, navigation }: Props) {
       if (!editing) clearProductDraft(user?.id);
       productService.refreshProductCaches(queryClient, saved);
       baseline.current = fingerprint(v);
+      if (!mounted.current) {
+        // The screen went away meanwhile (sign-out, deep link…): never navigate
+        // from it; the caches are fresh and the toast still confirms the save.
+        toast.success(`${saved.name} enregistré`);
+        return;
+      }
       const elapsed = Date.now() - started;
       if (elapsed < 400) await wait(400 - elapsed);
       setSaveState('success');
@@ -563,6 +875,7 @@ export function ProductFormScreen({ route, navigation }: Props) {
     } catch (err) {
       const info = describeSaveError(err, 'save');
       saving.current = false;
+      if (!mounted.current) return;
       setSaveState('idle');
       setErrors(info.fields);
       haptics.warning();
@@ -575,7 +888,7 @@ export function ProductFormScreen({ route, navigation }: Props) {
         icon: info.offline ? 'cloud-offline-outline' : 'alert-circle-outline',
       });
     }
-  }, [photoBusy, servingTypes, rates, seuilSS, productId, editing, user?.id, queryClient, navigation, scrollToField]);
+  }, [photoBusy, servingTypes, rates, seuilSS, productId, editing, user?.id, queryClient, navigation, scrollToField, clearUndoToast]);
 
   const remove = useCallback(async () => {
     if (!productId || deleting) return;
@@ -583,7 +896,7 @@ export function ProductFormScreen({ route, navigation }: Props) {
     const n = Object.keys(v.services).filter((k) => k !== '__dose').length;
     const name = v.name.trim() || 'Ce produit';
     const ok = await dialog.confirm({
-      title: 'Supprimer ce produit ?',
+      title: 'Supprimer ce produit ?',
       message:
         n > 0
           ? `${name} et ${n > 1 ? `ses ${n} services seront supprimés` : 'son service seront supprimés'}. Cette action est définitive.`
@@ -622,11 +935,9 @@ export function ProductFormScreen({ route, navigation }: Props) {
           draft={draft}
           savedCalcs={savedCalcs.length}
           onPick={onPick}
-          onManual={() => {
-            scanToken.current++;
-            setStep('form');
-          }}
+          onManual={startManual}
           onContinue={continueFromScan}
+          onSkip={skipScan}
           onRetake={retake}
           onResumeDraft={resumeDraft}
           onDiscardDraft={discardDraft}
@@ -643,18 +954,27 @@ export function ProductFormScreen({ route, navigation }: Props) {
   if (editing && !hydrated) {
     const status = (productQ.error as any)?.response?.status;
     const offline = !isOnline() || productQ.fetchStatus === 'paused';
+    const failed = productQ.isError || offline;
     return (
-      <Screen header={<NavBar title={title} />}>
-        {productQ.isError || offline ? (
+      <Screen
+        header={<NavBar title={title} />}
+        // Same bar as the form, disabled: nothing pops in when the product arrives.
+        stickyFooter={
+          failed ? undefined : (
+            <StickyActionBar summary="Chargement…" primary={{ title: 'Enregistrer', icon: 'checkmark-circle', disabled: true }} />
+          )
+        }
+      >
+        {failed ? (
           <EmptyState
             variant={offline ? 'offline' : 'default'}
             icon={offline ? 'cloud-offline-outline' : 'alert-circle-outline'}
             title={offline ? 'Hors ligne' : status === 404 ? 'Produit introuvable' : 'Chargement impossible'}
             text={
               offline
-                ? 'La fiche s’affichera dès le retour du réseau : modifier un produit demande une connexion.'
+                ? 'La fiche s’affichera dès le retour du réseau : modifier un produit demande une connexion.'
                 : status === 404
-                  ? 'Ce produit n’existe plus : il a peut-être été supprimé depuis un autre appareil.'
+                  ? 'Ce produit n’existe plus : il a peut-être été supprimé depuis un autre appareil.'
                   : ((productQ.error as any)?.response?.data?.error as string) || 'Le produit n’a pas pu être chargé. Vérifiez votre connexion, puis réessayez.'
             }
             primary={status === 404 ? { label: 'Retour aux produits', icon: 'arrow-back', onPress: () => afterProductDeleted(navigation as any) } : { label: 'Réessayer', icon: 'refresh', onPress: () => productQ.refetch() }}
@@ -679,7 +999,7 @@ export function ProductFormScreen({ route, navigation }: Props) {
         sum.count === 0 ? (
           'Aucun service tarifé'
         ) : sum.margin === null ? (
-          `${plural(sum.count, 'service')} · prix à compléter`
+          `${plural(sum.count, 'service')} · ${sum.costKnown ? 'prix à compléter' : d.needsDegree ? 'degré à compléter' : 'prix d’achat à compléter'}`
         ) : (
           <Text style={[styles.summary, { color: zoneColor }]} numberOfLines={1} testID="sticky-summary">
             {plural(sum.count, 'service')} · marge{' '}
@@ -687,14 +1007,23 @@ export function ProductFormScreen({ route, navigation }: Props) {
               value={sum.margin}
               from={null}
               instant={live}
-              format={(n) => formatPercent(n)}
+              format={(n) => formatMargin(n)}
               style={[styles.summary, { color: zoneColor }]}
             />
           </Text>
         )
       }
       summaryZone={zone}
-      summaryRight={sum.coeff ? `Coeff ${formatCoeff(sum.coeff)}` : undefined}
+      summaryRight={
+        categoriesQ.isOffline ? (
+          <View style={styles.offline} accessibilityLabel="Hors ligne : l’enregistrement attendra le réseau">
+            <Ionicons name="cloud-offline-outline" size={15} color={palette.text3} />
+            <Text style={styles.offlineText}>Hors ligne</Text>
+          </View>
+        ) : sum.coeff ? (
+          `Coeff ${formatCoeff(sum.coeff)}`
+        ) : undefined
+      }
       primary={{
         title: 'Enregistrer',
         icon: 'checkmark-circle',
@@ -713,7 +1042,13 @@ export function ProductFormScreen({ route, navigation }: Props) {
         header={
           <NavBar
             title={title}
-            trailing={!editing && draftSaved ? <Badge variant="neutral" icon="checkmark-circle" label="Brouillon" size="sm" /> : undefined}
+            trailing={
+              lateReading ? (
+                <Badge variant="neutral" icon="scan-outline" label="Lecture…" size="sm" accessibilityLabel="Lecture de l’étiquette en cours" />
+              ) : !editing && draftSaved ? (
+                <Badge variant="neutral" icon="checkmark-circle" label="Brouillon" size="sm" />
+              ) : undefined
+            }
           />
         }
         stickyFooter={footer}
@@ -740,7 +1075,11 @@ export function ProductFormScreen({ route, navigation }: Props) {
                 <ChipRow
                   items={categories.map((c) => ({ key: c.id, label: c.name, icon: categoryIcon(c.slug) }))}
                   selectedKey={values.categoryId}
-                  onSelect={(categoryId) => patch({ categoryId })}
+                  onSelect={(categoryId) => {
+                    // « Prix hors droits » not on yet: its fiscal category follows the product category.
+                    const slug = categories.find((c) => c.id === categoryId)?.slug;
+                    patch(values.horsDroits ? { categoryId } : { categoryId, fiscalSlug: defaultFiscalSlug(slug) });
+                  }}
                   accessibilityLabel="Catégorie"
                 />
               ) : categoriesQ.isError ? (
@@ -790,6 +1129,9 @@ export function ProductFormScreen({ route, navigation }: Props) {
               setValues={setValues}
               servingTypes={servingTypes}
               loading={servingTypesQ.isLoading}
+              loadError={servingTypesQ.isError && !servingTypes.length}
+              onUndoToast={markUndoToast}
+              onRetry={() => servingTypesQ.refetch()}
               derived={d}
               thresholds={thresholds}
               error={errors.services}
@@ -830,5 +1172,7 @@ const styles = StyleSheet.create({
   inlineRetry: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
   inlineRetryText: { ...type.footnote, color: palette.text3, flexShrink: 1 },
   dangerZone: { marginTop: 28, alignItems: 'center' },
+  offline: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  offlineText: { ...type.footnoteStrong, color: palette.text3 },
   emptyState: { marginTop: 40 },
 });

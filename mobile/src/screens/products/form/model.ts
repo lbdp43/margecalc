@@ -14,13 +14,16 @@ import {
   User,
 } from '@margebar/shared';
 import type { ProductFormPrefs } from '../../../services/draft.service';
-import { NBSP, formatVolumeCl } from '../../../utils/format';
+import { NBSP, formatEuro, formatVolumeCl } from '../../../utils/format';
 import { FieldErrors, FieldKey } from './errors';
 import {
   CUSTOM_DOSE,
   FISCAL_TO_PRODUCT_CATEGORY,
+  PRICE_MAX,
+  PURCHASE_MAX,
   ServiceState,
   costPerDoseHT,
+  degreeMatters,
   modeValueFromPrice,
   round2,
   serviceResult,
@@ -162,7 +165,12 @@ export function applyPrefill(base: FormValues, p: ProductPrefill, categories: Ca
   return next;
 }
 
-/** Duties added to a « hors droits » price. */
+/**
+ * Duties added to a « hors droits » price. Null while they cannot be computed:
+ * no fiscal category, no container, or no degree for a category whose duties
+ * depend on it (beers, spirits, fortified wines) — never « +0,00 € » for a
+ * missing degree.
+ */
 export function dutiesFor(
   values: Pick<FormValues, 'horsDroits' | 'fiscalSlug' | 'purchase' | 'degree' | 'tvaRate'>,
   containerCl: number,
@@ -172,6 +180,7 @@ export function dutiesFor(
   if (!values.horsDroits) return null;
   const rate = rates.find((r) => r.slug === values.fiscalSlug);
   if (!rate || !(containerCl > 0)) return null;
+  if (degreeMatters(rate) && !(values.degree !== null && values.degree > 0)) return null;
   return calculateDroits(rate, containerCl, values.degree ?? 0, values.purchase ?? 0, values.tvaRate, seuilSS);
 }
 
@@ -251,6 +260,12 @@ export interface Derived {
   /** Purchase price HT per container, duties included. */
   purchaseHT: number;
   duties: DroitsResult | null;
+  /** Fiscal category of the « hors droits » entry (null when it is off or unknown). */
+  rate: Rate | null;
+  /** « Prix hors droits » is on and the duties wait for the degree. */
+  needsDegree: boolean;
+  /** The cost of a dose is known (a purchase price, and the duties when « hors droits »). */
+  costKnown: boolean;
   /** Dose (cl) of each enabled service. */
   doseOf: (key: string) => number;
   costOf: (key: string) => number;
@@ -259,6 +274,10 @@ export interface Derived {
 export function derive(values: FormValues, servingTypes: ServingType[], rates: Rate[], seuilSS?: number): Derived {
   const containerCl = values.containerCl && values.containerCl > 0 ? values.containerCl : 0;
   const duties = dutiesFor(values, containerCl, rates, seuilSS);
+  const rate = values.horsDroits ? rates.find((r) => r.slug === values.fiscalSlug) ?? null : null;
+  const needsDegree = !!rate && degreeMatters(rate) && !(values.degree !== null && values.degree > 0);
+  const hasPurchase = values.purchase !== null && isFinite(values.purchase) && values.purchase >= 0;
+  const costKnown = hasPurchase && (!values.horsDroits || !!duties);
   const purchaseHT = duties ? duties.prixHTAvecDroits : values.purchase ?? 0;
   const byId = new Map(servingTypes.map((s) => [s.id, s]));
   const doseOf = (key: string) => (key === CUSTOM_DOSE ? values.customDoseCl ?? 0 : byId.get(key)?.volumeCl ?? 0);
@@ -266,9 +285,19 @@ export function derive(values: FormValues, servingTypes: ServingType[], rates: R
     containerCl,
     purchaseHT,
     duties,
+    rate,
+    needsDegree,
+    costKnown,
     doseOf,
-    costOf: (key) => costPerDoseHT(purchaseHT, containerCl, doseOf(key)),
+    costOf: (key) => (costKnown ? costPerDoseHT(purchaseHT, containerCl, doseOf(key)) : 0),
   };
+}
+
+/** Margin of one enabled service (null while its price or cost is unknown). */
+export function resultOf(key: string, values: FormValues, d: Derived) {
+  const s = values.services[key];
+  if (!s || !d.costKnown) return null;
+  return serviceResult(d.purchaseHT, d.containerCl, values.tvaRate, d.doseOf(key), s.price);
 }
 
 /** Value shown in the pricing control for a service. */
@@ -317,25 +346,41 @@ export function validate(values: FormValues, d: Derived, servingTypes: ServingTy
   if (!(d.containerCl > 0)) fields.container = 'Indiquez la contenance du contenant.';
   if (values.purchase === null || !isFinite(values.purchase)) fields.purchase = 'Indiquez le prix d’achat HT (0 € si offert).';
   else if (values.purchase < 0) fields.purchase = 'Le prix d’achat ne peut pas être négatif.';
+  else if (values.purchase > PURCHASE_MAX || d.purchaseHT > PURCHASE_MAX) fields.purchase = purchaseMaxMessage();
   if (values.degree !== null && (values.degree < 0 || values.degree > 100)) fields.degree = 'Le degré doit être compris entre 0 et 100 % vol.';
-  if (values.horsDroits && !d.duties) fields.purchase = fields.purchase ?? 'Choisissez la catégorie fiscale pour calculer les droits.';
+  else if (d.needsDegree) fields.degree = DEGREE_FOR_DUTIES;
+  if (values.horsDroits && !d.rate) fields.purchase = fields.purchase ?? 'Choisissez la catégorie fiscale pour calculer les droits.';
 
   const keys = orderedServiceKeys(values, servingTypes);
   if (!keys.length) {
     fields.services = 'Choisissez au moins un service et son prix de vente.';
   } else {
-    const names = (list: string[]) => list.map((k) => `« ${serviceName(k, values, servingTypes)} »`).join(', ');
+    const names = (list: string[]) => list.map((k) => `« ${serviceName(k, values, servingTypes)} »`).join(', ');
     const noPrice = keys.filter((k) => !(values.services[k].price > 0));
+    const tooExpensive = keys.filter((k) => values.services[k].price > PRICE_MAX);
     const tooBig = d.containerCl > 0 ? keys.filter((k) => d.doseOf(k) > d.containerCl) : [];
     const noDose = keys.filter((k) => k === CUSTOM_DOSE && !(d.doseOf(k) > 0));
     if (noDose.length) fields.services = 'Indiquez la dose servie (en cl).';
     else if (noPrice.length) fields.services = `Indiquez un prix de vente pour ${names(noPrice)}.`;
+    else if (tooExpensive.length) fields.services = `${priceMaxMessage()} (${names(tooExpensive)}).`;
     else if (tooBig.length) {
       fields.services = `${names(tooBig)} dépasse${tooBig.length > 1 ? 'nt' : ''} la contenance (${formatVolumeCl(d.containerCl)}). Retirez ${tooBig.length > 1 ? 'ces services' : 'ce service'} ou changez de contenant.`;
     }
   }
   const first = ORDER.find((k) => fields[k]) ?? null;
-  return { fields, first, message: first ? fields[first] ?? null : null };
+  const count = Object.keys(fields).length;
+  return { fields, first, message: !first ? null : count > 1 ? `${count}${NBSP}champs à corriger` : fields[first] ?? null };
+}
+
+export const DEGREE_FOR_DUTIES = 'Indiquez le degré : il sert au calcul des droits.';
+export const purchaseMaxMessage = () => `Prix d’achat : ${formatEuro(PURCHASE_MAX, { decimals: 0 })} maximum.`;
+export const priceMaxMessage = () => `Prix de vente : ${formatEuro(PRICE_MAX, { decimals: 0 })} maximum`;
+
+/** Services sold below their cost (the save asks before writing them). */
+export function lossServices(values: FormValues, d: Derived, servingTypes: ServingType[]) {
+  return orderedServiceKeys(values, servingTypes)
+    .map((key) => ({ key, result: resultOf(key, values, d) }))
+    .filter((x): x is { key: string; result: NonNullable<ReturnType<typeof resultOf>> } => !!x.result && x.result.marginPercent < 0);
 }
 
 /** Body of POST/PUT /api/products — the product and ALL its services in one request. */
@@ -428,16 +473,16 @@ export function fingerprint(values: FormValues): string {
   ]);
 }
 
-/** Average margin and coefficient of the priced services (sticky bar summary). */
+/**
+ * Sticky bar summary: the margin and coefficient of the PRIMARY service (the
+ * first in API order), i.e. the numbers the detail, the list badge and the
+ * dashboard show once the product is saved.
+ */
 export function summaryOf(values: FormValues, d: Derived, servingTypes: ServingType[]) {
   const keys = orderedServiceKeys(values, servingTypes);
-  const results = keys
-    .map((k) => serviceResult(d.purchaseHT, d.containerCl, values.tvaRate, d.doseOf(k), values.services[k].price))
-    .filter((r): r is NonNullable<typeof r> => !!r);
   const n = keys.length;
-  if (!results.length) return { count: n, margin: null as number | null, coeff: null as number | null };
-  const margin = results.reduce((a, r) => a + r.marginPercent, 0) / results.length;
-  const coeffs = results.map((r) => (r.costPerServingHT > 0 ? r.sellingPriceHT / r.costPerServingHT : 0)).filter((c) => c > 0);
-  const coeff = coeffs.length ? coeffs.reduce((a, c) => a + c, 0) / coeffs.length : null;
-  return { count: n, margin, coeff };
+  const r = keys.length ? resultOf(keys[0], values, d) : null;
+  if (!r) return { count: n, margin: null as number | null, coeff: null as number | null, costKnown: d.costKnown };
+  const coeff = r.costPerServingHT > 0 ? r.sellingPriceHT / r.costPerServingHT : null;
+  return { count: n, margin: r.marginPercent, coeff, costKnown: d.costKnown };
 }

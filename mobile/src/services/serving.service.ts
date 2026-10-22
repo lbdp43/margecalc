@@ -24,11 +24,6 @@ export async function deleteServingType(id: string): Promise<void> {
   await api.delete(`/servings/${id}`);
 }
 
-export async function getProductServings(productId: string): Promise<ServingMarginResult[]> {
-  const res = await api.get<ServingMarginResult[]>(`/products/${productId}/servings`);
-  return res.data;
-}
-
 /**
  * Replaces the product's FULL set of services (those not sent are deleted) and
  * re-syncs the product's headline price/dose to the primary service.

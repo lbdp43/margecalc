@@ -53,12 +53,28 @@ export function categoryStats(products: ProductWithMargin[]): CategoryStat[] {
     .sort((a, b) => b.avg - a.avg || b.count - a.count);
 }
 
-/** Best `n` margins (descending) and worst `n` (ascending). */
-export function topFlop(products: ProductWithMargin[], n = 5): { top: ProductWithMargin[]; flop: ProductWithMargin[] } {
-  const sorted = withMargin(products).sort((a, b) => (marginOf(b) as number) - (marginOf(a) as number));
+/** Products sorted by margin, best first. */
+export function byMargin(products: ProductWithMargin[]): ProductWithMargin[] {
+  return withMargin(products).sort((a, b) => (marginOf(b) as number) - (marginOf(a) as number));
+}
+
+/**
+ * Top & flop, split at the user's objective so the two lists never share a
+ * product: Top = the best `n` at or above the objective (descending), Flop =
+ * the worst `n` below it (ascending). Either list can be empty.
+ */
+export function topFlop(
+  products: ProductWithMargin[],
+  objective: number,
+  n = 5,
+): { top: ProductWithMargin[]; flop: ProductWithMargin[] } {
+  const sorted = byMargin(products);
   return {
-    top: sorted.slice(0, n),
-    flop: sorted.slice(-n).reverse(),
+    top: sorted.filter((p) => (marginOf(p) as number) >= objective).slice(0, n),
+    flop: sorted
+      .filter((p) => (marginOf(p) as number) < objective)
+      .reverse()
+      .slice(0, n),
   };
 }
 

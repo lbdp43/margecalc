@@ -20,14 +20,16 @@ export function HelpSection({ index }: { index: number }) {
         <ListRow
           icon="chatbubble-ellipses-outline"
           title="Écrire à l’équipe"
-          subtitle="Un bug, une idée, une question : réponse dans l’app"
+          subtitle="Bug, idée, question"
+          subtitleLines={1}
           onPress={() => setOpen('new')}
           testID="settings-feedback"
         />
         <ListRow
           icon="file-tray-full-outline"
           title="Mes demandes"
-          subtitle={count ? `${plural(count, 'nouvelle réponse', 'nouvelles réponses')} de l’équipe` : 'Vos messages et nos réponses'}
+          subtitle={count ? plural(count, 'nouvelle réponse', 'nouvelles réponses') : 'Vos messages et nos réponses'}
+          subtitleLines={1}
           right={<PillChevron count={count} />}
           onPress={() => setOpen('mine')}
           accessibilityLabel={`Mes demandes${count ? `, ${plural(count, 'nouvelle réponse', 'nouvelles réponses')}` : ''}`}

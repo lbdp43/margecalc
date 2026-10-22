@@ -46,11 +46,15 @@ export function readableError(err: unknown, fallback: string): ReadableError {
   return { message, fields, offline: false, status };
 }
 
-const strip = (s: string) =>
+/** Lower case without accents (« Bière » → « biere »), for searches and duplicate checks. */
+export const strip = (s: string) =>
   s
     .toLowerCase()
     .normalize('NFD')
     .replace(/[̀-ͯ]/g, '');
+
+/** Same name, ignoring case, accents and extra spaces. */
+export const sameName = (a: string, b: string) => strip(a.replace(/\s+/g, ' ').trim()) === strip(b.replace(/\s+/g, ' ').trim());
 
 /** Accent- and case-insensitive « contains ». */
 export function matches(haystack: Array<string | null | undefined>, query: string): boolean {
@@ -92,6 +96,21 @@ export function formatDateTime(iso: string | number | Date | null | undefined): 
   if (isNaN(d.getTime())) return '–';
   const time = d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
   return `${formatDate(d)} à ${time}`;
+}
+
+/** « 22 octobre 2026 » */
+export function formatLongDate(iso: string | null | undefined): string {
+  if (!iso) return '–';
+  const d = new Date(iso);
+  return isNaN(d.getTime()) ? '–' : d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
+}
+
+/** « 22 oct. à 09:12 » */
+export function formatShortDateTime(iso: string | null | undefined): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '';
+  return `${d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })} à ${d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`;
 }
 
 /** « à l’instant », « il y a 5 min », « il y a 3 j »… */

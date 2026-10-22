@@ -17,6 +17,9 @@ import { assertOnline, clearCache, setCache } from './offline';
  * inline to createProduct / updateProduct (applied atomically by the API).
  */
 
+/** The admin « Tous les produits » list (Réglages): it shows every user's products. */
+const ADMIN_PRODUCTS = ['admin', 'products'] as const;
+
 /** Query keys shared by the list, the detail and the form. */
 export const productKeys = {
   list: ['products'] as const,
@@ -49,7 +52,7 @@ export async function updateProduct(id: string, data: Partial<CreateProductInput
 }
 
 export async function deleteProduct(id: string): Promise<void> {
-  assertOnline('Pas de connexion : le produit n’a pas été supprimé. Réessayez une fois connecté.');
+  assertOnline('Pas de connexion : le produit n’a pas été supprimé. Réessayez une fois connecté.');
   await api.delete(`/products/${id}`);
 }
 
@@ -59,7 +62,7 @@ export async function deleteProduct(id: string): Promise<void> {
  * imported the API answers 422 with the same body: it is returned as is.
  */
 export async function importProducts(input: ImportProductsInput): Promise<ImportProductsResult> {
-  assertOnline('Pas de connexion : rien n’a été importé. Réessayez une fois connecté.');
+  assertOnline('Pas de connexion : rien n’a été importé. Réessayez une fois connecté.');
   try {
     const res = await api.post<ImportProductsResult>('/products/import', input, { timeout: 60000 });
     return res.data;
@@ -86,7 +89,8 @@ export async function getPriceHistory(productId: string): Promise<PriceHistoryEn
 
 /**
  * After a save: put the fresh product in the cache (the detail shows it at once)
- * and refetch everything that depends on it (RC3).
+ * and refetch everything that depends on it (RC3). The persisted offline copy
+ * keeps the thumbnail only (see offline.ts setCache).
  */
 export function refreshProductCaches(queryClient: QueryClient, saved: ProductWithMargin): void {
   const id = saved.id;
@@ -97,6 +101,7 @@ export function refreshProductCaches(queryClient: QueryClient, saved: ProductWit
   queryClient.invalidateQueries({ queryKey: productKeys.detail(id) });
   queryClient.invalidateQueries({ queryKey: productKeys.servings(id) });
   queryClient.invalidateQueries({ queryKey: productKeys.priceHistory(id) });
+  queryClient.invalidateQueries({ queryKey: ADMIN_PRODUCTS });
 }
 
 /** After a delete: drop every cached trace of the product, then refetch the lists (RC7). */
@@ -107,4 +112,5 @@ export function forgetProduct(queryClient: QueryClient, id: string): void {
   clearCache(JSON.stringify(productKeys.detail(id))).catch(() => {});
   clearCache(JSON.stringify(productKeys.servings(id))).catch(() => {});
   queryClient.invalidateQueries({ queryKey: productKeys.list });
+  queryClient.invalidateQueries({ queryKey: ADMIN_PRODUCTS });
 }

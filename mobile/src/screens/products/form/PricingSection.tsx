@@ -22,25 +22,30 @@ import {
   Slider,
   SwapFade,
   dialog,
+  toast,
 } from '../../../components/ui';
 import type { ChipItem } from '../../../components/ui';
 import { servingIconName } from '../../../components/ui/ServingTypeIcon';
 import { marginColors, palette, radius, type } from '../../../theme';
 import { getMarginZone, MarginThresholds } from '../../../utils/marginThresholds';
-import { clamp, formatEuro, formatNumber, formatPercent, formatVolumeCl, NBSP } from '../../../utils/format';
+import { NBSP, clamp, formatCoeff, formatEuro, formatPercent, formatVolumeCl, roundToStep } from '../../../utils/format';
 import { ControlRow, FieldError } from './FieldBits';
-import { Derived, FormValues, orderedServiceKeys, serviceName, shownModeValue } from './model';
+import { Derived, FormValues, orderedServiceKeys, priceMaxMessage, resultOf, serviceName, shownModeValue } from './model';
 import {
   CUSTOM_DOSE,
+  PRICE_MAX,
   PriceMode,
   ServiceState,
+  TYPING_MAX,
   dosesSentence,
+  formatCount,
+  formatMargin,
   priceForMargin,
   priceFromMode,
   pricingSetup,
   round2,
   serviceNoun,
-  serviceResult,
+  soldWhole,
   suggestedPrice,
   tvaLabel,
 } from './pricing';
@@ -51,30 +56,53 @@ const MODES: { key: PriceMode; label: string; hint: string; accessibilityLabel: 
   { key: 'coeff', label: 'Coeff', hint: '×', accessibilityLabel: 'Saisir le coefficient' },
 ];
 
+/** A second tap on « Retirer » within this window is the same tap (the next card mounts under the finger). */
+const REMOVE_GUARD_MS = 600;
+
 interface PricingSectionProps {
   values: FormValues;
   setValues: React.Dispatch<React.SetStateAction<FormValues>>;
   servingTypes: ServingType[];
   loading: boolean;
+  /** The service types could not be loaded (and none are cached). */
+  loadError?: boolean;
+  onRetry?: () => void;
   derived: Derived;
   thresholds: MarginThresholds;
   error?: string;
   /** Sliding / typing: lets the sticky summary update without tweening. */
   onLiveChange?: (live: boolean) => void;
+  /** An « Annuler » toast was shown (the screen clears it when the form goes away). */
+  onUndoToast?: () => void;
 }
 
-/** Meta of the section header: « 14 verres par bouteille ». */
+/** Meta of the section header: « 14 verres par bouteille », « Vendu à l’unité ». */
 export function pricingMeta(values: FormValues, d: Derived, servingTypes: ServingType[]): string | null {
   const key = values.selected && values.services[values.selected] ? values.selected : null;
   if (!key) return null;
   const st = servingTypes.find((s) => s.id === key);
-  const whole = key === CUSTOM_DOSE && d.containerCl > 0 && d.doseOf(key) >= d.containerCl;
-  return dosesSentence(d.containerCl, d.doseOf(key), serviceNoun(key === CUSTOM_DOSE ? (whole ? 'bouteille' : 'dose') : st?.name));
+  return dosesSentence(d.containerCl, d.doseOf(key), serviceNoun(key === CUSTOM_DOSE ? 'dose' : st?.name));
 }
 
-export function PricingSection({ values, setValues, servingTypes, loading, derived: d, thresholds: t, error, onLiveChange }: PricingSectionProps) {
+/** Tile amounts: no cents once they stop fitting (« 1 250 € », « 102 € » for a total). */
+const tileEuro = (n: number, wholeFrom = 1000) => formatEuro(n, { decimals: Math.abs(n) >= wholeFrom ? 0 : 2 });
+
+export function PricingSection({
+  values,
+  setValues,
+  servingTypes,
+  loading,
+  loadError,
+  onRetry,
+  derived: d,
+  thresholds: t,
+  error,
+  onLiveChange,
+  onUndoToast,
+}: PricingSectionProps) {
   const tva = values.tvaRate;
   const lastMode = useRef<PriceMode>('price');
+  const lastRemove = useRef(0);
   const enabled = orderedServiceKeys(values, servingTypes);
   const selected = values.selected && values.services[values.selected] ? values.selected : enabled[0] ?? null;
 
@@ -118,12 +146,12 @@ export function PricingSection({ values, setValues, servingTypes, loading, deriv
         }
         const containerCl = v.containerCl ?? 0;
         const dose = key === CUSTOM_DOSE ? customDoseCl ?? 0 : servingTypes.find((s) => s.id === key)?.volumeCl ?? 0;
-        const cost = containerCl > 0 && dose > 0 ? (d.purchaseHT * dose) / containerCl : 0;
+        const cost = d.costKnown && containerCl > 0 && dose > 0 ? (d.purchaseHT * dose) / containerCl : 0;
         services[key] = { price: suggestedPrice(cost, v.tvaRate, t.good), touched: false, mode: lastMode.current, modeValue: null };
         return { ...v, services, selected: key, customDoseCl };
       });
     },
-    [setValues, servingTypes, d.purchaseHT, t.good],
+    [setValues, servingTypes, d.costKnown, d.purchaseHT, t.good],
   );
 
   const onSelect = useCallback(
@@ -136,8 +164,8 @@ export function PricingSection({ values, setValues, servingTypes, loading, deriv
       const hasReal = Object.keys(values.services).some((k) => k !== CUSTOM_DOSE);
       if (key === CUSTOM_DOSE && hasReal) {
         const ok = await dialog.confirm({
-          title: 'Remplacer les services ?',
-          message: 'Une dose libre se vend seule : les services déjà tarifés seront retirés de ce produit.',
+          title: 'Remplacer les services ?',
+          message: 'Une dose libre se vend seule : les services déjà tarifés seront retirés de ce produit.',
           confirmLabel: 'Remplacer',
         });
         if (!ok) return;
@@ -146,8 +174,8 @@ export function PricingSection({ values, setValues, servingTypes, loading, deriv
       }
       if (key !== CUSTOM_DOSE && hasCustom) {
         const ok = await dialog.confirm({
-          title: 'Remplacer la dose libre ?',
-          message: `« ${serviceName(key, values, servingTypes)} » remplacera la dose libre de ce produit.`,
+          title: 'Remplacer la dose libre ?',
+          message: `« ${serviceName(key, values, servingTypes)} » remplacera la dose libre de ce produit.`,
           confirmLabel: 'Remplacer',
         });
         if (!ok) return;
@@ -159,6 +187,43 @@ export function PricingSection({ values, setValues, servingTypes, loading, deriv
     [values, setValues, enable, servingTypes],
   );
 
+  // Removing is reversible (toast « Annuler ») and a quick double tap removes ONE service.
+  const removeService = useCallback(
+    (key: string) => {
+      const now = Date.now();
+      if (now - lastRemove.current < REMOVE_GUARD_MS) return;
+      const removed = values.services[key];
+      if (!removed) return;
+      lastRemove.current = now;
+      const name = serviceName(key, values, servingTypes);
+      const doseCl = values.customDoseCl;
+      setValues((v) => {
+        if (!v.services[key]) return v;
+        const services = { ...v.services };
+        delete services[key];
+        const rest = orderedServiceKeys({ ...v, services }, servingTypes);
+        return { ...v, services, selected: rest[0] ?? null };
+      });
+      const restore = () =>
+        setValues((v) => {
+          if (v.services[key]) return v;
+          // A free dose sells alone: never bring it back next to services (or the reverse).
+          const conflict = key === CUSTOM_DOSE ? Object.keys(v.services).some((k) => k !== CUSTOM_DOSE) : !!v.services[CUSTOM_DOSE];
+          if (conflict) return v;
+          return {
+            ...v,
+            services: { ...v.services, [key]: removed },
+            selected: key,
+            customDoseCl: key === CUSTOM_DOSE ? doseCl : v.customDoseCl,
+          };
+        });
+      toast.clear();
+      onUndoToast?.();
+      toast.info(`« ${name} » retiré`, { action: { label: 'Annuler', onPress: restore } });
+    },
+    [values, servingTypes, setValues, onUndoToast],
+  );
+
   return (
     <View>
       {loading && !servingTypes.length ? (
@@ -168,7 +233,15 @@ export function PricingSection({ values, setValues, servingTypes, loading, deriv
           <Skeleton width={96} height={44} radius={22} />
         </View>
       ) : (
-        <ChipRow items={items} selectedKey={selected} onSelect={onSelect} accessibilityLabel="Services" />
+        <>
+          {loadError ? (
+            <View style={styles.inlineRetry} accessibilityLiveRegion="polite">
+              <Text style={styles.inlineRetryText}>Les services n’ont pas pu être chargés.</Text>
+              <Button title="Réessayer" variant="tonal" size="sm" icon="refresh" onPress={onRetry} testID="services-retry" />
+            </View>
+          ) : null}
+          <ChipRow items={items} selectedKey={selected} onSelect={onSelect} accessibilityLabel="Services" />
+        </>
       )}
       <FieldError message={error} />
 
@@ -185,6 +258,7 @@ export function PricingSection({ values, setValues, servingTypes, loading, deriv
           onModeChange={(m) => {
             lastMode.current = m;
           }}
+          onRemove={removeService}
           onLiveChange={onLiveChange}
         />
       ) : (
@@ -192,9 +266,11 @@ export function PricingSection({ values, setValues, servingTypes, loading, deriv
           <View style={styles.emptyIcon}>
             <Ionicons name="wine-outline" size={24} color={palette.em700} />
           </View>
-          <Text style={styles.emptyTitle}>Comment le servez-vous ?</Text>
+          <Text style={styles.emptyTitle}>Comment le servez-vous ?</Text>
           <Text style={styles.emptyText}>
-            Choisissez un ou plusieurs services ci-dessus. Le prix de vente, la marge et le gain s’affichent ici, en direct.
+            {loadError
+              ? 'Réessayez de charger les services (verre, shot, pinte…), ou vendez-le à la dose libre avec « Autre dose ».'
+              : 'Choisissez un ou plusieurs services ci-dessus. Le prix de vente, la marge et le gain s’affichent ici, en direct.'}
           </Text>
         </Card>
       )}
@@ -211,12 +287,14 @@ interface ServicePricingProps {
   t: MarginThresholds;
   tva: number;
   onModeChange: (m: PriceMode) => void;
+  onRemove: (key: string) => void;
   onLiveChange?: (live: boolean) => void;
 }
 
-function ServicePricing({ serviceKey: key, values, setValues, servingTypes, d, t, tva, onModeChange, onLiveChange }: ServicePricingProps) {
+function ServicePricing({ serviceKey: key, values, setValues, servingTypes, d, t, tva, onModeChange, onRemove, onLiveChange }: ServicePricingProps) {
   const s = values.services[key];
-  const { width: winW } = useWindowDimensions();
+  const { width: winW, height: winH } = useWindowDimensions();
+  const short = winH < 740;
   const [dragging, setDragging] = useState(false);
   const anchor = useRef(s.price);
   if (!dragging) anchor.current = s.price;
@@ -224,15 +302,38 @@ function ServicePricing({ serviceKey: key, values, setValues, servingTypes, d, t
   const dose = d.doseOf(key);
   const cost = d.costOf(key);
   const st = servingTypes.find((x) => x.id === key);
-  const noun = serviceNoun(key === CUSTOM_DOSE ? (d.containerCl > 0 && dose >= d.containerCl ? 'bouteille' : 'dose') : st?.name);
-  const result = serviceResult(d.purchaseHT, d.containerCl, tva, dose, s.price);
+  const whole = soldWhole(d.containerCl, dose);
+  const noun = serviceNoun(key === CUSTOM_DOSE ? (whole ? 'bouteille' : 'dose') : st?.name);
+  const result = resultOf(key, values, d);
   const zone = result ? getMarginZone(result.marginPercent, t) : undefined;
   const setup = pricingSetup(s.mode, cost, tva, t, anchor.current);
   const needsCost = s.mode !== 'price' && !(cost > 0);
   const shown = shownModeValue(s, cost, tva);
   const objective = priceForMargin(cost, tva, t.good);
   const glasses = d.containerCl > 0 && dose > 0 ? d.containerCl / dose : 0;
-  const glassesText = glasses > 0 ? `${formatNumber(glasses, Number.isInteger(Math.round(glasses * 10) / 10) ? 0 : 1)}${NBSP}${glasses >= 2 ? noun.many : noun.one}` : undefined;
+  const glassesText = glasses > 0 ? `${formatCount(glasses)}${NBSP}${glasses >= 2 ? noun.many : noun.one}` : undefined;
+  const priceHT = s.price > 0 ? s.price / (1 + tva) : null;
+  const coeff = result && result.costPerServingHT > 0 ? result.sellingPriceHT / result.costPerServingHT : null;
+  const objectiveText = formatPercent(t.good, Number.isInteger(t.good) ? 0 : 1);
+  const priceError = s.mode === 'price' && s.price > PRICE_MAX ? `${priceMaxMessage()}.` : null;
+
+  // Narrow phones: tighter tiles at 340–379 px, two columns below 340 px, so no value is cut.
+  const columns = winW < 340 ? 2 : 3;
+  const tileStyle = winW < 380 && columns === 3 ? styles.tileCompact : undefined;
+
+  // A value below the track (a price under the cost, a negative margin) extends
+  // the track instead of parking the knob on a price that was never set. The
+  // low end is frozen while dragging so the track never moves under the finger.
+  const anchorShown = useRef(shown);
+  if (!dragging) anchorShown.current = shown;
+  let sliderMin = setup.min;
+  const low = anchorShown.current;
+  if (!needsCost && isFinite(low) && low < setup.min) {
+    if (s.mode === 'price') sliderMin = Math.max(0, Math.floor(low * 2) / 2);
+    else if (s.mode === 'margin') sliderMin = Math.max(-100, Math.floor(low / 5) * 5);
+    else sliderMin = Math.max(0, Math.floor(low * 10) / 10);
+  }
+  const sliderValue = roundToStep(clamp(isFinite(shown) ? shown : sliderMin, sliderMin, setup.max), setup.step);
 
   const update = useCallback(
     (patch: Partial<ServiceState>) =>
@@ -243,7 +344,7 @@ function ServicePricing({ serviceKey: key, values, setValues, servingTypes, d, t
   const onValue = useCallback(
     (n: number) => {
       if (s.mode === 'price') {
-        update({ price: round2(n), touched: true, modeValue: null });
+        update({ price: round2(Math.max(0, n)), touched: true, modeValue: null });
         return;
       }
       const price = round2(priceFromMode(s.mode, n, cost, tva));
@@ -253,37 +354,54 @@ function ServicePricing({ serviceKey: key, values, setValues, servingTypes, d, t
     [s.mode, cost, tva, update],
   );
 
-  const remove = () =>
-    setValues((v) => {
-      const services = { ...v.services };
-      delete services[key];
-      const rest = orderedServiceKeys({ ...v, services }, servingTypes);
-      return { ...v, services, selected: rest[0] ?? null };
-    });
+  const hint = d.needsDegree
+    ? 'Indiquez le degré pour calculer les droits, puis la marge.'
+    : cost > 0
+      ? `Dès ${formatEuro(objective)} TTC, ${noun.this} dépasse ${objectiveText} de marge.`
+      : needsCost
+        ? 'Indiquez le prix d’achat pour calculer en marge ou en coefficient.'
+        : 'Indiquez le prix d’achat pour voir la marge.';
 
-  const sliderValue = clamp(isFinite(shown) ? shown : setup.min, setup.min, setup.max);
+  const tiles = {
+    priceTTC: <ResultTile key="ttc" label="Prix TTC" value={s.price > 0 ? tileEuro(s.price) : '–'} caption={tvaLabel(tva)} style={tileStyle} />,
+    priceHT: <ResultTile key="ht" label="Prix HT" value={priceHT !== null ? tileEuro(priceHT) : '–'} caption={`HT · ${formatVolumeCl(dose)}`} style={tileStyle} />,
+    margin: (
+      <ResultTile
+        key="margin"
+        label="Marge"
+        value={result ? formatMargin(result.marginPercent) : '–'}
+        zone={zone}
+        highlight
+        caption={`${winW < 380 ? 'obj.' : 'objectif'} ${objectiveText}`}
+        style={tileStyle}
+      />
+    ),
+    cost: <ResultTile key="cost" label="Coût/dose" value={result ? tileEuro(result.costPerServingHT) : '–'} caption="HT" style={tileStyle} />,
+    gain: (
+      <ResultTile
+        key="gain"
+        label="Gain/dose"
+        value={result ? tileEuro(result.marginPerServingHT) : '–'}
+        valueColor={zone ? marginColors[zone].fg : undefined}
+        caption="HT"
+        style={tileStyle}
+      />
+    ),
+    coeff: <ResultTile key="coeff" label="Coeff" value={coeff ? formatCoeff(coeff) : '–'} caption="prix HT ÷ coût" style={tileStyle} />,
+    total: <ResultTile key="total" label="Gain total" value={result ? tileEuro(result.marginPerContainer, 100) : '–'} caption={glassesText} style={tileStyle} />,
+  };
+  // Graft 1: the answer above the control. On short phones only the compact
+  // strip (Marge · Gain/dose · Coeff) stays above, so the Marge tile is still in
+  // view while the thumb is on the slider; the rest moves below it.
+  const above = short
+    ? [tiles.margin, tiles.gain, tiles.coeff]
+    : [tiles.priceTTC, tiles.priceHT, tiles.margin, tiles.cost, tiles.gain, whole ? tiles.coeff : tiles.total];
+  const below = short ? (whole ? [tiles.priceTTC, tiles.priceHT, tiles.cost] : [tiles.priceHT, tiles.cost, tiles.total]) : null;
 
   return (
     <FadeIn offset={6} duration={160}>
-      {/* Graft 1: the answer above the control */}
-      <ResultGrid style={styles.tiles}>
-        <ResultTile label="Prix TTC" value={formatEuro(s.price)} caption={tvaLabel(tva)} />
-        <ResultTile label="Prix HT" value={result ? formatEuro(result.sellingPriceHT) : '–'} caption={`HT · ${formatVolumeCl(dose)}`} />
-        <ResultTile
-          label="Marge"
-          value={result ? formatPercent(result.marginPercent) : '–'}
-          zone={zone}
-          highlight
-          caption={`${winW < 380 ? 'obj.' : 'objectif'} ${formatPercent(t.good, 0)}`}
-        />
-        <ResultTile label="Coût/dose" value={result ? formatEuro(result.costPerServingHT) : '–'} caption="HT" />
-        <ResultTile
-          label="Gain/dose"
-          value={result ? formatEuro(result.marginPerServingHT) : '–'}
-          valueColor={zone ? marginColors[zone].fg : undefined}
-          caption="HT"
-        />
-        <ResultTile label="Gain total" value={result ? formatEuro(result.marginPerContainer) : '–'} caption={glassesText} />
+      <ResultGrid style={styles.tiles} columns={columns}>
+        {above}
       </ResultGrid>
 
       <Card style={styles.card} testID="pricing-card">
@@ -299,6 +417,7 @@ function ServicePricing({ serviceKey: key, values, setValues, servingTypes, d, t
                 decimals={1}
                 format={(n) => formatVolumeCl(n)}
                 suffix="cl"
+                placeholder="—"
                 accessibilityLabel="Dose servie en centilitres"
                 testID="field-dose"
               />
@@ -325,25 +444,29 @@ function ServicePricing({ serviceKey: key, values, setValues, servingTypes, d, t
           </View>
           <NumberInput
             size="large"
-            value={needsCost ? null : round2Mode(shown, setup.decimals)}
+            value={needsCost ? null : roundToStep(isFinite(shown) ? shown : 0, Math.pow(10, -setup.decimals))}
             onChange={onValue}
             step={setup.inputStep}
-            min={s.mode === 'price' ? 0.1 : setup.min}
-            max={s.mode === 'price' ? 10000 : setup.max}
+            // Prix: 0 stays 0 (validation names the service) and a typo above the
+            // maximum is reported, never clamped silently.
+            min={s.mode === 'price' ? 0 : setup.min}
+            max={s.mode === 'price' ? TYPING_MAX : setup.max}
             decimals={setup.decimals}
             format={setup.format}
             suffix={setup.suffix}
             disabled={needsCost}
-            placeholder={setup.format(0)}
+            placeholder="—"
             accessibilityLabel={`${setup.a11y}, ${serviceName(key, values, servingTypes)}`}
             onEditingChange={onLiveChange}
+            style={priceError ? styles.inputError : null}
             testID="pricing-input"
           />
+          <FieldError message={priceError} />
           <Slider
             style={styles.slider}
             value={sliderValue}
             onChange={onValue}
-            min={setup.min}
+            min={sliderMin}
             max={setup.max}
             step={setup.step}
             marker={needsCost ? undefined : setup.marker}
@@ -355,33 +478,35 @@ function ServicePricing({ serviceKey: key, values, setValues, servingTypes, d, t
               onLiveChange?.(v);
             }}
             accessibilityLabel={setup.a11y}
-            accessibilityValueText={setup.format(sliderValue)}
+            accessibilityValueText={isFinite(shown) ? setup.format(shown) : undefined}
             testID="pricing-slider"
           />
         </SwapFade>
 
         <View style={styles.hint}>
           <Ionicons
-            name={cost > 0 ? (result && result.marginPercent >= t.good ? 'checkmark-circle' : 'flag-outline') : 'information-circle-outline'}
+            name={d.needsDegree ? 'information-circle-outline' : cost > 0 ? (result && result.marginPercent >= t.good ? 'checkmark-circle' : 'flag-outline') : 'information-circle-outline'}
             size={18}
-            color={cost > 0 && result && result.marginPercent >= t.good ? palette.good : palette.text3}
+            color={!d.needsDegree && cost > 0 && result && result.marginPercent >= t.good ? palette.good : palette.text3}
           />
-          <Text style={styles.hintText}>
-            {cost > 0
-              ? `Dès ${formatEuro(objective)} TTC, ${noun.this} dépasse ${formatPercent(t.good, 0)} de marge.`
-              : needsCost
-                ? 'Indiquez le prix d’achat pour calculer en marge ou en coefficient.'
-                : 'Indiquez le prix d’achat pour voir la marge.'}
-          </Text>
+          <Text style={styles.hintText}>{hint}</Text>
         </View>
 
+        {below ? (
+          <ResultGrid style={styles.tilesBelow} columns={columns}>
+            {below}
+          </ResultGrid>
+        ) : null}
+
         <View style={styles.cardFoot}>
+          {/* Neutral, not red: removing a service is undoable; red stays for « Supprimer ce produit ». */}
           <Button
             title="Retirer ce service"
-            variant="destructive"
+            variant="text"
             size="sm"
-            icon="remove-circle-outline"
-            onPress={remove}
+            icon={<Ionicons name="remove-circle-outline" size={18} color={palette.text2} />}
+            textStyle={styles.removeText}
+            onPress={() => onRemove(key)}
             accessibilityLabel={`Retirer le service ${serviceName(key, values, servingTypes)}`}
             testID="service-remove"
           />
@@ -391,22 +516,20 @@ function ServicePricing({ serviceKey: key, values, setValues, servingTypes, d, t
   );
 }
 
-/** Keeps the stepper free of float noise (e.g. 64,99999 %). */
-function round2Mode(n: number, decimals: number): number {
-  if (!isFinite(n)) return 0;
-  const f = Math.pow(10, decimals);
-  return Math.round(n * f) / f;
-}
-
 const styles = StyleSheet.create({
   skeletonRow: { flexDirection: 'row', gap: 8 },
+  inlineRetry: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 12 },
+  inlineRetryText: { ...type.footnote, color: palette.text2, flexShrink: 1 },
   tiles: { marginTop: 14 },
+  tilesBelow: { marginTop: 14 },
+  tileCompact: { paddingHorizontal: 9 },
   card: { marginTop: 12 },
   doseRow: { marginHorizontal: -16, marginTop: -4, marginBottom: 8 },
   valueArea: { marginTop: 16 },
   valueHead: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: 8, marginBottom: 8, flexWrap: 'wrap' },
   valueLabel: { ...type.calloutStrong, color: palette.ink },
   valueMeta: { ...type.footnote, color: palette.text3 },
+  inputError: { borderRadius: radius.lg + 2, borderWidth: 2, borderColor: palette.bad, margin: -2 },
   slider: { marginTop: 18 },
   hint: {
     flexDirection: 'row',
@@ -420,6 +543,7 @@ const styles = StyleSheet.create({
   },
   hintText: { ...type.footnoteStrong, color: palette.text2, flexShrink: 1 },
   cardFoot: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 8, marginBottom: -8 },
+  removeText: { color: palette.text2 },
   empty: { marginTop: 14, alignItems: 'flex-start' },
   emptyIcon: { width: 44, height: 44, borderRadius: 14, backgroundColor: palette.em50, alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
   emptyTitle: { ...type.headline, color: palette.ink },

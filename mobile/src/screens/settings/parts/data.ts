@@ -3,10 +3,11 @@
  * the product form and the product list (['categories'], ['servingTypes'],
  * ['containers']) so a change made here shows up everywhere.
  */
-import { useQuery, useQueryClient, QueryClient } from '@tanstack/react-query';
-import { Category, CustomContainer, ServingType, User } from '@margebar/shared';
+import { useQuery, QueryClient } from '@tanstack/react-query';
+import { Category, CustomContainer, ProductWithMargin, ServingType, TVA_RATES, User } from '@margebar/shared';
 import { useOfflineQuery } from '../../../hooks/useOfflineQuery';
 import { api } from '../../../services/api';
+import * as productService from '../../../services/product.service';
 import * as servingService from '../../../services/serving.service';
 import * as containerService from '../../../services/container.service';
 import * as categoryService from '../../../services/category.service';
@@ -95,8 +96,55 @@ export function invalidateProducts(qc: QueryClient) {
   qc.invalidateQueries({ queryKey: ['products'] });
   qc.invalidateQueries({ queryKey: ['product'] });
   qc.invalidateQueries({ queryKey: ['productServings'] });
+  qc.invalidateQueries({ queryKey: ['admin', 'products'] });
 }
 
-export function useSettingsQueryClient() {
-  return useQueryClient();
+// ─── TVA of the existing catalogue (auto-entrepreneur switch) ──────────────
+export interface TvaPlan {
+  /** Products whose TVA changes, with their new rate. */
+  changes: { id: string; tvaRate: number }[];
+  total: number;
+}
+
+/**
+ * Which products change when the auto-entrepreneur mode changes:
+ * - on: every product with a TVA becomes 0 %;
+ * - off: the products at 0 % get the usual rate back (20 %, softs 10 %, the
+ *   product form's defaults). Products at 5,5 % or 10 % are left alone.
+ */
+export async function planTvaChange(autoEntrepreneur: boolean, defaultRate: number): Promise<TvaPlan> {
+  const products: ProductWithMargin[] = await productService.getProducts();
+  const changes: TvaPlan['changes'] = [];
+  for (const p of products) {
+    const current = Number(p.tvaRate) || 0;
+    if (autoEntrepreneur) {
+      if (current > 0) changes.push({ id: p.id, tvaRate: 0 });
+    } else if (current === 0) {
+      changes.push({ id: p.id, tvaRate: p.category?.slug === 'softs' ? TVA_RATES.RATE_10 : defaultRate });
+    }
+  }
+  return { changes, total: products.length };
+}
+
+/** Applies the plan (4 requests at a time). Returns how many products failed. */
+export async function applyTvaChange(qc: QueryClient, plan: TvaPlan): Promise<{ updated: number; failed: number; error?: unknown }> {
+  let next = 0;
+  let updated = 0;
+  let failed = 0;
+  let error: unknown;
+  const worker = async () => {
+    while (next < plan.changes.length) {
+      const c = plan.changes[next++];
+      try {
+        await productService.updateProduct(c.id, { tvaRate: c.tvaRate });
+        updated++;
+      } catch (err) {
+        failed++;
+        error = error ?? err;
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(4, plan.changes.length) }, worker));
+  invalidateProducts(qc);
+  return { updated, failed, error };
 }

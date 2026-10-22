@@ -1,19 +1,26 @@
-import type { BottleScanResult, ScanCategorySlug } from '@margebar/shared';
+import type { BottleScanResult } from '@margebar/shared';
 import { api } from './api';
 import { isNetworkError, isOnline, isTimeoutError } from './offline';
 
 /**
- * Free OCR (Tesseract on the server). Send a ~1 600 px JPEG for bottles and
- * ~2 000 px for invoices, as raw base64 or a data URI. A failed read answers
- * 422 { error: 'Lecture impossible : …', code } and does NOT use the quota.
+ * Free bottle OCR (Tesseract on the server). Send a ~1 600 px JPEG, as raw
+ * base64 or a data URI. A failed read answers 422 { error: 'Lecture
+ * impossible : …', code } and does NOT use the quota. (Invoices: see
+ * invoice.service.)
  */
 
 /** Bottle scan result (`POST /api/scan/bottle`). Kept as `ScanResult` for older imports. */
 export type ScanResult = BottleScanResult;
 
-export async function scanBottle(imageBase64: string): Promise<BottleScanResult> {
-  const res = await api.post<BottleScanResult>('/scan/bottle', { imageBase64 }, { timeout: 90000 });
+/** Pass `signal` to abandon the read (screen left, photo retaken). */
+export async function scanBottle(imageBase64: string, opts: { signal?: AbortSignal } = {}): Promise<BottleScanResult> {
+  const res = await api.post<BottleScanResult>('/scan/bottle', { imageBase64 }, { timeout: 90000, signal: opts.signal });
   return res.data;
+}
+
+/** True for a request abandoned on purpose (AbortController). */
+export function isScanCancelled(err: any): boolean {
+  return !!err && (err.name === 'CanceledError' || err.code === 'ERR_CANCELED' || err.name === 'AbortError');
 }
 
 export interface ScanQuota {
@@ -25,28 +32,6 @@ export interface ScanQuota {
 /** Daily scan quota (`GET /api/scan/quota`). */
 export async function getScanQuota(): Promise<ScanQuota> {
   const res = await api.get<ScanQuota>('/scan/quota', { timeout: 8000 });
-  return res.data;
-}
-
-export interface InvoiceProduct {
-  name: string;
-  category: ScanCategorySlug | string;
-  containerVolumeCl: number | null;
-  purchasePriceHT: number | null;
-  quantity: number;
-  alcoholDegree?: number | null;
-  confidence: number;
-}
-
-export interface InvoiceScanResult {
-  supplier: string;
-  invoiceDate: string | null;
-  products: InvoiceProduct[];
-  raw?: string;
-}
-
-export async function scanInvoice(imageBase64: string): Promise<InvoiceScanResult> {
-  const res = await api.post<InvoiceScanResult>('/scan/invoice', { imageBase64 }, { timeout: 150000 });
   return res.data;
 }
 
@@ -103,7 +88,7 @@ export function describeScanError(err: any): ScanErrorInfo {
     return {
       kind: 'unreadable',
       title: 'Étiquette illisible',
-      message: serverMessage ?? 'Lecture impossible : reprenez la photo de face, bien éclairée.',
+      message: serverMessage ?? 'Lecture impossible : reprenez la photo de face, bien éclairée.',
       retryable: true,
     };
   }

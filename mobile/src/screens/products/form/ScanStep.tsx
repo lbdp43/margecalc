@@ -12,14 +12,16 @@ import {
   Button,
   Card,
   FadeIn,
+  ListGroup,
   ListRow,
   NavBar,
   Screen,
   StickyActionBar,
+  SwapFade,
   ValueRow,
 } from '../../../components/ui';
 import { palette, radius, type } from '../../../theme';
-import { formatDegree, formatEuro, formatVolumeCl, NBSP } from '../../../utils/format';
+import { formatDegree, formatEuro, formatNumber, formatVolumeCl, NBSP } from '../../../utils/format';
 import type { ScanQuota } from '../../../services/scan.service';
 import { ScanFrame } from './ScanFrame';
 import type { PickSource } from './photo';
@@ -40,6 +42,8 @@ export interface ScanStepProps {
   onPick: (source: PickSource) => void;
   onManual: () => void;
   onContinue: () => void;
+  /** « Continuer sans attendre »: the read keeps going and fills the empty fields when it lands. */
+  onSkip: () => void;
   onRetake: () => void;
   onResumeDraft: () => void;
   onDiscardDraft: () => void;
@@ -54,55 +58,53 @@ export function ScanStep(props: ScanStepProps) {
   const bigFrame = Math.max(220, Math.min(380, winH - 476));
   const smallFrame = Math.max(180, Math.min(260, winH - 560));
 
-  let footer: React.ReactNode;
+  // One bar for every phase: its content cross-fades instead of the whole bar remounting.
+  let actions: React.ReactNode;
   if (phase === 'intro') {
-    footer = (
-      <StickyActionBar
-        key="intro"
-        primary={{ title: 'Prendre une photo', icon: 'camera-outline', onPress: () => props.onPick('camera'), haptic: 'tap', testID: 'scan-camera' }}
-      >
+    actions = (
+      <View style={styles.footStack}>
         <View style={styles.footRow}>
           <Button title="Choisir une image" variant="secondary" size="sm" icon={narrow ? undefined : 'images-outline'} onPress={() => props.onPick('library')} style={styles.footBtn} testID="scan-library" />
           <Button title="Saisir à la main" variant="tonal" size="sm" icon={narrow ? undefined : 'create-outline'} onPress={props.onManual} style={styles.footBtn} testID="scan-manual" />
         </View>
-      </StickyActionBar>
+        <Button title="Prendre une photo" icon="camera-outline" onPress={() => props.onPick('camera')} haptic="tap" testID="scan-camera" />
+      </View>
     );
   } else if (working) {
-    footer = (
-      <StickyActionBar
-        key="working"
-        primary={{
-          title: phase === 'reading' ? 'Continuer sans attendre' : 'Préparation de la photo…',
-          variant: 'tonal',
-          onPress: props.onContinue,
-          disabled: !props.photoReady,
-          testID: 'scan-skip',
-        }}
+    actions = (
+      <Button
+        title={phase === 'reading' ? 'Continuer sans attendre' : 'Préparation de la photo…'}
+        variant="tonal"
+        onPress={props.onSkip}
+        disabled={!props.photoReady}
+        testID="scan-skip"
       />
     );
   } else if (phase === 'result') {
-    footer = (
-      <StickyActionBar
-        key="result"
-        secondary={{ title: 'Reprendre', icon: 'camera-reverse-outline', onPress: props.onRetake }}
-        primary={{ title: 'Continuer', trailingIcon: 'arrow-forward', onPress: props.onContinue, testID: 'scan-continue' }}
-      />
+    actions = (
+      <View style={styles.footRow}>
+        <Button title="Reprendre" variant="secondary" icon="camera-reverse-outline" onPress={props.onRetake} style={{ flex: 1 }} />
+        <Button title="Continuer" trailingIcon="arrow-forward" onPress={props.onContinue} style={{ flex: 1.4 }} testID="scan-continue" />
+      </View>
     );
   } else {
-    footer = (
-      <StickyActionBar
-        key="error"
-        primary={{
-          title: photoUri ? 'Continuer sans lecture' : 'Saisir à la main',
-          trailingIcon: 'arrow-forward',
-          onPress: photoUri ? props.onContinue : props.onManual,
-          testID: 'scan-continue',
-        }}
-      >
+    actions = (
+      <View style={styles.footStack}>
         <Button title="Reprendre la photo" variant="secondary" size="sm" icon="camera-reverse-outline" onPress={props.onRetake} testID="scan-retake" />
-      </StickyActionBar>
+        <Button
+          title={photoUri ? 'Continuer sans lecture' : 'Saisir à la main'}
+          trailingIcon="arrow-forward"
+          onPress={photoUri ? props.onContinue : props.onManual}
+          testID="scan-continue"
+        />
+      </View>
     );
   }
+  const footer = (
+    <StickyActionBar>
+      <SwapFade value={working ? 'working' : phase}>{actions}</SwapFade>
+    </StickyActionBar>
+  );
 
   return (
     <Screen header={<NavBar title="Scanner un produit" />} stickyFooter={footer} testID="scan-step">
@@ -166,7 +168,16 @@ function Intro(props: ScanStepProps & { frameHeight: number }) {
                 </Text>
                 <View style={styles.draftActions}>
                   <Button title="Reprendre" variant="tonal" size="sm" icon="arrow-undo-outline" onPress={props.onResumeDraft} testID="draft-resume" />
-                  <Button title="Supprimer" variant="text" size="sm" onPress={props.onDiscardDraft} testID="draft-discard" />
+                  <Button
+                    title="Supprimer"
+                    variant="text"
+                    size="sm"
+                    icon={<Ionicons name="trash-outline" size={17} color={palette.bad} />}
+                    textStyle={{ color: palette.bad }}
+                    onPress={props.onDiscardDraft}
+                    accessibilityLabel="Supprimer le brouillon"
+                    testID="draft-discard"
+                  />
                 </View>
               </View>
             </View>
@@ -175,19 +186,11 @@ function Intro(props: ScanStepProps & { frameHeight: number }) {
       ) : null}
 
       <FadeIn index={draft ? 3 : 2}>
-        <Card padding={4} style={styles.tips}>
-          {TIPS.map((t, i) => (
-            <View key={t.title} style={[styles.tip, i < TIPS.length - 1 && styles.tipDivider]}>
-              <View style={styles.tipIcon}>
-                <Ionicons name={t.icon} size={20} color={palette.em700} />
-              </View>
-              <View style={styles.flex}>
-                <Text style={styles.tipTitle}>{t.title}</Text>
-                <Text style={styles.tipText}>{t.text}</Text>
-              </View>
-            </View>
+        <ListGroup style={styles.tips}>
+          {TIPS.map((t) => (
+            <ListRow key={t.title} icon={t.icon} title={t.title} subtitle={t.text} right="none" />
           ))}
-        </Card>
+        </ListGroup>
       </FadeIn>
 
       {props.savedCalcs > 0 ? (
@@ -209,7 +212,7 @@ function Intro(props: ScanStepProps & { frameHeight: number }) {
           <Text style={styles.quotaText}>
             {quota
               ? quota.remaining > 0
-                ? `Lecture gratuite · ${quota.remaining}${NBSP}sur${NBSP}${quota.limit} restantes aujourd’hui`
+                ? `Lecture gratuite · ${formatNumber(quota.remaining)}${NBSP}sur${NBSP}${formatNumber(quota.limit)} restantes aujourd’hui`
                 : 'Limite de lectures du jour atteinte · la photo reste utilisable'
               : 'Lecture gratuite · la photo reste sur votre fiche'}
           </Text>
@@ -246,8 +249,8 @@ function Progress({ phase }: { phase: ScanPhase }) {
 
   const steps: { label: string; state: 'done' | 'active' | 'todo' }[] = [
     { label: 'Photo préparée', state: phase === 'preparing' ? 'active' : 'done' },
+    // Two honest steps: the result screen that follows IS the pre-filled form preview.
     { label: 'Lecture de l’étiquette', state: phase === 'reading' ? 'active' : 'todo' },
-    { label: 'Pré-remplissage de la fiche', state: 'todo' },
   ];
   const headline = phase === 'preparing' ? 'Préparation de la photo…' : slow === 0 ? 'Lecture de l’étiquette…' : slow === 1 ? 'Encore un instant…' : 'La lecture prend plus de temps que prévu…';
 
@@ -256,7 +259,7 @@ function Progress({ phase }: { phase: ScanPhase }) {
       <Text style={styles.title}>{headline}</Text>
       <Text style={styles.lead}>
         {phase === 'preparing'
-          ? 'La photo est réduite avant l’envoi : rapide et léger.'
+          ? 'La photo est réduite avant l’envoi : rapide et léger.'
           : 'Vous pourrez tout vérifier et corriger avant d’enregistrer.'}
       </Text>
       <Card padding={4} style={styles.tips}>
@@ -264,7 +267,7 @@ function Progress({ phase }: { phase: ScanPhase }) {
           <View key={s.label} style={[styles.step, i < steps.length - 1 && styles.tipDivider]}>
             <View style={[styles.stepDot, s.state === 'done' && styles.stepDone, s.state === 'todo' && styles.stepTodo]}>
               {s.state === 'done' ? (
-                <Ionicons name="checkmark" size={14} color="#FFFFFF" />
+                <Ionicons name="checkmark" size={14} color={palette.onEmerald} />
               ) : s.state === 'active' ? (
                 <ActivityIndicator size="small" color={palette.em700} />
               ) : null}
@@ -332,7 +335,7 @@ function ErrorCard({ error, hasPhoto }: { error: ScanStepProps['error']; hasPhot
         <View style={styles.errorNote}>
           <Ionicons name={hasPhoto ? 'image-outline' : 'create-outline'} size={16} color={palette.em700} />
           <Text style={styles.errorNoteText}>
-            {hasPhoto ? 'La photo est conservée sur la fiche : rien n’est perdu.' : 'Vous pouvez remplir la fiche à la main.'}
+            {hasPhoto ? 'La photo est conservée sur la fiche : rien n’est perdu.' : 'Vous pouvez remplir la fiche à la main.'}
           </Text>
         </View>
       </Card>
@@ -346,13 +349,10 @@ const styles = StyleSheet.create({
   title: { ...type.title2, color: palette.ink, marginTop: 20 },
   lead: { ...type.callout, color: palette.text2, marginTop: 6 },
   footRow: { flexDirection: 'row', gap: 10 },
+  footStack: { gap: 10 },
   footBtn: { flex: 1, minWidth: 0, paddingHorizontal: 10 },
   tips: { marginTop: 16 },
-  tip: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 12, paddingVertical: 11 },
   tipDivider: { borderBottomWidth: 1, borderBottomColor: palette.line },
-  tipIcon: { width: 40, height: 40, borderRadius: 12, backgroundColor: palette.em50, alignItems: 'center', justifyContent: 'center' },
-  tipTitle: { ...type.headline, color: palette.ink },
-  tipText: { ...type.footnote, color: palette.text3, marginTop: 1 },
   calcs: { marginTop: 12 },
   quota: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 16, paddingHorizontal: 4 },
   quotaText: { ...type.footnote, color: palette.text3, flexShrink: 1 },

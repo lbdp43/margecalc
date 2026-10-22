@@ -38,7 +38,7 @@ export function PhotoCard({ photo, busy, error, onAdd, onRemove }: PhotoCardProp
           )}
           {busy ? (
             <View style={[StyleSheet.absoluteFill, styles.busy]}>
-              <ActivityIndicator color={uri ? '#FFFFFF' : palette.em700} />
+              <ActivityIndicator color={uri ? palette.onEmerald : palette.em700} />
             </View>
           ) : null}
         </View>
@@ -50,8 +50,19 @@ export function PhotoCard({ photo, busy, error, onAdd, onRemove }: PhotoCardProp
           <View style={styles.actions}>
             {uri ? (
               <>
-                <Button title="Remplacer" variant="tonal" size="sm" icon="camera-outline" onPress={onAdd} disabled={busy} style={styles.btn} testID="photo-replace" />
-                <Button title="Retirer" variant="text" size="sm" onPress={onRemove} disabled={busy} style={styles.btnText} testID="photo-remove" />
+                <Button title="Remplacer" variant="tonal" size="sm" onPress={onAdd} disabled={busy} style={styles.btn} accessibilityLabel="Remplacer la photo" testID="photo-replace" />
+                <Button
+                  title="Retirer"
+                  variant="text"
+                  size="sm"
+                  icon={<Ionicons name="trash-outline" size={17} color={busy ? palette.text4 : palette.bad} />}
+                  textStyle={busy ? undefined : styles.removeText}
+                  onPress={onRemove}
+                  disabled={busy}
+                  style={styles.btnText}
+                  accessibilityLabel="Retirer la photo"
+                  testID="photo-remove"
+                />
               </>
             ) : (
               <Button title="Ajouter une photo" variant="tonal" size="sm" icon="camera-outline" onPress={onAdd} disabled={busy} style={styles.btn} testID="photo-add" />
@@ -76,11 +87,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     overflow: 'hidden',
   },
-  busy: { backgroundColor: 'rgba(11,28,21,0.28)', alignItems: 'center', justifyContent: 'center' },
+  busy: { backgroundColor: palette.scrim, alignItems: 'center', justifyContent: 'center' },
   texts: { flex: 1, minWidth: 0 },
   title: { ...type.headline, color: palette.ink },
   subtitle: { ...type.footnote, color: palette.text3, marginTop: 2 },
   actions: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 10, flexWrap: 'wrap' },
   btn: { paddingHorizontal: 14 },
   btnText: { paddingHorizontal: 10 },
+  removeText: { color: palette.bad },
 });

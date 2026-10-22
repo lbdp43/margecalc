@@ -6,7 +6,7 @@
 import React from 'react';
 import { BottomSheet, ListRow } from '../../../components/ui';
 import { useRatesStore } from '../../../store/rates.store';
-import { formatEuro, formatNumber, formatVolumeCl } from '../../../utils/format';
+import { formatDegree, formatEuro, formatVolumeCl, plural } from '../../../utils/format';
 
 export interface SavedCalc {
   id: string;
@@ -48,12 +48,12 @@ export function SavedCalcsSheet({
       visible={visible}
       onClose={onClose}
       title="Depuis le calculateur"
-      subline={`${calcs.length} calcul${calcs.length > 1 ? 's' : ''} · prix hors droits`}
+      subline={`${plural(calcs.length, 'calcul')} · prix hors droits`}
       contentPadding={8}
     >
       {calcs.map((c, i) => {
         const rate = rates.find((r) => r.slug === c.fiscalCategory);
-        const meta = [rate?.label ?? c.fiscalCategory, formatVolumeCl(c.volumeCl), c.degree ? `${formatNumber(c.degree, Number.isInteger(c.degree) ? 0 : 1)}°` : null]
+        const meta = [rate?.label ?? c.fiscalCategory, formatVolumeCl(c.volumeCl), c.degree ? formatDegree(c.degree) : null]
           .filter(Boolean)
           .join(' · ');
         return (
@@ -64,8 +64,9 @@ export function SavedCalcsSheet({
             subtitle={meta}
             detail={`${formatEuro(c.prixHTAvecDroits)} HT avec droits`}
             onPress={() => {
-              onPick(c);
+              // The radio beat, the sheet closes, THEN the form opens (never under a closing sheet).
               setTimeout(onClose, 120);
+              setTimeout(() => onPick(c), 120 + 260);
             }}
             divider={i < calcs.length - 1}
           />

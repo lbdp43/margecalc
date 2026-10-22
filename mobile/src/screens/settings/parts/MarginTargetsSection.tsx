@@ -1,82 +1,77 @@
 /**
  * « Objectifs de marge » — the user's thresholds (objective = good margin,
- * alert = medium). Persisted by `setMarginThresholds` (AsyncStorage key
- * `margebar_margin_thresholds`), which notifies every Badge, legend and tile.
+ * alert = medium), in whole percents. Persisted on this device by
+ * `setMarginThresholds` (AsyncStorage `margebar_margin_thresholds`), which
+ * notifies every Badge, legend and tile. They are reset on sign-out
+ * (AccountSection) so the next account on the device starts from 65 / 50.
  */
 import React, { useEffect, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { DEFAULT_MARGIN_THRESHOLDS } from '@margebar/shared';
-import {
-  BottomSheet,
-  Button,
-  CompositionBar,
-  Divider,
-  ListGroup,
-  ListRow,
-  MarginLegend,
-  NumberInput,
-  toast,
-} from '../../../components/ui';
-import { marginColors, palette, type } from '../../../theme';
+import { Button, CompositionBar, Divider, ListGroup, ListRow, MarginLegend, NumberInput, toast } from '../../../components/ui';
+import { marginColors, palette, radius } from '../../../theme';
 import { haptics } from '../../../theme/haptics';
 import { formatNumber } from '../../../utils/format';
 import { MarginThresholds, setMarginThresholds, useMarginThresholds } from '../../../utils/marginThresholds';
 import { formatThreshold } from './helpers';
-import { ErrorLine, SettingsSection } from './ui';
+import { ErrorLine, SettingsSection, Sheet } from './ui';
 
+/**
+ * Red / orange / green bar, proportional to the thresholds. The ranges are
+ * spelled out by the MarginLegend under it (no tick numbers: they collided
+ * when two thresholds were close).
+ */
 function ZoneScale({ thresholds }: { thresholds: MarginThresholds }) {
   const { good, medium } = thresholds;
   return (
-    <View>
-      <CompositionBar
-        height={10}
-        segments={[
-          { key: 'red', value: Math.max(medium, 0.5), color: marginColors.red.solid, label: `À revoir sous ${formatThreshold(medium)}` },
-          { key: 'orange', value: Math.max(good - medium, 0.5), color: marginColors.orange.solid, label: `À surveiller de ${formatThreshold(medium)} à ${formatThreshold(good)}` },
-          { key: 'green', value: Math.max(100 - good, 0.5), color: marginColors.green.solid, label: `Bonne marge dès ${formatThreshold(good)}` },
-        ]}
-      />
-      <View style={styles.scaleTicks}>
-        <Text style={styles.tick}>0</Text>
-        <Text style={[styles.tick, { position: 'absolute', left: `${medium}%`, transform: [{ translateX: -10 }] }]}>{formatNumber(medium, Number.isInteger(medium) ? 0 : 1)}</Text>
-        <Text style={[styles.tick, { position: 'absolute', left: `${good}%`, transform: [{ translateX: -10 }] }]}>{formatNumber(good, Number.isInteger(good) ? 0 : 1)}</Text>
-        <Text style={styles.tick}>{formatThreshold(100)}</Text>
-      </View>
-    </View>
+    <CompositionBar
+      height={10}
+      segments={[
+        { key: 'red', value: Math.max(medium, 1), color: marginColors.red.solid, label: `À revoir sous ${formatThreshold(medium)}` },
+        { key: 'orange', value: Math.max(good - medium, 1), color: marginColors.orange.solid, label: `À surveiller de ${formatThreshold(medium)} à ${formatThreshold(good)}` },
+        { key: 'green', value: Math.max(100 - good, 1), color: marginColors.green.solid, label: `Bonne marge dès ${formatThreshold(good)}` },
+      ]}
+    />
   );
 }
 
 export function MarginTargetsSection({ index }: { index: number }) {
   const thresholds = useMarginThresholds();
   const [open, setOpen] = useState(false);
+
+  // Thresholds are whole percents. A value saved with a decimal by an earlier
+  // version (55,5) is rounded once, so the rows, the legend and the colours agree.
+  useEffect(() => {
+    if (!Number.isInteger(thresholds.good) || !Number.isInteger(thresholds.medium)) {
+      const good = Math.min(99, Math.max(2, Math.round(thresholds.good)));
+      const medium = Math.max(1, Math.min(Math.round(thresholds.medium), good - 1));
+      setMarginThresholds({ good, medium });
+    }
+  }, [thresholds.good, thresholds.medium]);
+
   return (
-    <SettingsSection
-      title="Objectifs de marge"
-      index={index}
-      footer="Les couleurs des marges, la légende des produits et le repère « Objectif » des curseurs suivent ces seuils."
-      testID="settings-margins"
-    >
+    <SettingsSection title="Objectifs de marge" index={index} footer="Enregistrés sur cet appareil. Ils colorent toutes les marges de l’app." testID="settings-margins">
       <ListGroup>
-        <View style={styles.scaleBlock}>
+        <View style={styles.scaleBlock} accessible accessibilityLabel={`Bonne marge dès ${formatThreshold(thresholds.good)}, à revoir sous ${formatThreshold(thresholds.medium)}`}>
           <ZoneScale thresholds={thresholds} />
-          <MarginLegend style={{ marginTop: 12 }} />
+          <MarginLegend style={{ marginTop: 10 }} />
         </View>
         <Divider style={{ marginHorizontal: 12 }} />
         <ListRow
           icon="flag-outline"
           title="Objectif de marge"
-          subtitle="Bonne marge dès ce seuil"
           value={formatThreshold(thresholds.good)}
           onPress={() => setOpen(true)}
+          accessibilityLabel={`Objectif de marge : bonne marge dès ${formatThreshold(thresholds.good)}. Modifier`}
           testID="settings-threshold-good"
         />
         <ListRow
           icon="alert-circle-outline"
           iconTone="neutral"
           title="Seuil d’alerte"
-          subtitle="En dessous : marge à revoir"
           value={formatThreshold(thresholds.medium)}
           onPress={() => setOpen(true)}
+          accessibilityLabel={`Seuil d’alerte : marge à revoir sous ${formatThreshold(thresholds.medium)}. Modifier`}
           testID="settings-threshold-medium"
         />
       </ListGroup>
@@ -85,6 +80,8 @@ export function MarginTargetsSection({ index }: { index: number }) {
   );
 }
 
+const fmt = (n: number) => formatNumber(n, 0);
+
 function ThresholdsSheet({ visible, onClose, current }: { visible: boolean; onClose: () => void; current: MarginThresholds }) {
   const [good, setGood] = useState(current.good);
   const [medium, setMedium] = useState(current.medium);
@@ -92,20 +89,20 @@ function ThresholdsSheet({ visible, onClose, current }: { visible: boolean; onCl
 
   useEffect(() => {
     if (visible) {
-      setGood(current.good);
-      setMedium(current.medium);
+      setGood(Math.round(current.good));
+      setMedium(Math.round(current.medium));
     }
   }, [visible, current.good, current.medium]);
 
-  const draft = { good, medium };
+  const draft = { good: Math.round(good), medium: Math.round(medium) };
   const error =
-    !(good > 0 && good < 100) || !(medium > 0 && medium < 100)
-      ? 'Choisissez des seuils entre 1 % et 99 %.'
-      : medium >= good
+    !(draft.good >= 1 && draft.good <= 99) || !(draft.medium >= 1 && draft.medium <= 99)
+      ? 'Choisissez des seuils entre 1 % et 99 %.'
+      : draft.medium >= draft.good
         ? 'Le seuil d’alerte doit être inférieur à l’objectif de marge.'
         : null;
-  const unchanged = good === current.good && medium === current.medium;
-  const isDefault = good === DEFAULT_MARGIN_THRESHOLDS.good && medium === DEFAULT_MARGIN_THRESHOLDS.medium;
+  const unchanged = draft.good === current.good && draft.medium === current.medium;
+  const isDefault = draft.good === DEFAULT_MARGIN_THRESHOLDS.good && draft.medium === DEFAULT_MARGIN_THRESHOLDS.medium;
 
   const save = async () => {
     if (error) {
@@ -117,17 +114,15 @@ function ThresholdsSheet({ visible, onClose, current }: { visible: boolean; onCl
     setSaving(false);
     haptics.success();
     onClose();
-    toast.success(`Objectifs enregistrés · bonne marge dès ${formatThreshold(good)}`);
+    toast.success(`Objectifs enregistrés · bonne marge dès ${formatThreshold(draft.good)}`);
   };
 
-  const fmt = (n: number) => formatNumber(n, Number.isInteger(n) ? 0 : 1);
-
   return (
-    <BottomSheet
+    <Sheet
       visible={visible}
       onClose={onClose}
       title="Objectifs de marge"
-      subline="Les couleurs suivent ces seuils dans toute l’app."
+      subline="Enregistrés sur cet appareil."
       footer={
         <View style={{ gap: 4 }}>
           <Button title="Enregistrer" icon="checkmark-circle" onPress={save} loading={saving} disabled={!!error || unchanged} testID="thresholds-save" />
@@ -135,11 +130,13 @@ function ThresholdsSheet({ visible, onClose, current }: { visible: boolean; onCl
             title={`Rétablir ${formatThreshold(DEFAULT_MARGIN_THRESHOLDS.good)} et ${formatThreshold(DEFAULT_MARGIN_THRESHOLDS.medium)}`}
             variant="text"
             size="sm"
+            icon="refresh-outline"
             disabled={isDefault}
             onPress={() => {
               setGood(DEFAULT_MARGIN_THRESHOLDS.good);
               setMedium(DEFAULT_MARGIN_THRESHOLDS.medium);
             }}
+            testID="thresholds-reset"
           />
         </View>
       }
@@ -147,52 +144,48 @@ function ThresholdsSheet({ visible, onClose, current }: { visible: boolean; onCl
     >
       <View style={styles.preview}>
         <ZoneScale thresholds={error ? current : draft} />
-        <MarginLegend thresholds={error ? current : draft} style={{ marginTop: 12 }} />
+        <MarginLegend thresholds={error ? current : draft} style={{ marginTop: 10 }} />
       </View>
-      <View style={{ gap: 20, marginTop: 20 }}>
-        <View>
-          <NumberInput
-            label="Objectif · bonne marge à partir de"
-            value={good}
-            onChange={setGood}
-            step={1}
-            min={1}
-            max={99}
-            decimals={1}
-            format={fmt}
-            suffix="%"
-            accessibilityLabel="Objectif de marge, en pour cent"
-            testID="input-threshold-good"
-          />
-        </View>
-        <View>
-          <NumberInput
-            label="Seuil d’alerte · à revoir en dessous de"
-            value={medium}
-            onChange={setMedium}
-            step={1}
-            min={1}
-            max={99}
-            decimals={1}
-            format={fmt}
-            suffix="%"
-            accessibilityLabel="Seuil d’alerte, en pour cent"
-            testID="input-threshold-medium"
-          />
-        </View>
+      <View style={{ gap: 18, marginTop: 20 }}>
+        <NumberInput
+          size="large"
+          label="Objectif · bonne marge à partir de"
+          value={good}
+          onChange={setGood}
+          step={1}
+          min={1}
+          max={99}
+          decimals={0}
+          format={fmt}
+          suffix="%"
+          accessibilityLabel="Objectif de marge, en pour cent"
+          testID="input-threshold-good"
+        />
+        <NumberInput
+          size="large"
+          label="Seuil d’alerte · à revoir en dessous de"
+          value={medium}
+          onChange={setMedium}
+          step={1}
+          min={1}
+          max={99}
+          decimals={0}
+          format={fmt}
+          suffix="%"
+          accessibilityLabel="Seuil d’alerte, en pour cent"
+          testID="input-threshold-medium"
+        />
       </View>
       <ErrorLine message={error} />
-    </BottomSheet>
+    </Sheet>
   );
 }
 
 const styles = StyleSheet.create({
-  scaleBlock: { paddingHorizontal: 12, paddingTop: 14, paddingBottom: 14 },
-  scaleTicks: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 6, height: 16 },
-  tick: { ...type.footnote, fontSize: 12, lineHeight: 16, color: palette.text3 },
+  scaleBlock: { paddingHorizontal: 12, paddingTop: 14, paddingBottom: 12 },
   preview: {
     backgroundColor: palette.surface2,
-    borderRadius: 16,
+    borderRadius: radius.md,
     padding: 14,
   },
 });

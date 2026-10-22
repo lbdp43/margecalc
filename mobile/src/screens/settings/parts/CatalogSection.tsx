@@ -1,60 +1,78 @@
 /**
- * « Services & contenants » — serving types (prix au verre), purchase
- * containers and the default container of a new product.
+ * « Catalogue » — serving types (prix au verre), purchase containers, the
+ * default container of a new product, and the categories. Each row opens one
+ * sheet; sheets never stack.
  */
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { View } from 'react-native';
+import { useQueryClient } from '@tanstack/react-query';
 import { CustomContainer } from '@margebar/shared';
-import { BottomSheet, ListGroup, ListRow, toast } from '../../../components/ui';
+import { ListGroup, ListRow, toast } from '../../../components/ui';
 import { haptics } from '../../../theme/haptics';
-import { formatVolumeCl } from '../../../utils/format';
+import { formatVolumeCl, plural } from '../../../utils/format';
 import { useAuthStore } from '../../../store/auth.store';
 import * as servingService from '../../../services/serving.service';
 import * as containerService from '../../../services/container.service';
-import { invalidateProducts, SETTINGS_KEYS, updateMe, useContainers, useServingTypes, useSettingsQueryClient } from './data';
+import { invalidateProducts, SETTINGS_KEYS, updateMe, useCategories, useContainers, useServingTypes } from './data';
 import { readableError, servingIcon } from './helpers';
-import { CONTAINER_COPY, SERVING_COPY, VolumeManagerSheet } from './VolumeManagerSheet';
-import { ErrorLine, RowSkeleton, SettingsSection } from './ui';
+import { CONTAINER_COPY, nameIsVolume, SERVING_COPY, VolumeManagerSheet } from './VolumeManagerSheet';
+import { CategoriesSheet } from './CategoriesSheet';
+import { ErrorLine, RowSkeleton, SettingsSection, Sheet } from './ui';
 
-function summary(names: string[], max = 4): string {
+function summary(names: string[], max = 3): string {
   if (names.length <= max) return names.join(', ');
   return `${names.slice(0, max).join(', ')}…`;
 }
 
-export function ServicesSection({ index }: { index: number }) {
-  const qc = useSettingsQueryClient();
+/** The formats a bar buys first (bottles, kegs, BIB), the miniatures after. */
+function purchaseFormatsFirst(list: CustomContainer[]): CustomContainer[] {
+  const big = list.filter((c) => c.volumeCl >= 33);
+  const small = list.filter((c) => c.volumeCl < 33);
+  return [...big, ...small];
+}
+
+type Open = 'servings' | 'containers' | 'default' | 'categories' | null;
+
+export function CatalogSection({ index }: { index: number }) {
+  const qc = useQueryClient();
   const user = useAuthStore((s) => s.user);
+  const isAdmin = user?.role === 'admin';
   const servings = useServingTypes();
   const containers = useContainers();
-  const [open, setOpen] = useState<'servings' | 'containers' | 'default' | null>(null);
+  const categories = useCategories();
+  const [open, setOpen] = useState<Open>(null);
+  /** The container picked in this session (two containers may share a volume). */
+  const [chosenId, setChosenId] = useState<string | null>(null);
 
   const servingList = servings.data;
   const containerList = containers.data;
   const defaultVolume = user?.defaultContainerVolumeCl ?? 70;
-  const defaultContainer = containerList?.find((c) => c.volumeCl === defaultVolume);
+  const defaultContainer =
+    containerList?.find((c) => c.id === chosenId && c.volumeCl === defaultVolume) ?? containerList?.find((c) => c.volumeCl === defaultVolume);
   const defaultLabel = defaultContainer ? defaultContainer.name : formatVolumeCl(defaultVolume);
 
   const servingError = servings.error ? readableError(servings.error, 'Les services n’ont pas pu être chargés.').message : null;
   const containerError = containers.error ? readableError(containers.error, 'Les contenants n’ont pas pu être chargés.').message : null;
+  const categoryError = categories.error && !categories.data ? readableError(categories.error, 'Les catégories n’ont pas pu être chargées.').message : null;
+
+  const builtIn = useMemo(() => (categories.data ?? []).filter((c) => !c.userId), [categories.data]);
+  const mine = useMemo(() => (categories.data ?? []).filter((c) => !!c.userId), [categories.data]);
 
   const refreshServings = useCallback(() => {
     qc.invalidateQueries({ queryKey: [...SETTINGS_KEYS.servingTypes] });
     invalidateProducts(qc);
   }, [qc]);
   const refreshContainers = useCallback(() => qc.invalidateQueries({ queryKey: [...SETTINGS_KEYS.containers] }), [qc]);
+  const close = useCallback(() => setOpen(null), []);
 
   const loadingFirst = (servings.isLoading && !servingList) || (containers.isLoading && !containerList);
 
   return (
-    <SettingsSection
-      title="Services & contenants"
-      index={index}
-      footer="Les services servent au prix au verre ; les contenants sont proposés à l’ajout d’un produit."
-      testID="settings-services"
-    >
+    <SettingsSection title="Catalogue" index={index} testID="settings-services">
       <ListGroup>
         {loadingFirst ? (
           <View>
+            <RowSkeleton />
             <RowSkeleton />
             <RowSkeleton />
             <RowSkeleton last />
@@ -64,7 +82,8 @@ export function ServicesSection({ index }: { index: number }) {
           <ListRow
             icon="wine-outline"
             title="Types de service"
-            subtitle={servingList ? summary(servingList.map((s) => s.name)) : servingError ?? '…'}
+            subtitle={servingList ? summary(servingList.map((s) => s.name)) || 'Aucun service' : servingError ?? '…'}
+            subtitleLines={1}
             value={servingList ? String(servingList.length) : undefined}
             onPress={() => setOpen('servings')}
             testID="settings-servings"
@@ -74,7 +93,8 @@ export function ServicesSection({ index }: { index: number }) {
           <ListRow
             icon="cube-outline"
             title="Contenants"
-            subtitle={containerList ? summary(containerList.map((c) => c.name)) : containerError ?? '…'}
+            subtitle={containerList ? summary(purchaseFormatsFirst(containerList).map((c) => c.name)) || 'Aucun contenant' : containerError ?? '…'}
+            subtitleLines={1}
             value={containerList ? String(containerList.length) : undefined}
             onPress={() => setOpen('containers')}
             testID="settings-containers"
@@ -84,17 +104,39 @@ export function ServicesSection({ index }: { index: number }) {
           <ListRow
             icon="star-outline"
             title="Contenant par défaut"
-            subtitle="Pour un nouveau produit"
+            subtitle="Nouveau produit"
+            subtitleLines={1}
             value={defaultLabel}
             onPress={() => setOpen('default')}
             testID="settings-default-container"
+          />
+        ) : null}
+        {!loadingFirst ? (
+          <ListRow
+            icon="grid-outline"
+            title="Catégories"
+            subtitle={
+              categoryError ??
+              (categories.data
+                ? mine.length
+                  ? `${builtIn.length} de base · ${plural(mine.length, 'personnelle', 'personnelles')}`
+                  : `${builtIn.length} de base · ajoutez les vôtres`
+                : '…')
+            }
+            subtitleLines={1}
+            value={categories.data ? String(categories.data.length) : undefined}
+            onPress={() => {
+              if (categoryError) categories.refetch();
+              setOpen('categories');
+            }}
+            testID="settings-categories"
           />
         ) : null}
       </ListGroup>
 
       <VolumeManagerSheet
         visible={open === 'servings'}
-        onClose={() => setOpen(null)}
+        onClose={close}
         copy={SERVING_COPY}
         items={servingList}
         loading={servings.isLoading}
@@ -121,14 +163,14 @@ export function ServicesSection({ index }: { index: number }) {
 
       <VolumeManagerSheet
         visible={open === 'containers'}
-        onClose={() => setOpen(null)}
+        onClose={close}
         copy={CONTAINER_COPY}
         items={containerList}
         loading={containers.isLoading}
         loadError={containerError}
         onRetry={() => containers.refetch()}
         icon={() => 'cube-outline'}
-        rowSubtitle={(c) => (c.volumeCl === defaultVolume ? 'Contenant par défaut' : undefined)}
+        rowSubtitle={(c) => (c.id === defaultContainer?.id ? 'Contenant par défaut' : undefined)}
         maxVolumeCl={100_000}
         create={async (name, volumeCl) => {
           const created = await containerService.createContainer(name, volumeCl);
@@ -149,9 +191,21 @@ export function ServicesSection({ index }: { index: number }) {
 
       <DefaultContainerSheet
         visible={open === 'default'}
-        onClose={() => setOpen(null)}
+        onClose={close}
         containers={containerList ?? []}
-        value={defaultVolume}
+        selectedId={defaultContainer?.id ?? null}
+        currentVolume={defaultVolume}
+        onChosen={setChosenId}
+      />
+
+      <CategoriesSheet
+        visible={open === 'categories'}
+        onClose={close}
+        isAdmin={isAdmin}
+        categories={categories.data}
+        loading={categories.isLoading}
+        loadError={categoryError}
+        onRetry={() => categories.refetch()}
       />
     </SettingsSection>
   );
@@ -161,41 +215,58 @@ function DefaultContainerSheet({
   visible,
   onClose,
   containers,
-  value,
+  selectedId,
+  currentVolume,
+  onChosen,
 }: {
   visible: boolean;
   onClose: () => void;
   containers: CustomContainer[];
-  value: number;
+  selectedId: string | null;
+  currentVolume: number;
+  onChosen: (id: string) => void;
 }) {
-  const [pending, setPending] = useState<number | null>(null);
+  const [pendingId, setPendingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const selected = pending ?? value;
+  const selected = pendingId ?? selectedId;
+
+  const done = (c: CustomContainer, changed: boolean) => {
+    setTimeout(() => {
+      onClose();
+      setPendingId(null);
+      if (changed) toast.success(`Contenant par défaut : ${c.name}`);
+    }, 120);
+  };
 
   const choose = async (c: CustomContainer) => {
-    if (c.volumeCl === value) {
-      setTimeout(onClose, 120);
+    if (pendingId) return;
+    if (c.id === selected) {
+      done(c, false);
       return;
     }
-    setPending(c.volumeCl);
+    setPendingId(c.id);
     setError(null);
+    // Same volume as the saved default: only the name shown here changes.
+    if (Math.abs(c.volumeCl - currentVolume) < 0.005) {
+      onChosen(c.id);
+      haptics.success();
+      done(c, true);
+      return;
+    }
     try {
       await updateMe({ defaultContainerVolumeCl: c.volumeCl });
+      onChosen(c.id);
       haptics.success();
-      setTimeout(() => {
-        onClose();
-        setPending(null);
-        toast.success(`Contenant par défaut : ${c.name}`);
-      }, 120);
+      done(c, true);
     } catch (err) {
-      setPending(null);
+      setPendingId(null);
       haptics.warning();
       setError(readableError(err, 'Le contenant par défaut n’a pas pu être enregistré.').message);
     }
   };
 
   return (
-    <BottomSheet
+    <Sheet
       visible={visible}
       onClose={() => {
         setError(null);
@@ -211,13 +282,14 @@ function DefaultContainerSheet({
         <ListRow
           key={c.id}
           title={c.name}
-          subtitle={c.name.replace(/\s/g, '') === formatVolumeCl(c.volumeCl).replace(/\s/g, '') ? undefined : formatVolumeCl(c.volumeCl)}
+          subtitle={nameIsVolume(c) ? undefined : formatVolumeCl(c.volumeCl)}
           right="radio"
-          selected={c.volumeCl === selected}
+          selected={c.id === selected}
           onPress={() => choose(c)}
           divider={i < containers.length - 1}
+          testID="default-container-row"
         />
       ))}
-    </BottomSheet>
+    </Sheet>
   );
 }

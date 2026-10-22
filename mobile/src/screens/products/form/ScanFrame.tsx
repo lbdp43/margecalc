@@ -19,6 +19,13 @@ import Animated, {
 import Svg, { Path, Rect } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
 import { palette, radius } from '../../../theme';
+
+/** A palette colour at some opacity (overlays, sweeps): no hard-coded colour. */
+function alpha(hex: string, a: number): string {
+  const h = hex.replace('#', '');
+  const n = parseInt(h.length === 3 ? h.split('').map((c) => c + c).join('') : h, 16);
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
+}
 import { useReduceMotion } from '../../../components/ui';
 
 type Status = 'idle' | 'working' | 'done' | 'error' | 'warn';
@@ -83,7 +90,7 @@ export function ScanFrame({ uri, status = 'idle', height, style }: ScanFrameProp
           <View style={[StyleSheet.absoluteFill, styles.tint, styles.noTouch]} />
           <Animated.View style={[styles.sweep, styles.noTouch, sweep]}>
             <LinearGradient
-              colors={['rgba(111,211,168,0)', 'rgba(111,211,168,0.42)', 'rgba(111,211,168,0)']}
+              colors={[alpha(palette.em300, 0), alpha(palette.em300, 0.42), alpha(palette.em300, 0)]}
               locations={[0, 0.5, 1]}
               style={StyleSheet.absoluteFill}
             />
@@ -92,12 +99,12 @@ export function ScanFrame({ uri, status = 'idle', height, style }: ScanFrameProp
         </>
       ) : null}
 
-      <Corners color={uri ? '#FFFFFF' : palette.em700} hideTopRight={status === 'done' || status === 'error' || status === 'warn'} />
+      <Corners color={uri ? palette.onEmerald : palette.em700} hideTopRight={status === 'done' || status === 'error' || status === 'warn'} />
 
       {status === 'done' || status === 'error' || status === 'warn' ? (
         <View style={[styles.badgeRow, styles.noTouch]}>
           <View style={[styles.badge, { backgroundColor: status === 'done' ? palette.em700 : status === 'warn' ? palette.warnSolid : palette.badSolid }]}>
-            <Ionicons name={status === 'done' ? 'checkmark' : 'alert'} size={18} color="#FFFFFF" />
+            <Ionicons name={status === 'done' ? 'checkmark' : 'alert'} size={18} color={palette.onEmerald} />
           </View>
         </View>
       ) : null}
@@ -127,8 +134,8 @@ function BottleArt({ size }: { size: number }) {
         d="M23 10 h10 v14 c0 4 11 9 11 22 v44 a8 8 0 0 1 -8 8 h-16 a8 8 0 0 1 -8 -8 v-44 c0 -13 11 -18 11 -22 z"
         fill={palette.em600}
       />
-      <Path d="M17 40 c2 -6 6 -9 8 -11" stroke="rgba(255,255,255,0.35)" strokeWidth={2.4} strokeLinecap="round" fill="none" />
-      <Rect x={14} y={50} width={28} height={30} rx={4} fill="#FFFFFF" />
+      <Path d="M17 40 c2 -6 6 -9 8 -11" stroke={alpha(palette.onEmerald, 0.35)} strokeWidth={2.4} strokeLinecap="round" fill="none" />
+      <Rect x={14} y={50} width={28} height={30} rx={4} fill={palette.surface} />
       <Rect x={19} y={56} width={18} height={4} rx={2} fill={palette.em700} />
       <Rect x={19} y={64} width={14} height={2.6} rx={1.3} fill={palette.lineStrong} />
       <Rect x={19} y={70} width={16} height={2.6} rx={1.3} fill={palette.lineStrong} />
@@ -147,8 +154,8 @@ const styles = StyleSheet.create({
   },
   center: { alignItems: 'center', justifyContent: 'center' },
   noTouch: { pointerEvents: 'none' },
-  dim: { backgroundColor: 'rgba(11,28,21,0.35)' },
-  tint: { backgroundColor: 'rgba(4,64,46,0.18)' },
+  dim: { backgroundColor: alpha(palette.ink, 0.35) },
+  tint: { backgroundColor: alpha(palette.em900, 0.18) },
   sweep: { position: 'absolute', left: 0, right: 0, top: 0, height: SWEEP_H, justifyContent: 'center' },
   sweepLine: { height: 2, backgroundColor: palette.em300, opacity: 0.95 },
   corner: { position: 'absolute', width: 30, height: 30 },
@@ -160,6 +167,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 2,
-    borderColor: '#FFFFFF',
+    borderColor: palette.onEmerald,
   },
 });

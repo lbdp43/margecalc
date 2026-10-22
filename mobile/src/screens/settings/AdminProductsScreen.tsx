@@ -20,6 +20,7 @@ import {
   ScreenList,
   servingLabel,
   SkeletonList,
+  SkeletonStatTile,
   StatTile,
   TextField,
   useDelayedLoading,
@@ -27,17 +28,10 @@ import {
 import * as adminService from '../../services/admin.service';
 import type { AdminProduct } from '../../services/admin.service';
 import { isOnline } from '../../services/offline';
-import { palette, type } from '../../theme';
+import { marginColors, palette, type } from '../../theme';
 import { formatEuro, formatDegree, formatPercent, formatVolumeCl } from '../../utils/format';
 import { getMarginZone, useMarginThresholds } from '../../utils/marginThresholds';
-
-const strip = (s: string) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
-
-function errorText(err: any): string {
-  if (!err?.response) return isOnline() ? 'Le serveur ne répond pas. Réessayez.' : 'Hors ligne : vérifiez votre connexion puis réessayez.';
-  const msg = err.response.data?.error;
-  return typeof msg === 'string' && msg.trim() ? msg : 'Les produits n’ont pas pu être chargés.';
-}
+import { matches, readableError } from './parts/helpers';
 
 const ProductRow = React.memo(function ProductRow({ product }: { product: AdminProduct }) {
   const owner = product.user?.businessName || product.user?.email || '–';
@@ -94,22 +88,23 @@ export function AdminProductsScreen() {
     return [...map.values()].sort((a, b) => b.count - a.count || a.label.localeCompare(b.label, 'fr'));
   }, [products]);
 
-  const filtered = useMemo(() => {
-    const s = strip(query.trim());
-    return products.filter(
-      (p) =>
-        (owner === 'all' || p.user?.id === owner) &&
-        (!s || strip(`${p.name} ${p.category} ${p.user?.businessName ?? ''} ${p.user?.email ?? ''} ${p.supplier ?? ''}`).includes(s)),
-    );
-  }, [products, owner, query]);
+  const filtered = useMemo(
+    () =>
+      products.filter(
+        (p) => (owner === 'all' || p.user?.id === owner) && matches([p.name, p.category, p.user?.businessName, p.user?.email, p.supplier], query),
+      ),
+    [products, owner, query],
+  );
 
-  const avg = filtered.length ? filtered.reduce((a, p) => a + p.marginPercent, 0) / filtered.length : 0;
+  const avg = filtered.length ? filtered.reduce((a, p) => a + p.marginPercent, 0) / filtered.length : null;
   const counts = useMemo(() => {
     const c = { green: 0, orange: 0, red: 0 };
     for (const p of filtered) c[getMarginZone(p.marginPercent, thresholds)]++;
     return c;
   }, [filtered, thresholds]);
-  const accounts = owner === 'all' ? owners.length : 1;
+  // Accounts that own at least one of the products shown (search and filter included).
+  const accounts = useMemo(() => new Set(filtered.map((p) => p.user?.id).filter(Boolean)).size, [filtered]);
+  const loadFailed = !!q.error && !q.data;
 
   const renderItem = useCallback(({ item, index }: { item: AdminProduct; index: number }) => (
     <FadeIn index={index}>
@@ -119,29 +114,43 @@ export function AdminProductsScreen() {
 
   const header = (
     <View style={styles.header}>
-      <View style={styles.stats}>
-        <StatTile style={styles.stat} label="Produits" value={filtered.length} valueStyle={styles.statValue} />
-        <StatTile style={styles.stat} label="Comptes" value={accounts} valueStyle={styles.statValue} />
-        <StatTile
-          style={styles.stat}
-          label="Marge"
-          accessibilityLabel={`Marge moyenne : ${formatPercent(avg)}`}
-          value={avg}
-          format={(n) => formatPercent(n)}
-          valueStyle={[styles.statValue, { color: filtered.length ? (getMarginZone(avg, thresholds) === 'green' ? palette.good : getMarginZone(avg, thresholds) === 'orange' ? palette.warn : palette.bad) : palette.ink }]}
+      {q.data ? (
+        <View style={styles.stats}>
+          <StatTile style={styles.stat} label="Produits" value={filtered.length} valueStyle={styles.statValue} />
+          <StatTile style={styles.stat} label="Comptes" value={accounts} valueStyle={styles.statValue} />
+          {avg === null ? (
+            <StatTile style={styles.stat} label="Marge" value="–" accessibilityLabel="Marge moyenne : aucun produit" valueStyle={[styles.statValue, { color: palette.text3 }]} />
+          ) : (
+            <StatTile
+              style={styles.stat}
+              label="Marge"
+              accessibilityLabel={`Marge moyenne : ${formatPercent(avg)}, ${marginColors[getMarginZone(avg, thresholds)].label}`}
+              value={avg}
+              format={(n) => formatPercent(n)}
+              valueStyle={[styles.statValue, { color: marginColors[getMarginZone(avg, thresholds)].fg }]}
+            />
+          )}
+        </View>
+      ) : showSkeleton ? (
+        <View style={styles.stats}>
+          <SkeletonStatTile style={styles.stat} />
+          <SkeletonStatTile style={styles.stat} />
+          <SkeletonStatTile style={styles.stat} />
+        </View>
+      ) : null}
+      {loadFailed ? null : (
+        <TextField
+          variant="search"
+          leftIcon="search"
+          placeholder="Produit, établissement, e-mail…"
+          value={query}
+          onChangeText={setQuery}
+          autoCorrect={false}
+          returnKeyType="search"
+          containerStyle={{ marginTop: q.data || showSkeleton ? 16 : 0 }}
+          testID="admin-products-search"
         />
-      </View>
-      <TextField
-        variant="search"
-        leftIcon="search"
-        placeholder="Produit, établissement, e-mail…"
-        value={query}
-        onChangeText={setQuery}
-        autoCorrect={false}
-        returnKeyType="search"
-        containerStyle={{ marginTop: 16 }}
-        testID="admin-products-search"
-      />
+      )}
       {owners.length > 1 ? (
         <ChipRow
           items={[{ key: 'all', label: 'Tous', count: products.length }, ...owners.map((o) => ({ key: o.id, label: o.label, count: o.count }))]}
@@ -158,7 +167,11 @@ export function AdminProductsScreen() {
     <SkeletonList count={4} />
   ) : q.isLoading ? null : q.error && !q.data ? (
     isOnline() ? (
-      <EmptyState icon="cloud-offline-outline" title="Chargement impossible" text={errorText(q.error)} primary={{ label: 'Réessayer', icon: 'refresh', onPress: () => q.refetch() }} />
+      <EmptyState
+        icon="cloud-offline-outline"
+        title="Chargement impossible"
+        text={readableError(q.error, 'Les produits n’ont pas pu être chargés.').message}
+        primary={{ label: 'Réessayer', icon: 'refresh', onPress: () => q.refetch() }} />
     ) : (
       <EmptyState variant="offline" primary={{ label: 'Réessayer', icon: 'refresh', onPress: () => q.refetch() }} />
     )

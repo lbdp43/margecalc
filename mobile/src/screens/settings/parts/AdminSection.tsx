@@ -4,15 +4,15 @@
  */
 import React, { useEffect, useMemo, useState } from 'react';
 import { View } from 'react-native';
-import { Badge, BottomSheet, Button, ListGroup, ListRow, TextField, toast } from '../../../components/ui';
-import { AdminUsersSheet, useAdminUsers, usersSummary } from '../../../components/ui/AdminUsersSection';
-import { AdminTicketsSheet, ticketsSummary, useAdminTickets } from '../../../components/ui/AdminTicketsSection';
+import { Badge, Button, ListGroup, ListRow, TextField, toast } from '../../../components/ui';
+import { AdminUsersSheet, useAdminUsers, usersSummary } from './AdminUsersSheet';
+import { AdminTicketsSheet, ticketsSummary, useAdminTickets } from './AdminTicketsSheet';
 import { haptics } from '../../../theme/haptics';
 import { formatNumber, parseLocaleFloat, toInputString } from '../../../utils/format';
 import { useSystemParamsStore } from '../../../store/systemParams.store';
 import { ROUTES } from '../../../navigation/routes';
 import { readableError } from './helpers';
-import { ErrorLine, InfoNote, PillChevron, SettingsSection } from './ui';
+import { ErrorLine, InfoNote, PillChevron, SettingsSection, Sheet } from './ui';
 
 export function AdminSection({ index, navigation }: { index: number; navigation: { navigate: (name: string, params?: object) => void } }) {
   const users = useAdminUsers(true);
@@ -32,6 +32,7 @@ export function AdminSection({ index, navigation }: { index: number; navigation:
           icon="people-outline"
           title="Utilisateurs"
           subtitle={usersSummary(users.data) ?? (users.error ? 'Touchez pour réessayer' : 'Comptes, connexions, suspension')}
+          subtitleLines={1}
           onPress={() => setOpen('users')}
           testID="settings-admin-users"
         />
@@ -39,6 +40,7 @@ export function AdminSection({ index, navigation }: { index: number; navigation:
           icon="chatbox-ellipses-outline"
           title="Demandes des utilisateurs"
           subtitle={ticketsSummary(tickets.data) ?? 'Bugs, idées et questions'}
+          subtitleLines={1}
           right={<PillChevron count={openTickets} tone="bad" />}
           onPress={() => setOpen('tickets')}
           testID="settings-admin-tickets"
@@ -47,13 +49,15 @@ export function AdminSection({ index, navigation }: { index: number; navigation:
           icon="grid-outline"
           title="Tous les produits"
           subtitle="Catalogue de tous les comptes"
+          subtitleLines={1}
           onPress={() => navigation.navigate(ROUTES.adminProducts)}
           testID="settings-admin-products"
         />
         <ListRow
           icon="options-outline"
           title="Paramètres système"
-          subtitle="TVA, seuil de la cotisation, lien officiel"
+          subtitle="TVA, seuil de la sécu., lien officiel"
+          subtitleLines={1}
           onPress={() => setOpen('params')}
           testID="settings-admin-params"
         />
@@ -172,7 +176,7 @@ function SystemParamsSheet({ visible, onClose }: { visible: boolean; onClose: ()
   const count = Object.keys(changes).length;
 
   return (
-    <BottomSheet
+    <Sheet
       visible={visible}
       onClose={onClose}
       title="Paramètres système"
@@ -215,6 +219,6 @@ function SystemParamsSheet({ visible, onClose }: { visible: boolean; onClose: ()
           />
         ))}
       </View>
-    </BottomSheet>
+    </Sheet>
   );
 }

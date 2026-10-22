@@ -1,22 +1,22 @@
 /**
  * Building blocks of the product detail (D1 tokens, kit components only):
- *   DetailHero        photo (cross-fades in) or an emerald placeholder with the category icon
+ *   PhotoHero         the product photo, whole (contain) over a blurred backdrop of its thumbnail
+ *   DetailIdentity    name · category · meta; without a photo, an icon tile + « Ajouter une photo »
  *   KeyTile           key number with count-up (marge, coeff, gain/dose, gain par contenant)
  *   ServiceRow        one service: name, margin badge, Prix TTC / HT · Coût · Gain strip
- *   PriceHistoryCard  purchase-price history: sparkline + latest changes
+ *   PriceHistoryCard  purchase-price history: latest change, sparkline, range, changes
  *   DetailSkeleton    mirrors the layout while nothing is cached
  */
 import React, { useMemo, useState } from 'react';
-import { Image, Platform, StyleSheet, Text, View } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import { Image, StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle, Defs, LinearGradient as SvgGradient, Path, Stop } from 'react-native-svg';
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import type { PriceHistoryEntry } from '../../../services/product.service';
 import {
   AnimatedNumber,
   Badge,
+  Button,
   Card,
-  HeroRings,
   Icon,
   IconName,
   PressableScale,
@@ -24,88 +24,162 @@ import {
   SkeletonStatTile,
   useReduceMotion,
 } from '../../../components/ui';
-import { elevation, fontFamily, gradients, marginColors, MarginZone, motion, palette, radius, type } from '../../../theme';
+import { elevation, fontFamily, marginColors, MarginZone, motion, palette, radius, type } from '../../../theme';
 import { formatEuro, formatNumber, formatPercent, NBSP } from '../../../utils/format';
 
-export const HERO_HEIGHT = 216;
+/** Photo frame height: a portrait bottle shows whole (contain) at every phone width. */
+export const PHOTO_HEIGHT = 240;
 
-// ─── Hero ──────────────────────────────────────────────────────────────────
-export function DetailHero({
+/** « 23,3 doses », « 14 doses », « 1 dose » (one wording for the tile and the service rows). */
+export function dosesLabel(n: number): string {
+  const whole = Math.abs(n - Math.round(n)) < 1e-6;
+  return `${formatNumber(n, whole ? 0 : 1)}${NBSP}${n >= 2 ? 'doses' : 'dose'}`;
+}
+
+// ─── Photo hero ────────────────────────────────────────────────────────────
+/**
+ * The full photo (GET /api/products/:id) fades in over a blurred, veiled copy of
+ * the list thumbnail, which is already cached when the detail opens: no emerald
+ * flash, no crop of a portrait bottle (contain).
+ */
+export function PhotoHero({
   imageUrl,
   thumbnailUrl,
-  icon,
-  waitingForPhoto,
   name,
+  pending,
 }: {
   imageUrl?: string | null;
   thumbnailUrl?: string | null;
-  icon: IconName;
-  /** The product has a photo that is still loading (list data only). */
-  waitingForPhoto: boolean;
   name: string;
+  /** The full photo is on its way (blur-up); false offline or after a failed load. */
+  pending: boolean;
 }) {
   const reduce = useReduceMotion();
-  const uri = imageUrl || null;
   const opacity = useSharedValue(0);
   const [failed, setFailed] = useState(false);
   const fade = useAnimatedStyle(() => ({ opacity: opacity.value }));
-  const showPhoto = !!uri && !failed;
+  const full = imageUrl && !failed ? imageUrl : null;
+  // No full photo coming (offline copy, unreadable image): the square thumbnail stands in, whole.
+  const standIn = !full && (failed || !pending) && thumbnailUrl ? thumbnailUrl : null;
 
   return (
-    <View style={styles.hero}>
-      {/* Emerald base: the placeholder, and what shows while a photo decodes. */}
-      <LinearGradient {...gradients.heroBase} style={StyleSheet.absoluteFill} />
-      <LinearGradient {...gradients.heroGlint} style={StyleSheet.absoluteFill} />
-      <HeroRings size={360} />
-      {!showPhoto ? (
-        <View style={styles.heroCenter} accessible accessibilityRole="image" accessibilityLabel={`${name}, pas de photo`}>
-          <View style={styles.heroIcon}>
-            <Icon name={icon} size={40} color={palette.onEmerald} />
-          </View>
-        </View>
-      ) : null}
-      {waitingForPhoto && !showPhoto ? (
-        <View style={[StyleSheet.absoluteFill, styles.heroShimmer]}>
-          <Skeleton width="100%" height={HERO_HEIGHT} radius={0} color="rgba(255,255,255,0.04)" />
-        </View>
-      ) : null}
-      {showPhoto ? (
-        <>
-          {thumbnailUrl ? <Image source={{ uri: thumbnailUrl }} style={[StyleSheet.absoluteFill, styles.thumbUnder]} resizeMode="cover" blurRadius={Platform.OS === 'web' ? 0 : 8} /> : null}
-          <Animated.View style={[StyleSheet.absoluteFill, fade]}>
-            <Image
-              source={{ uri }}
-              style={StyleSheet.absoluteFill}
-              resizeMode="cover"
-              accessibilityIgnoresInvertColors
-              accessible
-              accessibilityRole="image"
-              accessibilityLabel={`Photo de ${name}`}
-              onLoad={() => {
-                opacity.value = withTiming(1, { duration: reduce ? 0 : motion.duration.base, easing: motion.easing.decel });
-              }}
-              onError={() => setFailed(true)}
-            />
-          </Animated.View>
-        </>
+    <View style={styles.photo} accessible accessibilityRole="image" accessibilityLabel={`Photo de ${name}`}>
+      {thumbnailUrl ? (
+        <Image source={{ uri: thumbnailUrl }} style={styles.backdrop} resizeMode="cover" blurRadius={18} accessibilityIgnoresInvertColors />
+      ) : (
+        <Skeleton width="100%" height={PHOTO_HEIGHT} radius={0} style={StyleSheet.absoluteFill} />
+      )}
+      <View style={styles.veil} />
+      {standIn ? <Image source={{ uri: standIn }} style={StyleSheet.absoluteFill} resizeMode="contain" accessibilityIgnoresInvertColors /> : null}
+      {full ? (
+        <Animated.View style={[StyleSheet.absoluteFill, fade]}>
+          <Image
+            source={{ uri: full }}
+            style={StyleSheet.absoluteFill}
+            resizeMode="contain"
+            accessibilityIgnoresInvertColors
+            onLoad={() => {
+              opacity.value = withTiming(1, { duration: reduce ? 0 : motion.duration.base, easing: motion.easing.decel });
+            }}
+            onError={() => setFailed(true)}
+          />
+        </Animated.View>
       ) : null}
     </View>
   );
 }
 
-// ─── Key number tile ───────────────────────────────────────────────────────
-/** Font size that keeps the value on one line in a half-width tile (web has no adjustsFontSizeToFit). */
-function valueSize(text: string): number {
-  const n = text.replace(/\s/g, '').length;
-  if (n <= 7) return 24;
-  if (n <= 9) return 21;
-  return 18;
+// ─── Identity ──────────────────────────────────────────────────────────────
+export function DetailIdentity({
+  name,
+  categoryName,
+  icon,
+  meta,
+  withTile,
+  onAddPhoto,
+}: {
+  name: string;
+  categoryName?: string | null;
+  icon: IconName;
+  meta: string;
+  /** No photo: an icon tile leads, and « Ajouter une photo » follows the meta. */
+  withTile: boolean;
+  onAddPhoto?: () => void;
+}) {
+  // Beside the tile the column is ~270 px: past a short name, title2 keeps it to two lines.
+  const long = withTile ? name.length > 16 : name.length > 42;
+  const titles = (
+    <>
+      <Text style={[styles.name, long ? styles.nameLong : null]} accessibilityRole="header">
+        {name}
+      </Text>
+      <View style={styles.metaRow}>
+        {categoryName ? <Badge variant="brand" icon={icon} label={categoryName} size="sm" /> : null}
+        {meta ? (
+          <Text style={styles.meta} numberOfLines={2}>
+            {meta}
+          </Text>
+        ) : null}
+      </View>
+    </>
+  );
+  if (!withTile) return <View>{titles}</View>;
+  return (
+    <View style={styles.identityRow}>
+      <View style={styles.tileIcon} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+        <Icon name={icon} size={32} color={palette.em700} />
+      </View>
+      <View style={styles.identityText}>
+        {titles}
+        {onAddPhoto ? (
+          <Button
+            title="Ajouter une photo"
+            icon="camera-outline"
+            variant="tonal"
+            size="sm"
+            onPress={onAddPhoto}
+            style={styles.addPhoto}
+            testID="detail-add-photo"
+          />
+        ) : null}
+      </View>
+    </View>
+  );
 }
+
+// ─── Key number tile ───────────────────────────────────────────────────────
+/**
+ * Width of a line of Plus Jakarta Sans (600–800) in px, from measured advance
+ * widths: tabular figures 0.70 em, the rest per glyph (letters ≈ 0.62 em).
+ * Slightly generous, so a value that « fits » never clips (web has no
+ * adjustsFontSizeToFit).
+ */
+const GLYPH_EM: Record<string, number> = {
+  ',': 0.39, '.': 0.39, ' ': 0.18, ' ': 0.18, ' ': 0.15, '€': 0.77, '+': 0.68, '−': 0.68, '-': 0.63, '%': 1.07, '×': 0.68, '/': 0.45, '÷': 0.68,
+};
+export function textWidth(text: string, size: number, letterSpacing = 0): number {
+  let em = 0;
+  for (const ch of text) em += ch >= '0' && ch <= '9' ? 0.7 : GLYPH_EM[ch] ?? 0.62;
+  return em * size + letterSpacing * text.length;
+}
+
+/**
+ * One value size for the whole tile grid: the largest (24 down to 16) at which
+ * every formatted value fits a tile, so the four numbers always match.
+ */
+export function keyValueSize(values: string[], available: number): number {
+  for (let size = 24; size > 16; size--) {
+    if (values.every((v) => textWidth(v, size, TILE_TRACKING) <= available)) return size;
+  }
+  return 16;
+}
+const TILE_TRACKING = -0.6;
 
 export function KeyTile({
   label,
   value,
   format,
+  size,
   caption,
   zone,
   highlight,
@@ -115,8 +189,11 @@ export function KeyTile({
   a11y,
 }: {
   label: string;
-  value: number;
+  /** null: no meaningful value (shown as « — »). */
+  value: number | null;
   format: (n: number) => string;
+  /** From keyValueSize(): the same for every tile of the grid. */
+  size: number;
   caption?: string;
   zone?: MarginZone;
   highlight?: boolean;
@@ -127,25 +204,24 @@ export function KeyTile({
 }) {
   const z = zone ? marginColors[zone] : null;
   const tinted = !!(highlight && z);
-  const finalText = format(value);
-  const size = valueSize(finalText);
+  const valueStyle = [styles.tileValue, { fontSize: size, lineHeight: size + 4 }, { color: valueColor ?? (tinted ? z!.fg : palette.ink) }];
   return (
     <View style={[styles.tile, tinted ? { backgroundColor: z!.bg, borderColor: 'transparent' } : null]} accessible accessibilityLabel={a11y}>
       <View style={styles.tileTop}>
         <Text style={[styles.tileLabel, tinted ? { color: z!.fg } : null]} numberOfLines={1}>
           {label}
         </Text>
-        {icon ? <Icon name={icon} size={16} color={tinted ? z!.fg : palette.text4} /> : null}
+        {icon ? <Icon name={icon} size={16} color={tinted ? z!.fg : palette.text3} /> : null}
       </View>
-      <AnimatedNumber
-        value={value}
-        format={format}
-        delay={delay}
-        numberOfLines={1}
-        style={[styles.tileValue, { fontSize: size, lineHeight: size + 4 }, { color: valueColor ?? (tinted ? z!.fg : palette.ink) }]}
-      />
+      {value === null ? (
+        <Text style={valueStyle} numberOfLines={1}>
+          —
+        </Text>
+      ) : (
+        <AnimatedNumber value={value} format={format} delay={delay} numberOfLines={1} style={valueStyle} />
+      )}
       {caption ? (
-        <Text style={[styles.tileCaption, tinted ? { color: z!.fg, opacity: 0.8 } : null]} numberOfLines={1}>
+        <Text style={[styles.tileCaption, tinted ? { color: z!.fg } : null]} numberOfLines={2}>
           {caption}
         </Text>
       ) : null}
@@ -172,17 +248,29 @@ export function ServiceRow({
   s,
   zone,
   containerNoun,
+  contentWidth,
   onPress,
   last,
 }: {
   s: ServiceFigures;
   zone: MarginZone;
   containerNoun: string;
+  /** Width of the screen's content column: decides whether the three figures fit side by side. */
+  contentWidth: number;
   onPress?: () => void;
   last?: boolean;
 }) {
   const c = marginColors[zone];
-  const doses = `${formatNumber(s.perContainer, Number.isInteger(s.perContainer) ? 0 : 1)}${NBSP}dose${s.perContainer >= 2 ? 's' : ''} par ${containerNoun}`;
+  const figures = [
+    { label: 'Prix TTC', value: formatEuro(s.priceTTC), caption: `${formatEuro(s.priceHT)} HT` },
+    { label: 'Coût HT', value: formatEuro(s.cost), caption: 'par dose' },
+    { label: 'Gain HT', value: formatEuro(s.gain, { sign: true }), caption: 'par dose', color: c.fg },
+  ];
+  // Card border 1 + row padding 14, 2 separators, figure padding 10: four-digit prices
+  // (a 1 250 € cognac) would clip in three columns on a narrow phone, so they stack.
+  const figWidth = (contentWidth - 2 - 28 - 2) / 3 - 20;
+  const stacked = figures.some((f) => textWidth(f.value, 16, -0.2) > figWidth || textWidth(f.caption, 13) > figWidth);
+  const doses = `${dosesLabel(s.perContainer)} par ${containerNoun}`;
   const a11y = `${s.label}${s.primary ? ', service principal' : ''}. Prix ${formatEuro(s.priceTTC)} TTC, ${formatEuro(s.priceHT)} hors taxes. Coût ${formatEuro(s.cost)}. Gain ${formatEuro(s.gain)} par dose, ${formatEuro(s.gainPerContainer)} par ${containerNoun}. Marge ${formatPercent(s.margin)}, ${c.label}.`;
   const body = (
     <>
@@ -201,12 +289,13 @@ export function ServiceRow({
         </View>
         <Badge value={s.margin} zone={zone} />
       </View>
-      <View style={styles.strip}>
-        <Figure label="Prix TTC" value={formatEuro(s.priceTTC)} caption={`${formatEuro(s.priceHT)} HT`} />
-        <View style={styles.stripSep} />
-        <Figure label="Coût HT" value={formatEuro(s.cost)} caption="par dose" />
-        <View style={styles.stripSep} />
-        <Figure label="Gain HT" value={formatEuro(s.gain, { sign: true })} valueColor={c.fg} caption="par dose" />
+      <View style={[styles.strip, stacked ? styles.stripStacked : null]}>
+        {figures.map((f, i) => (
+          <React.Fragment key={f.label}>
+            {i ? <View style={stacked ? styles.stripSepH : styles.stripSep} /> : null}
+            <Figure label={f.label} value={f.value} caption={f.caption} valueColor={f.color} stacked={stacked} />
+          </React.Fragment>
+        ))}
       </View>
       <View style={styles.svcFoot}>
         {onPress ? (
@@ -217,7 +306,7 @@ export function ServiceRow({
         ) : (
           <View />
         )}
-        <Text style={styles.svcPer} numberOfLines={1}>
+        <Text style={styles.svcPer} numberOfLines={2}>
           <Text style={[styles.svcPerValue, { color: c.fg }]}>{formatEuro(s.gainPerContainer, { sign: true })}</Text>
           {` par ${containerNoun}`}
         </Text>
@@ -239,7 +328,20 @@ export function ServiceRow({
   );
 }
 
-function Figure({ label, value, caption, valueColor }: { label: string; value: string; caption?: string; valueColor?: string }) {
+function Figure({ label, value, caption, valueColor, stacked }: { label: string; value: string; caption?: string; valueColor?: string; stacked?: boolean }) {
+  if (stacked) {
+    return (
+      <View style={styles.figRow}>
+        <View style={styles.figRowText}>
+          <Text style={styles.figLabel}>{label}</Text>
+          {caption ? <Text style={styles.figCaption}>{caption}</Text> : null}
+        </View>
+        <Text style={[styles.figValue, styles.figRowValue, valueColor ? { color: valueColor } : null]} maxFontSizeMultiplier={1.3}>
+          {value}
+        </Text>
+      </View>
+    );
+  }
   return (
     <View style={styles.fig}>
       <Text style={styles.figLabel} numberOfLines={1}>
@@ -298,6 +400,14 @@ function Sparkline({ values, width, height = 56 }: { values: number[]; width: nu
   );
 }
 
+/** « +1,30 € », « −0,70 € » or « 0,00 € », as a pill: a purchase price going up is bad news for the margin. */
+function DeltaBadge({ delta, size = 'md' }: { delta: number; size?: 'md' | 'sm' }) {
+  const label = formatEuro(Math.abs(delta));
+  if (delta > 0.004) return <Badge zone="red" icon="arrow-up" label={label} size={size} accessibilityLabel={`hausse de ${label}`} />;
+  if (delta < -0.004) return <Badge zone="green" icon="arrow-down" label={label} size={size} accessibilityLabel={`baisse de ${label}`} />;
+  return <Badge variant="neutral" icon="remove" label={label} size={size} accessibilityLabel="inchangé" />;
+}
+
 export function PriceHistoryCard({ entries }: { entries: PriceHistoryEntry[] }) {
   const [w, setW] = useState(0);
   const [expanded, setExpanded] = useState(false);
@@ -307,20 +417,25 @@ export function PriceHistoryCard({ entries }: { entries: PriceHistoryEntry[] }) 
     const chrono = [...entries].reverse();
     return [chrono[0].oldPrice, ...chrono.map((e) => e.newPrice)];
   }, [entries]);
+  if (!entries.length) return null;
   const shown = expanded ? entries : entries.slice(0, 3);
-  const first = values[0];
-  const last = values[values.length - 1];
-  const delta = last - first;
+  const latest = entries[0];
+  const now = latest.newPrice;
+  // Headline the latest change (the pill), never a first-vs-last delta: a round
+  // trip over several changes is not « stable ».
+  const delta = latest.newPrice - latest.oldPrice;
+  const since = `Depuis le ${formatShortDate(latest.changedAt)}`;
+  const change = delta > 0.004 ? `en hausse de ${formatEuro(delta)}` : delta < -0.004 ? `en baisse de ${formatEuro(-delta)}` : 'inchangé';
+  const min = Math.min(...values);
+  const max = Math.max(...values);
   return (
     <Card padding={16}>
-      <View style={styles.histHead}>
+      <View style={styles.histHead} accessible accessibilityLabel={`Prix d’achat actuel ${formatEuro(now)}, ${change}, ${since.toLowerCase()}`}>
         <View style={{ flex: 1, minWidth: 0 }}>
-          <Text style={styles.histNow}>{formatEuro(last)}</Text>
-          <Text style={styles.histSince}>
-            {delta === 0 ? 'Stable' : `${formatEuro(delta, { sign: true })} depuis le ${formatShortDate(entries[entries.length - 1].changedAt)}`}
-          </Text>
+          <Text style={styles.histNow}>{formatEuro(now)}</Text>
+          <Text style={styles.histSince}>{since}</Text>
         </View>
-        <DeltaPill delta={delta} />
+        <DeltaBadge delta={delta} />
       </View>
       <View
         style={styles.spark}
@@ -330,8 +445,23 @@ export function PriceHistoryCard({ entries }: { entries: PriceHistoryEntry[] }) 
       >
         <Sparkline values={values} width={w} />
       </View>
+      {max - min > 0.004 ? (
+        <View style={styles.range} accessible accessibilityLabel={`Plus bas ${formatEuro(min)}, plus haut ${formatEuro(max)}`}>
+          <Text style={styles.rangeText}>
+            Plus bas <Text style={styles.rangeValue}>{formatEuro(min)}</Text>
+          </Text>
+          <Text style={styles.rangeText}>
+            Plus haut <Text style={styles.rangeValue}>{formatEuro(max)}</Text>
+          </Text>
+        </View>
+      ) : null}
       {shown.map((e, i) => (
-        <View key={e.id} style={[styles.histRow, i < shown.length - 1 || entries.length > 3 ? styles.svcDivider : null]} accessible accessibilityLabel={`${formatShortDate(e.changedAt)}, ${SOURCE_LABEL[e.source] ?? 'Modification'} : de ${formatEuro(e.oldPrice)} à ${formatEuro(e.newPrice)}`}>
+        <View
+          key={e.id}
+          style={[styles.histRow, i < shown.length - 1 || entries.length > 3 ? styles.svcDivider : null]}
+          accessible
+          accessibilityLabel={`${formatShortDate(e.changedAt)}, ${SOURCE_LABEL[e.source] ?? 'Modification'} : de ${formatEuro(e.oldPrice)} à ${formatEuro(e.newPrice)}`}
+        >
           <View style={{ flex: 1, minWidth: 0 }}>
             <Text style={styles.histPrices} numberOfLines={1}>
               {formatEuro(e.oldPrice)}
@@ -342,11 +472,18 @@ export function PriceHistoryCard({ entries }: { entries: PriceHistoryEntry[] }) 
               {formatShortDate(e.changedAt)} · {SOURCE_LABEL[e.source] ?? 'Modification'}
             </Text>
           </View>
-          <DeltaPill delta={e.newPrice - e.oldPrice} small />
+          <DeltaBadge delta={e.newPrice - e.oldPrice} size="sm" />
         </View>
       ))}
       {entries.length > 3 ? (
-        <PressableScale onPress={() => setExpanded((v) => !v)} scaleTo="chip" haptic="select" style={styles.histMore} accessibilityRole="button" accessibilityLabel={expanded ? 'Afficher moins' : `Afficher les ${entries.length} changements`}>
+        <PressableScale
+          onPress={() => setExpanded((v) => !v)}
+          scaleTo="chip"
+          haptic="select"
+          style={styles.histMore}
+          accessibilityRole="button"
+          accessibilityLabel={expanded ? 'Afficher moins' : `Afficher les ${entries.length} changements`}
+        >
           <Text style={styles.histMoreText}>{expanded ? 'Afficher moins' : `Afficher les ${entries.length} changements`}</Text>
           <Icon name={expanded ? 'chevron-up' : 'chevron-down'} size={16} color={palette.em700} />
         </PressableScale>
@@ -355,26 +492,19 @@ export function PriceHistoryCard({ entries }: { entries: PriceHistoryEntry[] }) 
   );
 }
 
-/** A purchase price going up is bad news for the margin (red); down is good. */
-function DeltaPill({ delta, small }: { delta: number; small?: boolean }) {
-  const zone: MarginZone | null = delta > 0.004 ? 'red' : delta < -0.004 ? 'green' : null;
-  const c = zone ? marginColors[zone] : { fg: palette.text2, bg: palette.surface2 };
-  const icon: IconName = zone === 'red' ? 'arrow-up' : zone === 'green' ? 'arrow-down' : 'remove';
-  return (
-    <View style={[styles.delta, small ? styles.deltaSm : null, { backgroundColor: c.bg }]}>
-      <Icon name={icon} size={small ? 12 : 13} color={c.fg} />
-      <Text style={[styles.deltaText, { color: c.fg }]}>{formatEuro(Math.abs(delta))}</Text>
-    </View>
-  );
-}
-
 // ─── Skeleton ──────────────────────────────────────────────────────────────
+/** Mirrors the no-photo layout (most products): icon tile + identity, then the four tiles and a section. */
 export function DetailSkeleton() {
   return (
     <View>
-      <Skeleton height={HERO_HEIGHT} radius={radius.xl} />
-      <Skeleton height={26} width="62%" radius={8} style={{ marginTop: 20 }} />
-      <Skeleton height={14} width="45%" style={{ marginTop: 12 }} />
+      <View style={styles.identityRow}>
+        <Skeleton width={72} height={72} radius={radius.lg} />
+        <View style={[styles.identityText, { paddingTop: 4 }]}>
+          <Skeleton height={26} width="78%" radius={8} />
+          <Skeleton height={14} width="55%" style={{ marginTop: 14 }} />
+          <Skeleton height={44} width={190} radius={22} style={{ marginTop: 14 }} />
+        </View>
+      </View>
       <View style={styles.tiles}>
         <View style={styles.tileRow}>
           <SkeletonStatTile style={{ flex: 1 }} />
@@ -392,27 +522,36 @@ export function DetailSkeleton() {
 }
 
 const styles = StyleSheet.create({
-  hero: {
-    height: HERO_HEIGHT,
+  photo: {
+    height: PHOTO_HEIGHT,
     borderRadius: radius.xl,
     overflow: 'hidden',
-    backgroundColor: palette.em800,
+    backgroundColor: palette.surface2,
+    borderWidth: 1,
+    borderColor: palette.line,
     ...elevation.e2,
   },
-  heroCenter: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center' },
-  heroIcon: {
-    width: 88,
-    height: 88,
-    borderRadius: 44,
-    backgroundColor: 'rgba(255,255,255,0.12)',
+  // Scaled up so the blur's soft edges stay outside the frame.
+  backdrop: { ...StyleSheet.absoluteFillObject, transform: [{ scale: 1.25 }] },
+  veil: { ...StyleSheet.absoluteFillObject, backgroundColor: palette.surface, opacity: 0.35 },
+
+  identityRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 14 },
+  identityText: { flex: 1, minWidth: 0 },
+  tileIcon: {
+    width: 72,
+    height: 72,
+    borderRadius: radius.lg,
+    backgroundColor: palette.em50,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.22)',
+    borderColor: palette.line,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  thumbUnder: { opacity: 0.9 },
-  // The kit shimmer is tuned for light surfaces: calmer on emerald.
-  heroShimmer: { opacity: 0.35, pointerEvents: 'none' },
+  name: { ...type.title1, color: palette.ink },
+  nameLong: { ...type.title2 },
+  metaRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 10, marginTop: 10 },
+  meta: { ...type.footnote, color: palette.text3, flexShrink: 1 },
+  addPhoto: { alignSelf: 'flex-start', marginTop: 14 },
 
   tiles: { marginTop: 20, gap: 10 },
   tileRow: { flexDirection: 'row', gap: 10 },
@@ -427,12 +566,13 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: palette.line,
     backgroundColor: palette.surface,
-    justifyContent: 'space-between',
+    // Top-aligned: a caption wrapping in one tile never lowers its neighbour's value.
+    justifyContent: 'flex-start',
     ...elevation.e2,
   },
   tileTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   tileLabel: { ...type.footnoteStrong, color: palette.text3, flexShrink: 1 },
-  tileValue: { fontFamily: fontFamily.extrabold, letterSpacing: -0.6, fontVariant: ['tabular-nums'], marginTop: 8 },
+  tileValue: { fontFamily: fontFamily.extrabold, letterSpacing: TILE_TRACKING, fontVariant: ['tabular-nums'], marginTop: 8 },
   tileCaption: { ...type.footnote, color: palette.text3, marginTop: 2 },
 
   svc: { paddingHorizontal: 14, paddingTop: 14, paddingBottom: 14, gap: 12 },
@@ -446,10 +586,16 @@ const styles = StyleSheet.create({
   svcMeta: { ...type.footnote, color: palette.text3, marginTop: 1 },
   strip: { flexDirection: 'row', alignItems: 'stretch', backgroundColor: palette.surface2, borderRadius: radius.sm, paddingVertical: 10 },
   stripSep: { width: 1, backgroundColor: palette.line, marginVertical: 2 },
+  stripStacked: { flexDirection: 'column', paddingVertical: 2 },
+  stripSepH: { height: 1, backgroundColor: palette.line, marginHorizontal: 12 },
+  figRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, paddingHorizontal: 12, paddingVertical: 8 },
+  figRowText: { flexShrink: 1 },
+  figRowValue: { marginTop: 0, textAlign: 'right', flexShrink: 0 },
   fig: { flex: 1, minWidth: 0, paddingHorizontal: 10 },
-  figLabel: { ...type.footnote, color: palette.text3 },
+  // text2 on the sunken strip (text3 would be 4.4:1 there).
+  figLabel: { ...type.footnote, color: palette.text2 },
   figValue: { fontFamily: fontFamily.bold, fontSize: 16, lineHeight: 21, letterSpacing: -0.2, color: palette.ink, fontVariant: ['tabular-nums'], marginTop: 2 },
-  figCaption: { ...type.footnote, fontSize: 12, lineHeight: 16, color: palette.text3, marginTop: 1 },
+  figCaption: { ...type.footnote, color: palette.text2, marginTop: 1 },
   svcFoot: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginTop: -2, minHeight: 20, pointerEvents: 'none' },
   svcEdit: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   svcPer: { ...type.footnote, color: palette.text3, flexShrink: 1, textAlign: 'right' },
@@ -459,14 +605,14 @@ const styles = StyleSheet.create({
   histHead: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
   histNow: { ...type.numM, color: palette.ink },
   histSince: { ...type.footnote, color: palette.text3, marginTop: 2 },
-  spark: { height: 56, marginTop: 12, marginBottom: 4 },
+  spark: { height: 56, marginTop: 12 },
+  range: { flexDirection: 'row', justifyContent: 'space-between', gap: 12, marginTop: 6, marginBottom: 4 },
+  rangeText: { ...type.footnote, color: palette.text3 },
+  rangeValue: { ...type.footnoteStrong, color: palette.text2 },
   histRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12 },
   histPrices: { ...type.calloutStrong, color: palette.ink },
-  histArrow: { color: palette.text4 },
+  histArrow: { color: palette.text3 },
   histMeta: { ...type.footnote, color: palette.text3, marginTop: 2 },
   histMore: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, minHeight: 44, marginBottom: -8 },
   histMoreText: { ...type.calloutStrong, color: palette.em700 },
-  delta: { flexDirection: 'row', alignItems: 'center', gap: 4, height: 26, paddingHorizontal: 10, borderRadius: 13 },
-  deltaSm: { height: 24, paddingHorizontal: 8, borderRadius: 12 },
-  deltaText: { ...type.footnoteStrong },
 });

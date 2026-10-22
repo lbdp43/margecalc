@@ -6,16 +6,50 @@
  * kept (`modeValue`) so « 65 % » stays « 65 % » instead of drifting through
  * cent rounding, and the price follows it when the purchase price changes.
  */
-import { calculateServingMargin, ServingMarginResult } from '@margebar/shared';
+import { calculateServingMargin, Rate, ServingMarginResult } from '@margebar/shared';
 import type { SliderZone } from '../../../components/ui';
 import type { MarginThresholds } from '../../../utils/marginThresholds';
-import { NBSP, formatCoeff, formatEuro, formatNumber, formatPercent, formatVolumeCl } from '../../../utils/format';
+import { NBSP, clamp, formatCoeff, formatEuro, formatNumber, formatPercent, formatVolumeCl } from '../../../utils/format';
 import type { PriceMode } from '../../../services/draft.service';
 
 export type { PriceMode };
 
 /** Key of the « Autre dose » pseudo-service (a product sold without service types). */
 export const CUSTOM_DOSE = '__dose';
+
+/** Highest selling price of a service (TTC) the form accepts. */
+export const PRICE_MAX = 10_000;
+/** Highest purchase price per container (HT), as the API. */
+export const PURCHASE_MAX = 100_000;
+/** Values typed above this are kept (and reported) instead of being clamped silently. */
+export const TYPING_MAX = 1_000_000_000;
+
+/** « 14 », « 23,3 » — one decimal only when it is not a whole number. */
+export const formatCount = (n: number) => formatNumber(n, 1, { minDigits: 0 });
+
+/**
+ * Margin for display: one decimal up to ±100 % (« 69,0 % »), none beyond
+ * (« -757 % »), and absurd values — a typo in a price — read « ≤ -999 % »
+ * instead of « -85 714 185,0 % ».
+ */
+export function formatMargin(n: number): string {
+  if (n < -999) return `≤${NBSP}${formatPercent(-999, 0)}`;
+  return formatPercent(n, Math.abs(n) >= 100 ? 0 : 1);
+}
+
+/** Does the degree change the duties of this fiscal category? (No for wines and ciders, flat per hl.) */
+export function degreeMatters(rate: Pick<Rate, 'calcType' | 'cotisationRate' | 'cotisationCond'> | null | undefined): boolean {
+  if (!rate) return false;
+  return rate.calcType !== 'A' || (rate.cotisationRate > 0 && !!rate.cotisationCond);
+}
+
+/** Typical degree of a product category: the first « + » on an empty degree starts there. */
+export function typicalDegree(categorySlug: string | null | undefined): number | null {
+  if (categorySlug === 'spiritueux') return 40;
+  if (categorySlug === 'vins') return 12.5;
+  if (categorySlug === 'bieres') return 5;
+  return null;
+}
 
 export interface ServiceState {
   /** TTC price — the only value sent to the API. */
@@ -70,16 +104,16 @@ export function priceForMargin(costHT: number, tva: number, marginPct: number): 
 }
 
 /**
- * Suggested price when a service is switched on (RC2: never 0): a bar-like
- * price a little above the objective, rounded up to 0,10 € (under 5 €) or
- * 0,50 €. Without a purchase price: 5,00 €.
+ * Suggested price when a service is switched on (RC2: never 0): the objective
+ * price (the one the hint names) rounded up to a bar-friendly step, 0,10 €
+ * under 5 € and 0,50 € above, so « Dès 7,96 € TTC… » suggests 8,00 €.
+ * Without a purchase price: 5,00 €. Never above the input's maximum.
  */
 export function suggestedPrice(costHT: number, tva: number, goodPct: number): number {
   if (!(costHT > 0)) return 5;
-  const target = Math.min(90, Math.max(75, goodPct + 5));
-  const p = (costHT / (1 - target / 100)) * (1 + tva);
+  const p = priceForMargin(costHT, tva, goodPct);
   const step = p < 5 ? 0.1 : 0.5;
-  return round2(Math.max(0.1, Math.ceil(p / step - 1e-9) * step));
+  return round2(clamp(Math.ceil(p / step - 1e-9) * step, 0.1, PRICE_MAX));
 }
 
 /** Margin result of one service (null when it cannot be computed). */
@@ -172,7 +206,7 @@ export function pricingSetup(
       suffix: '×',
       marker: { value: objC, label: `Objectif ${formatCoeff(objC)}` },
       zones: [{ to: medC, color: 'bad' }, { to: objC, color: 'warn' }, { color: 'good' }],
-      formatLabel: (n) => `×${formatNumber(n, Number.isInteger(n) ? 0 : 1)}`,
+      formatLabel: (n) => `×${formatCount(n)}`,
       label: 'Coefficient',
       a11y: 'Coefficient multiplicateur',
     };
@@ -227,13 +261,16 @@ export function containerNoun(cl: number): string {
   return 'bouteille';
 }
 
-/** « 14 verres par bouteille », « 23,3 shots par bouteille ». */
+/** True when one dose is the whole container (a can, a bottle sold as is). */
+export const soldWhole = (containerCl: number, doseCl: number) => containerCl > 0 && doseCl > 0 && doseCl >= containerCl;
+
+/** « 14 verres par bouteille », « 23,3 shots par bouteille », « Vendu à l’unité ». */
 export function dosesSentence(containerCl: number, doseCl: number, noun: ServiceNoun): string | null {
   if (!(containerCl > 0) || !(doseCl > 0)) return null;
+  if (soldWhole(containerCl, doseCl)) return 'Vendu à l’unité';
   const n = containerCl / doseCl;
-  const shown = formatNumber(n, Number.isInteger(Math.round(n * 10) / 10) ? 0 : 1);
   const word = n >= 2 ? noun.many : noun.one;
-  return `${shown}${NBSP}${word} par ${containerNoun(containerCl)}`;
+  return `${formatCount(n)}${NBSP}${word} par ${containerNoun(containerCl)}`;
 }
 
 /**

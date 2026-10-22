@@ -24,7 +24,7 @@ export function isOnline(): boolean {
 }
 
 /** Default message when a write is attempted without a connection. */
-export const OFFLINE_MESSAGE = 'Pas de connexion : rien n’a été enregistré. Réessayez une fois connecté.';
+export const OFFLINE_MESSAGE = 'Pas de connexion : rien n’a été enregistré. Réessayez une fois connecté.';
 
 /**
  * Thrown by writes that need the server (products, services) when the device is
@@ -133,12 +133,69 @@ export async function getCached<T>(key: string): Promise<T | null> {
   }
 }
 
+/**
+ * The offline cache shares the origin's ~5 MB with things that must never fail
+ * to save (the session, the product draft, the form preferences). So:
+ * - full-size photos (`imageUrl`, up to 300 000 chars) are not cached — the
+ *   160 px `thumbnailUrl` is, and the online fetch brings the photo back;
+ * - all cache entries together stay under CACHE_BUDGET: the least recently
+ *   written ones are evicted first.
+ */
+const CACHE_BUDGET = 1_500_000;
+const CACHE_INDEX_KEY = `${CACHE_PREFIX}_index`;
+const BIG_IMAGE = 40_000;
+
+function slimItem(item: any): any {
+  if (!item || typeof item !== 'object' || Array.isArray(item)) return item;
+  if (typeof item.imageUrl === 'string' && item.imageUrl.length > BIG_IMAGE) return { ...item, imageUrl: null };
+  return item;
+}
+function slim<T>(data: T): T {
+  return (Array.isArray(data) ? data.map(slimItem) : slimItem(data)) as T;
+}
+
+type CacheIndex = Record<string, { size: number; ts: number }>;
+let indexChain: Promise<void> = Promise.resolve();
+
+/** Index updates run one after another (two writes never lose each other's entry). */
+function updateIndex(fn: (idx: CacheIndex) => Promise<void> | void): Promise<void> {
+  indexChain = indexChain
+    .then(async () => {
+      let idx: CacheIndex = {};
+      try {
+        const raw = await AsyncStorage.getItem(CACHE_INDEX_KEY);
+        const parsed = raw ? JSON.parse(raw) : {};
+        if (parsed && typeof parsed === 'object') idx = parsed;
+      } catch {
+        /* rebuilt from scratch */
+      }
+      await fn(idx);
+      await AsyncStorage.setItem(CACHE_INDEX_KEY, JSON.stringify(idx));
+    })
+    .catch(() => {});
+  return indexChain;
+}
+
 export async function setCache<T>(key: string, data: T): Promise<void> {
   try {
-    const payload = JSON.stringify({ data, timestamp: Date.now() });
-    // Guard against storing excessively large items (>2MB)
-    if (payload.length > 2 * 1024 * 1024) return;
+    const payload = JSON.stringify({ data: slim(data), timestamp: Date.now() });
+    // A single entry above the whole budget is not worth caching.
+    if (payload.length > CACHE_BUDGET) return;
     await AsyncStorage.setItem(CACHE_PREFIX + key, payload);
+    await updateIndex(async (idx) => {
+      idx[key] = { size: payload.length, ts: Date.now() };
+      let total = Object.values(idx).reduce((a, e) => a + (e?.size ?? 0), 0);
+      if (total <= CACHE_BUDGET) return;
+      const victims = Object.entries(idx)
+        .filter(([k]) => k !== key)
+        .sort((a, b) => a[1].ts - b[1].ts);
+      for (const [k, e] of victims) {
+        if (total <= CACHE_BUDGET) break;
+        await AsyncStorage.removeItem(CACHE_PREFIX + k).catch(() => {});
+        total -= e?.size ?? 0;
+        delete idx[k];
+      }
+    });
   } catch {
     // Silent fail on cache write — storage may be full
   }
@@ -147,6 +204,9 @@ export async function setCache<T>(key: string, data: T): Promise<void> {
 export async function clearCache(key: string): Promise<void> {
   try {
     await AsyncStorage.removeItem(CACHE_PREFIX + key);
+    await updateIndex((idx) => {
+      delete idx[key];
+    });
   } catch {
     // Silent fail
   }

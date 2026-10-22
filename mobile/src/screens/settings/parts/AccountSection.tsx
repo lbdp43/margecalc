@@ -1,16 +1,26 @@
 /**
  * « Compte » — sign out (confirm) and delete my data (destructive confirm;
- * the account itself is kept).
+ * the account itself is kept). Signing out also resets the margin targets
+ * kept on this device, so the next account starts from the defaults.
  */
 import React, { useState } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useQueryClient } from '@tanstack/react-query';
+import { DEFAULT_MARGIN_THRESHOLDS } from '@margebar/shared';
 import { ListGroup, ListRow, dialog, toast } from '../../../components/ui';
 import { haptics } from '../../../theme/haptics';
 import { api } from '../../../services/api';
 import { clearAllOfflineData } from '../../../services/offline';
 import { useAuthStore } from '../../../store/auth.store';
+import { MARGIN_THRESHOLDS_KEY, setMarginThresholds } from '../../../utils/marginThresholds';
 import { readableError } from './helpers';
 import { SettingsSection } from './ui';
+
+/** The margin targets live on the device: never hand them to the next account. */
+async function resetDeviceThresholds() {
+  await setMarginThresholds({ ...DEFAULT_MARGIN_THRESHOLDS });
+  await AsyncStorage.removeItem(MARGIN_THRESHOLDS_KEY).catch(() => {});
+}
 
 export function AccountSection({ index }: { index: number }) {
   const qc = useQueryClient();
@@ -26,6 +36,7 @@ export function AccountSection({ index }: { index: number }) {
     });
     if (!ok) return;
     haptics.select();
+    await resetDeviceThresholds();
     await logout();
     // The logged-in navigator is gone: drop every cached query so the next
     // account never sees this one's data.
@@ -64,18 +75,14 @@ export function AccountSection({ index }: { index: number }) {
   };
 
   return (
-    <SettingsSection
-      title="Compte"
-      index={index}
-      footer="Pour supprimer votre compte, écrivez-nous depuis Aide & retours."
-      testID="settings-account"
-    >
+    <SettingsSection title="Compte" index={index} footer="Pour supprimer le compte lui-même, écrivez-nous depuis Aide & retours." testID="settings-account">
       <ListGroup>
         <ListRow icon="log-out-outline" iconTone="neutral" title="Se déconnecter" right="none" onPress={signOut} testID="settings-logout" />
         <ListRow
           icon="trash-outline"
           title={deleting ? 'Suppression…' : 'Supprimer mes données'}
-          subtitle="Produits, services, contenants · le compte est conservé"
+          subtitle="Le compte est conservé"
+          subtitleLines={1}
           destructive
           right="none"
           disabled={deleting}

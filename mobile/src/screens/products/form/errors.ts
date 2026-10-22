@@ -37,7 +37,7 @@ export function fieldOf(path: string | undefined): FieldKey | null {
 export function describeSaveError(err: any, action: 'save' | 'delete' = 'save'): SaveErrorInfo {
   const verb = action === 'save' ? 'enregistré' : 'supprimé';
   if (err instanceof OfflineError || (!err?.response && (!isOnline() || isNetworkError(err)))) {
-    const raw = err instanceof OfflineError ? err.message : action === 'save' ? OFFLINE_MESSAGE : `Pas de connexion : le produit n’a pas été ${verb}. Réessayez une fois connecté.`;
+    const raw = err instanceof OfflineError ? err.message : action === 'save' ? OFFLINE_MESSAGE : `Pas de connexion : le produit n’a pas été ${verb}. Réessayez une fois connecté.`;
     // The title already says « Pas de connexion »: keep only the rest of the sentence.
     const rest = raw.replace(/^Pas de connexion\s*:\s*/i, '');
     return {
@@ -68,7 +68,7 @@ export function describeSaveError(err: any, action: 'save' | 'delete' = 'save'):
 
   let message = serverMessage;
   if (!message) {
-    if (status === 404) message = 'Ce produit n’existe plus : il a peut-être été supprimé depuis un autre appareil.';
+    if (status === 404) message = 'Ce produit n’existe plus : il a peut-être été supprimé depuis un autre appareil.';
     else if (status === 429) message = 'Trop de demandes d’affilée. Patientez quelques secondes, puis réessayez.';
     else if (status === 401) message = 'Votre session a expiré. Reconnectez-vous pour continuer.';
     else if (status && status >= 500) message = 'Le serveur a rencontré un problème. Réessayez dans un instant.';

@@ -1,9 +1,9 @@
 /**
  * Réglages — the settings tab root.
  *
- *   Mon établissement · Objectifs de marge · Services & contenants ·
- *   Catégories · Taxes & droits · Aide & retours · (Administration) ·
- *   À propos · Compte
+ *   Mon établissement · Objectifs de marge · Catalogue (services, contenants,
+ *   catégories) · Taxes & droits · Aide & retours · (Administration) ·
+ *   Compte · À propos (footer)
  *
  * Each group lives in ./parts (one component per section, each owning its
  * sheets and data). This file only composes them and wires pull-to-refresh.
@@ -17,12 +17,11 @@ import { useRatesStore } from '../../store/rates.store';
 import { useSystemParamsStore } from '../../store/systemParams.store';
 import { EstablishmentSection } from './parts/EstablishmentSection';
 import { MarginTargetsSection } from './parts/MarginTargetsSection';
-import { ServicesSection } from './parts/ServicesSection';
-import { CategoriesSection } from './parts/CategoriesSection';
+import { CatalogSection } from './parts/CatalogSection';
 import { TaxesSection } from './parts/TaxesSection';
 import { HelpSection } from './parts/HelpSection';
 import { AdminSection } from './parts/AdminSection';
-import { AboutSection } from './parts/AboutSection';
+import { AboutFooter } from './parts/AboutSection';
 import { AccountSection } from './parts/AccountSection';
 import { SETTINGS_KEYS } from './parts/data';
 
@@ -66,13 +65,12 @@ export function SettingsScreen() {
       <LargeTitleHeader title="Réglages" />
       <EstablishmentSection index={i++} />
       <MarginTargetsSection index={i++} />
-      <ServicesSection index={i++} />
-      <CategoriesSection index={i++} />
+      <CatalogSection index={i++} />
       <TaxesSection index={i++} isAdmin={isAdmin} />
       <HelpSection index={i++} />
       {isAdmin ? <AdminSection index={i++} navigation={navigation} /> : null}
-      <AboutSection index={i++} />
       <AccountSection index={i++} />
+      <AboutFooter index={i++} />
     </Screen>
   );
 }

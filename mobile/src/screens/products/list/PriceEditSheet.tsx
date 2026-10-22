@@ -7,16 +7,17 @@
  * every other service is sent unchanged.
  */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { StyleSheet, Text } from 'react-native';
+import { StyleSheet, Text, useWindowDimensions } from 'react-native';
 import { useQueryClient } from '@tanstack/react-query';
 import { calculateServingMargin, ProductWithMargin, ServingType } from '@margebar/shared';
-import { BottomSheet, Button, NumberInput, ResultGrid, ResultTile, sortedServings, toast } from '../../../components/ui';
+import { BottomSheet, Button, NumberInput, ResultGrid, ResultTile, sortedServings } from '../../../components/ui';
 import { palette, type } from '../../../theme';
 import { haptics } from '../../../theme/haptics';
-import { formatCoeff, formatEuro, formatPercent } from '../../../utils/format';
+import { formatCoeff, formatEuro, formatNumber, formatPercent } from '../../../utils/format';
 import { getMarginZone, useMarginThresholds } from '../../../utils/marginThresholds';
+import { isOnline } from '../../../services/offline';
 import * as servingService from '../../../services/serving.service';
-import { apiErrorMessage, canReachNetwork } from './productActions';
+import { freshToast, writeErrorMessage } from './productActions';
 
 export interface PriceEditTarget {
   servingType: ServingType;
@@ -24,9 +25,24 @@ export interface PriceEditTarget {
   price: number;
 }
 
+/**
+ * Coefficient from unrounded values (price HT ÷ cost of the dose), rounded once
+ * to 0,01 like the backend's `computed.coefficient`: the sheet and the detail
+ * always print the same « ×3,59 ». NaN when the dose costs nothing.
+ */
+export function servingCoefficient(product: ProductWithMargin, servingType: ServingType, priceTTC: number): number {
+  const ht = priceTTC / (1 + product.tvaRate);
+  const cost = product.containerVolumeCl > 0 ? (product.purchasePriceHT * servingType.volumeCl) / product.containerVolumeCl : 0;
+  if (!(cost > 0) || !isFinite(ht)) return NaN;
+  return Math.round((ht / cost) * 100) / 100;
+}
+
 export function PriceEditSheet({ product, target, onClose }: { product: ProductWithMargin | null; target: PriceEditTarget | null; onClose: () => void }) {
   const queryClient = useQueryClient();
   const t = useMarginThresholds();
+  // Narrow phones: three tiles of ~100 px, the captions must stay short.
+  const { width } = useWindowDimensions();
+  const roomy = width >= 380;
   const [shown, setShown] = useState<PriceEditTarget | null>(target);
   const [price, setPrice] = useState<number>(target?.price ?? 0);
   const [saving, setSaving] = useState(false);
@@ -66,7 +82,8 @@ export function PriceEditSheet({ product, target, onClose }: { product: ProductW
   }, [product, shown, result, t.good]);
 
   const zone = result ? getMarginZone(result.marginPercent, t) : 'red';
-  const coeff = result && result.costPerServingHT > 0 ? result.sellingPriceHT / result.costPerServingHT : 0;
+  const coeff = product && shown && result ? servingCoefficient(product, shown.servingType, price) : NaN;
+  const coeffKnown = isFinite(coeff);
   const unchanged = !!shown && Math.abs(price - shown.price) < 0.005;
 
   const save = async () => {
@@ -76,7 +93,7 @@ export function PriceEditSheet({ product, target, onClose }: { product: ProductW
       haptics.warning();
       return;
     }
-    if (!canReachNetwork()) {
+    if (!isOnline()) {
       setError('Pas de connexion : le prix n’a pas été enregistré. Réessayez une fois connecté.');
       haptics.warning();
       return;
@@ -97,11 +114,12 @@ export function PriceEditSheet({ product, target, onClose }: { product: ProductW
       setSaving(false);
       setSaved(true);
       haptics.success();
-      toast.success(`Nouveau prix enregistré : ${shown.label}, ${formatEuro(price)}`);
+      // Shown as soon as the sheet closes, never behind an older toast.
+      freshToast('success', `Nouveau prix enregistré : ${shown.label}, ${formatEuro(price)}`);
       closeTimer.current = setTimeout(onClose, 650);
     } catch (err) {
       setSaving(false);
-      setError(apiErrorMessage(err, 'Le prix n’a pas pu être enregistré. Réessayez.'));
+      setError(writeErrorMessage(err, 'save'));
       haptics.warning();
     }
   };
@@ -126,9 +144,26 @@ export function PriceEditSheet({ product, target, onClose }: { product: ProductW
       }
     >
       <ResultGrid>
-        <ResultTile label="Marge" value={result ? formatPercent(result.marginPercent) : '–'} zone={zone} highlight caption={`objectif ${formatPercent(t.good, 0)}`} />
-        <ResultTile label="Gain/dose" value={result ? formatEuro(result.marginPerServingHT, { sign: true }) : '–'} valueColor={result ? undefined : palette.text3} caption="HT" />
-        <ResultTile label="Coeff" value={result ? formatCoeff(coeff) : '–'} caption="prix HT ÷ coût" />
+        <ResultTile
+          label="Marge"
+          value={result ? formatPercent(result.marginPercent) : '–'}
+          zone={zone}
+          highlight
+          caption={roomy ? `objectif ${formatPercent(t.good, 0)}` : `obj. ${formatPercent(t.good, 0)}`}
+          accessibilityLabel={result ? `Marge ${formatNumber(result.marginPercent, 1)} pour cent, objectif ${formatNumber(t.good, 0)} pour cent` : 'Marge non calculée'}
+        />
+        <ResultTile
+          label="Gain/dose"
+          value={result ? formatEuro(result.marginPerServingHT, { sign: true }) : '–'}
+          valueColor={result ? undefined : palette.text3}
+          caption="HT"
+        />
+        <ResultTile
+          label="Coeff"
+          value={!result ? '–' : coeffKnown ? formatCoeff(coeff) : '—'}
+          caption={result && !coeffKnown ? 'coût nul' : roomy ? 'prix HT ÷ coût' : 'HT ÷ coût'}
+          accessibilityLabel={result && coeffKnown ? `Coefficient ${formatNumber(coeff, 2)}, prix hors taxes divisé par le coût` : 'Coefficient non calculable'}
+        />
       </ResultGrid>
       <NumberInput
         size="large"
