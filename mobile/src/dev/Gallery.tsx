@@ -99,6 +99,12 @@ const DEMO_PRODUCTS: ProductWithMargin[] = [
     computed: comp(58.3, 4, 1.94),
   },
   {
+    id: 'jameson-copy', name: 'Jameson Irish Whiskey (copie)', containerVolumeCl: 70, alcoholDegree: 40, thumbnailUrl: null,
+    category: { id: 'c1', name: 'Spiritueux', slug: 'spiritueux', icon: '', sortOrder: 1 },
+    servings: [sv('s7', 8, st('t1', 'Verre (spiritueux)', 5, 2))],
+    computed: comp(80.2, 8, 5.12),
+  },
+  {
     id: 'coca', name: 'Coca-Cola', containerVolumeCl: 33, alcoholDegree: 0, thumbnailUrl: null, doseVolumeCl: 33, sellingPriceTTC: 4,
     category: { id: 'c4', name: 'Softs & Jus', slug: 'softs', icon: '', sortOrder: 4 },
     servings: [],
@@ -138,6 +144,8 @@ export function Gallery() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [crash, setCrash] = useState(false);
+  const [big, setBig] = useState(99999999);
+  const [dose, setDose] = useState<number>(0);
 
   const m = useMemo(() => marginFromPrice(price), [price]);
   const zone = getMarginColor(m.margin);
@@ -276,6 +284,25 @@ export function Gallery() {
           <NumberInput value={price} onChange={setPrice} step={0.1} min={0} max={200} format={(n) => formatEuro(n)} suffix="€" accessibilityLabel="Prix de vente TTC" testID="stepper-price" />
         </View>
         <NumberInput size="large" label="Degré d’alcool" value={degree} onChange={setDegree} step={0.5} min={0} max={100} decimals={1} format={formatDegree} suffix="% vol." />
+        <NumberInput size="large" label="Valeur longue" value={big} onChange={setBig} step={1} min={0} max={100000000} format={(n) => formatEuro(n)} suffix="€" testID="stepper-long" />
+        <NumberInput
+          size="large"
+          label="Prix d’achat HT"
+          value={dose || null}
+          onChange={setDose}
+          step={0.1}
+          min={0}
+          max={1000}
+          format={(n) => formatEuro(n)}
+          suffix="€"
+          placeholder="—"
+          error={dose > 0 ? null : 'Indiquez un prix d’achat supérieur à 0 €, sinon la marge ne peut pas être calculée.'}
+          testID="stepper-error"
+        />
+        <View style={styles.rowBetween}>
+          <Text style={[type.headline, { color: palette.ink }]}>Contenance</Text>
+          <NumberInput value={big} onChange={setBig} step={1} min={0} max={100000000} format={(n) => formatNumber(n, 0)} suffix="cl" accessibilityLabel="Contenance" testID="stepper-md-long" />
+        </View>
       </Section>
 
       <Section title="Chips">
@@ -348,6 +375,15 @@ export function Gallery() {
           <ResultTile label="Gain/dose" value={formatEuro(m.gain)} valueColor={palette[zone === 'green' ? 'good' : zone === 'orange' ? 'warn' : 'bad']} />
           <ResultTile label="Gain total" value={formatEuro(m.gain * DOSES)} caption={`${DOSES} verres`} />
         </ResultGrid>
+        <ResultGrid>
+          <ResultTile compact label="Marge" value={formatPercent(m.margin)} zone={zone} highlight caption="obj. 65 %" />
+          <ResultTile compact label="Gain/dose" value={formatEuro(m.gain, { sign: true })} caption="HT" />
+          <ResultTile compact label="Gain total" value={formatEuro(123456.78)} caption="valeur longue" />
+        </ResultGrid>
+        <View style={{ flexDirection: 'row', gap: 12 }}>
+          <StatTile style={{ flex: 1 }} label="Marge moyenne" value={formatPercent(72.5)} zone="green" highlight caption="objectif 65 %" />
+          <StatTile style={{ flex: 1 }} label="Chiffre d’affaires" value={formatEuro(1234567.89)} caption="valeur longue" />
+        </View>
         <View style={styles.rowBetween}>
           <Text style={[type.footnote, { color: palette.text3 }]}>Marge live {dragging ? '(glisser)' : ''}</Text>
           <AnimatedNumber value={m.margin} instant={dragging} format={(n) => formatPercent(n)} style={[type.numM, { color: palette.ink }]} />
@@ -377,7 +413,8 @@ export function Gallery() {
           <ValueRow label="Cotisation sécu." qualifier="> 18 % vol." value={formatEuro(1.74)} />
           <ValueRow label="Total droits" value={formatEuro(7.15)} strong />
           <ValueRow label="Prix TTC" qualifier="TVA 20 %" value={formatEuro(21.78)} />
-          <ValueRow label="Prix au litre HT" value={formatEuro(25.93)} last />
+          <ValueRow label="Prix au litre HT" value={formatEuro(25.93)} />
+          <ValueRow label="Fournisseur" value="Distillerie des Hauts-de-France · livraison du mardi" last />
         </Card>
         <ListGroup>
           <ListRow icon="business-outline" title="Établissement" subtitle="Le Comptoir Démo" onPress={() => {}} />
@@ -524,7 +561,7 @@ export function Gallery() {
         <SkeletonProductCard />
         <View style={[styles.row, { gap: 12 }]}>
           <SkeletonStatTile style={{ flex: 1 }} />
-          <SkeletonStatTile style={{ flex: 1 }} />
+          <SkeletonStatTile style={{ flex: 1 }} height={150} />
         </View>
         <Skeleton height={12} width="70%" />
         <Card style={{ alignItems: 'center' }}>

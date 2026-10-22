@@ -17,6 +17,7 @@ import { formatCoeff, formatEuro, formatNumber, formatPercent } from '../../../u
 import { getMarginZone, useMarginThresholds } from '../../../utils/marginThresholds';
 import { isOnline } from '../../../services/offline';
 import * as servingService from '../../../services/serving.service';
+import { costPerDoseHT, priceForMargin, serviceNoun } from '../form/pricing';
 import { freshToast, writeErrorMessage } from './productActions';
 
 export interface PriceEditTarget {
@@ -72,14 +73,20 @@ export function PriceEditSheet({ product, target, onClose }: { product: ProductW
     }
   }, [product, shown, price]);
 
-  // Lowest TTC price (to 0,10 €) that reaches the objective margin.
+  // Lowest TTC price that reaches the objective margin: the very threshold the
+  // product form names (same unrounded dose cost, same cent rounding), so the
+  // two screens never disagree. The 0,10 € step is the stepper's only.
   const objectivePrice = useMemo(() => {
-    if (!product || !shown || !result) return null;
-    const cost = result.costPerServingHT;
-    if (!(cost > 0) || t.good >= 100) return null;
-    const ttc = (cost / (1 - t.good / 100)) * (1 + product.tvaRate);
-    return Math.ceil(ttc * 10 - 1e-6) / 10;
-  }, [product, shown, result, t.good]);
+    if (!product || !shown || t.good >= 100) return null;
+    const cost = costPerDoseHT(product.purchasePriceHT, product.containerVolumeCl, shown.servingType.volumeCl);
+    if (!(cost > 0)) return null;
+    return priceForMargin(cost, product.tvaRate, t.good);
+  }, [product, shown, t.good]);
+  // « 65 % », « 67,5 % »: written as in the form.
+  const objectiveText = formatPercent(t.good, Number.isInteger(t.good) ? 0 : 1);
+  const noun = serviceNoun(shown?.servingType.name);
+  // Judged on the price itself, so the sentence never contradicts the price it names.
+  const objectiveMet = objectivePrice !== null && price >= objectivePrice - 0.005;
 
   const zone = result ? getMarginZone(result.marginPercent, t) : 'red';
   const coeff = product && shown && result ? servingCoefficient(product, shown.servingType, price) : NaN;
@@ -149,8 +156,8 @@ export function PriceEditSheet({ product, target, onClose }: { product: ProductW
           value={result ? formatPercent(result.marginPercent) : '–'}
           zone={zone}
           highlight
-          caption={roomy ? `objectif ${formatPercent(t.good, 0)}` : `obj. ${formatPercent(t.good, 0)}`}
-          accessibilityLabel={result ? `Marge ${formatNumber(result.marginPercent, 1)} pour cent, objectif ${formatNumber(t.good, 0)} pour cent` : 'Marge non calculée'}
+          caption={roomy ? `objectif ${objectiveText}` : `obj. ${objectiveText}`}
+          accessibilityLabel={result ? `Marge ${formatNumber(result.marginPercent, 1)} pour cent, objectif ${formatNumber(t.good, Number.isInteger(t.good) ? 0 : 1)} pour cent` : 'Marge non calculée'}
         />
         <ResultTile
           label="Gain/dose"
@@ -187,11 +194,11 @@ export function PriceEditSheet({ product, target, onClose }: { product: ProductW
         <Text style={styles.error} accessibilityLiveRegion="polite">
           {error}
         </Text>
-      ) : objectivePrice && result ? (
-        <Text style={styles.hint}>
-          {result.marginPercent >= t.good
-            ? `Objectif atteint : au-dessus de ${formatPercent(t.good, 0)} de marge dès ${formatEuro(objectivePrice)} TTC.`
-            : `Dès ${formatEuro(objectivePrice)} TTC, ce service dépasse ${formatPercent(t.good, 0)} de marge.`}
+      ) : objectivePrice !== null ? (
+        <Text style={styles.hint} testID="price-objective">
+          {objectiveMet
+            ? `Objectif atteint : au-dessus de ${objectiveText} de marge dès ${formatEuro(objectivePrice)} TTC.`
+            : `Dès ${formatEuro(objectivePrice)} TTC, ${noun.this} dépasse ${objectiveText} de marge.`}
         </Text>
       ) : null}
     </BottomSheet>

@@ -114,9 +114,13 @@ export function NavBar({ title, onBack, back = true, trailing, close, style, hai
       ) : (
         <View style={{ width: 8 }} />
       )}
-      <Text style={styles.navTitle} numberOfLines={1} accessibilityRole="header">
-        {title}
-      </Text>
+      {title ? (
+        <Text style={styles.navTitle} numberOfLines={1} accessibilityRole="header">
+          {title}
+        </Text>
+      ) : (
+        <View style={styles.navSpacer} />
+      )}
       {trailing ? <View style={styles.navTrailing}>{trailing}</View> : null}
       <Animated.View pointerEvents="none" style={[styles.navLine, line]} />
     </View>
@@ -188,6 +192,7 @@ const styles = StyleSheet.create({
     zIndex: 2,
   },
   navTitle: { ...type.title3, color: palette.ink, flex: 1, minWidth: 0 },
+  navSpacer: { flex: 1 },
   navTrailing: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   navLine: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 1, backgroundColor: palette.line },
   hero: {

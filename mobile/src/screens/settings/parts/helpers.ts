@@ -1,9 +1,9 @@
 /**
- * Shared helpers for the Réglages area: readable API errors, icons for
- * services, small text utilities.
+ * Shared helpers for the Réglages area: readable API errors, small text and
+ * date utilities. Service icons come from components/ui/ServingTypeIcon
+ * (`servingIconName`), the one mapping shared with the product screens.
  */
 import { Linking } from 'react-native';
-import type { IconName } from '../../../components/ui';
 import { isOnline } from '../../../services/offline';
 import { formatNumber, NBSP } from '../../../utils/format';
 
@@ -61,19 +61,6 @@ export function matches(haystack: Array<string | null | undefined>, query: strin
   const q = strip(query.trim());
   if (!q) return true;
   return haystack.some((h) => (h ? strip(h).includes(q) : false));
-}
-
-/** Ionicons glyph for a service (shot → flask, verre → wine, demi/pinte → beer). */
-export function servingIcon(name: string, volumeCl?: number): IconName {
-  const n = strip(name);
-  if (/shot|shooter|dose|mignon/.test(n)) return 'flask-outline';
-  if (/demi|pinte|biere|bock|galopin|pression|seau|pichet/.test(n)) return 'beer-outline';
-  if (/vin|verre|coupe|flute|champ|ballon/.test(n)) return 'wine-outline';
-  if (volumeCl !== undefined) {
-    if (volumeCl <= 6) return 'flask-outline';
-    if (volumeCl <= 20) return 'wine-outline';
-  }
-  return 'beer-outline';
 }
 
 /** « 65 % » or « 67,5 % » (thresholds, no useless decimal). */

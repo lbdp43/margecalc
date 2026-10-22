@@ -20,10 +20,31 @@ import Animated, {
   withSpring,
   withTiming,
 } from 'react-native-reanimated';
-import { motion } from '../../theme';
+import { motion, palette } from '../../theme';
 import { fire, HapticKind } from '../../theme/haptics';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+
+/**
+ * Web: one keyboard focus ring for every control (Pressable, links, tabs):
+ * a 2 px em700 outline that shows only for keyboard focus (:focus-visible),
+ * instead of the browser's default ring. `:where()` keeps it at zero
+ * specificity, so a control that styles its own focus (TextField, Slider,
+ * the modal focus sinks set `outlineStyle: 'none'`) keeps its look.
+ */
+const FOCUS_STYLE_ID = 'mb-focus-ring';
+if (Platform.OS === 'web') {
+  const doc: any = (globalThis as any).document;
+  if (doc?.head && !doc.getElementById(FOCUS_STYLE_ID)) {
+    const el = doc.createElement('style');
+    el.id = FOCUS_STYLE_ID;
+    el.textContent = [
+      ':where([role="button"], [role="link"], [role="tab"], [role="radio"], [role="switch"], [role="checkbox"], [role="menuitem"], button, a[href], [tabindex]:not([tabindex="-1"])):focus { outline: none; }',
+      `:where([role="button"], [role="link"], [role="tab"], [role="radio"], [role="switch"], [role="checkbox"], [role="menuitem"], button, a[href], [tabindex]:not([tabindex="-1"])):focus-visible { outline: 2px solid ${palette.em700}; outline-offset: 2px; }`,
+    ].join('\n');
+    doc.head.appendChild(el);
+  }
+}
 
 export type ScalePreset = 'button' | 'card' | 'chip' | 'scan' | 'none';
 

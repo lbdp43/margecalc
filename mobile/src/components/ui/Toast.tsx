@@ -9,7 +9,10 @@
  * - ink pill, 52 tall, radius 16, e3; icon in em300 / #FF8B78; action in lime.
  * - 3 s, or 5 s with an action (errors 5 s). Swipe down to dismiss.
  * - Sits 12 px above the sticky action bar, else above the floating tab bar.
- * - Never shown on top of an open BottomSheet or Dialog: queued until it closes.
+ * - Never shown on top of an open BottomSheet or Dialog: it waits until the
+ *   overlay closes. One opening over a toast already seen (> 800 ms) dismisses it.
+ * - The newest message wins: it replaces a plain toast at once, and cuts an
+ *   action toast down to 1,5 s. A toast that waited more than 4 s is dropped.
  */
 import React, { useEffect, useRef, useState } from 'react';
 import { PanResponder, Platform, StyleSheet, Text, View } from 'react-native';
@@ -34,25 +37,51 @@ interface ToastItem extends ToastOptions {
   id: number;
   kind: ToastKind;
   message: string;
+  /** When it was asked for: a toast still waiting after STALE_MS is dropped. */
+  queuedAt: number;
 }
 
+/** A toast that waited longer than this (behind a sheet, a dialog…) is no longer news. */
+const STALE_MS = 4000;
+/** A toast seen for longer than this is dismissed, not re-shown, when an overlay opens over it. */
+const SEEN_MS = 800;
+/** A new toast cuts a visible action toast down to at most this. */
+const ACTION_GRACE_MS = 1500;
+
 type Listener = (queue: ToastItem[]) => void;
+type HostCommand = { type: 'preempt' } | { type: 'shorten'; ms: number };
 let queue: ToastItem[] = [];
 let seq = 0;
+/** The toast the host is showing right now (kept by ToastHost). */
+let shownNow: { id: number; at: number } | null = null;
 const listeners = new Set<Listener>();
+const hostCommands = new Set<(c: HostCommand) => void>();
 const emit = () => listeners.forEach((l) => l(queue));
+const command = (c: HostCommand) => hostCommands.forEach((h) => h(c));
 
+/**
+ * Queue rules: one toast on screen at a time, and the newest message wins.
+ * - A new toast replaces a visible toast that has no action, at once.
+ * - A visible action toast (« Annuler ») is cut down to 1,5 s, then the new one shows.
+ * - Waiting toasts without an action are superseded by the new one.
+ */
 function show(message: string, kind: ToastKind = 'info', opts: ToastOptions = {}) {
   if (!message) return;
   // de-duplicate identical consecutive messages
   const last = queue[queue.length - 1];
   if (last && last.message === message && last.kind === kind) return;
-  queue = [...queue, { id: ++seq, kind, message, ...opts }];
+  const item: ToastItem = { id: ++seq, kind, message, queuedAt: Date.now(), ...opts };
+  const current = queue[0];
+  const currentShown = !!current && shownNow?.id === current.id;
+  const waiting = queue.slice(currentShown ? 1 : 0).filter((t) => !!t.action);
+  queue = [...(currentShown ? [current] : []), ...waiting, item];
   emit();
+  if (currentShown) command(current.action ? { type: 'shorten', ms: ACTION_GRACE_MS } : { type: 'preempt' });
 }
 
-function dismissCurrent() {
-  queue = queue.slice(1);
+function dismiss(id: number) {
+  if (!queue.some((t) => t.id === id)) return;
+  queue = queue.filter((t) => t.id !== id);
   emit();
 }
 
@@ -88,6 +117,7 @@ export function ToastHost() {
   const y = useSharedValue(16);
   const opacity = useSharedValue(0);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const endsAt = useRef(0);
   const drag = useSharedValue(0);
 
   useEffect(() => {
@@ -100,39 +130,87 @@ export function ToastHost() {
   const current = items[0];
   const blocked = sheetCount > 0;
 
-  const hide = (afterId: number) => {
+  const finishHide = (afterId: number) => {
+    if (shownNow?.id === afterId) shownNow = null;
+    setShownId((id) => (id === afterId ? null : id));
+    drag.value = 0;
+    dismiss(afterId);
+  };
+
+  const hide = (afterId: number, duration: number = motion.duration.fast) => {
+    // Never fade out a newer toast with an older one's timer.
+    if (shownNow?.id !== afterId) {
+      dismiss(afterId);
+      return;
+    }
     if (timer.current) clearTimeout(timer.current);
-    opacity.value = withTiming(0, { duration: motion.duration.fast, easing: motion.easing.accel }, (finished) => {
+    timer.current = null;
+    opacity.value = withTiming(0, { duration, easing: motion.easing.accel }, (finished) => {
       if (finished) runOnJS(finishHide)(afterId);
     });
   };
 
-  const finishHide = (afterId: number) => {
-    setShownId(null);
-    drag.value = 0;
-    if (queue[0]?.id === afterId) dismissCurrent();
+  const schedule = (id: number, ms: number) => {
+    if (timer.current) clearTimeout(timer.current);
+    endsAt.current = Date.now() + ms;
+    timer.current = setTimeout(() => hide(id), ms);
   };
 
   useEffect(() => {
     if (!current || blocked || shownId === current.id) return;
+    // Waited too long (behind a sheet, a dialog, an action toast): drop it.
+    if (Date.now() - current.queuedAt > STALE_MS) {
+      dismiss(current.id);
+      return;
+    }
     setShownId(current.id);
+    shownNow = { id: current.id, at: Date.now() };
     drag.value = 0;
     y.value = reduce ? 0 : 16;
     opacity.value = 0;
     opacity.value = withTiming(1, { duration: reduce ? 120 : motion.duration.fast });
     if (!reduce) y.value = withSpring(0, motion.spring.gentle);
-    const duration = current.duration ?? (current.action || current.kind === 'error' ? 5000 : 3000);
-    if (timer.current) clearTimeout(timer.current);
-    const id = current.id;
-    timer.current = setTimeout(() => hide(id), duration);
+    schedule(current.id, current.duration ?? (current.action || current.kind === 'error' ? 5000 : 3000));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [current?.id, blocked, shownId]);
 
-  // A sheet or dialog opened while a toast is showing: hide it now and show
-  // it again (full duration) once the overlay closes — never stack overlays.
+  // toast.clear() removed the toast on screen: drop its timer too.
+  useEffect(() => {
+    if (shownId === null || items.some((t) => t.id === shownId)) return;
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = null;
+    if (shownNow?.id === shownId) shownNow = null;
+    setShownId(null);
+  }, [items, shownId]);
+
+  // A newer toast arrived while this one is on screen.
+  useEffect(() => {
+    const onCommand = (c: HostCommand) => {
+      const live = shownNow;
+      if (!live) return;
+      if (c.type === 'preempt') hide(live.id, 100);
+      else if (endsAt.current - Date.now() > c.ms) schedule(live.id, c.ms);
+    };
+    hostCommands.add(onCommand);
+    return () => {
+      hostCommands.delete(onCommand);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // A sheet or dialog opened while a toast is showing — never stack overlays.
+  // Already read (on screen for more than 800 ms): dismiss it. Barely seen:
+  // hide it now and show it again once the overlay closes (unless it is stale by then).
   useEffect(() => {
     if (!blocked || shownId === null) return;
+    const live = shownNow;
+    if (live && live.id === shownId && Date.now() - live.at > SEEN_MS) {
+      hide(live.id, 100);
+      return;
+    }
     if (timer.current) clearTimeout(timer.current);
+    timer.current = null;
+    shownNow = null;
     opacity.value = withTiming(0, { duration: 100 });
     const t = setTimeout(() => setShownId(null), 110);
     return () => clearTimeout(t);
@@ -141,6 +219,7 @@ export function ToastHost() {
 
   useEffect(() => () => {
     if (timer.current) clearTimeout(timer.current);
+    shownNow = null;
   }, []);
 
   const pan = useRef(
@@ -151,7 +230,7 @@ export function ToastHost() {
       },
       onPanResponderRelease: (_e, g) => {
         if (g.dy > 28 || g.vy > 0.5) {
-          const id = queue[0]?.id;
+          const id = shownNow?.id;
           if (id !== undefined) hide(id);
         } else drag.value = withSpring(0, motion.spring.snappy);
       },

@@ -8,8 +8,11 @@
  *   ├─ Tabs (bottom tabs, floating TabBar, back → Tableau de bord)
  *   │   ├─ Réglages        → SettingsMain [/reglages], AdminProducts [/reglages/produits]
  *   │   ├─ Produits        → ProductList [/produits], ProductDetail [/produits/:productId]
- *   │   └─ Tableau de bord → DashboardMain [/], DutyCalculator [/calculateur]
- *   ├─ ProductForm   [/produits/nouveau] (create / edit — no tab bar)
+ *   │   └─ Tableau de bord → DashboardMain [/], DutyCalculator [/calculateur],
+ *   │                        DashboardProductDetail [/tableau-de-bord/produits/:productId]
+ *   │                        (a product opened from the dashboard stays in its tab:
+ *   │                        « Retour » goes back to the dashboard)
+ *   ├─ ProductForm   [/produits/nouveau] (create) · [/produits/:productId/modifier] (edit) — no tab bar
  *   └─ InvoiceScan   [/facture] (no tab bar)
  *   Logged out (AuthNavigator):
  *     Landing [/], Login [/connexion], Register [/inscription], DutyCalculator [/calculateur]
@@ -25,6 +28,8 @@ export const ROUTES = {
   productDetail: 'ProductDetail',
   dashboardMain: 'DashboardMain',
   dutyCalculator: 'DutyCalculator',
+  /** The same ProductDetail screen, inside the Tableau de bord stack. */
+  dashboardProductDetail: 'DashboardProductDetail',
   productForm: 'ProductForm',
   invoiceScan: 'InvoiceScan',
   // AuthNavigator (logged out)
@@ -34,11 +39,12 @@ export const ROUTES = {
 } as const;
 
 /** Routes that never show the floating tab bar (defensive: forms live in the root stack). */
-export const TAB_BAR_HIDDEN_ROUTES = new Set<string>(['ProductForm', 'InvoiceScan', 'CocktailForm', 'Scan']);
+export const TAB_BAR_HIDDEN_ROUTES = new Set<string>([ROUTES.productForm, ROUTES.invoiceScan]);
 
+type NavState = { routeNames?: string[]; index?: number; routes?: { name: string; params?: any; state?: NavState }[] };
 type Nav = {
   navigate: (...args: any[]) => void;
-  getState?: () => { routeNames?: string[] } | undefined;
+  getState?: () => NavState | undefined;
   getParent?: (id?: string) => Nav | undefined;
 };
 
@@ -61,8 +67,22 @@ export function navigateInTab(navigation: Nav, tab: string, screen?: string, par
   });
 }
 
-/** Product detail (Produits stack, ProductList kept underneath). */
+/** True when `navigation` is the Tableau de bord stack (or a screen in it). */
+function inDashboardStack(navigation: Nav): boolean {
+  return !!navigation.getState?.()?.routeNames?.includes(ROUTES.dashboardProductDetail);
+}
+
+/**
+ * Product detail. From the Tableau de bord stack (Top & flop, Meilleur
+ * produit…) it opens in that stack, so « Retour » returns to the dashboard and
+ * the tab bar keeps « Tableau de bord » selected. From anywhere else: Produits
+ * stack, ProductList kept underneath.
+ */
 export function goToProduct(navigation: Nav, productId: string) {
+  if (inDashboardStack(navigation)) {
+    navigation.navigate(ROUTES.dashboardProductDetail, { productId });
+    return;
+  }
   navigateInTab(navigation, ROUTES.productsTab, ROUTES.productDetail, { productId });
 }
 
@@ -102,16 +122,48 @@ export function goHome(navigation: Nav) {
   }
 }
 
+/** The tab stack shown under the root-stack screens: { tab name, top route of its stack }. */
+function focusedTabTop(navigation: Nav): { tab: string; name: string; params?: any } | null {
+  let nav: Nav | undefined = navigation;
+  for (let i = 0; nav && i < 8; i++) {
+    const state = nav.getState?.();
+    const tabsRoute = state?.routeNames?.includes(ROUTES.tabs) ? state.routes?.find((r) => r.name === ROUTES.tabs) : undefined;
+    if (tabsRoute) {
+      const tabs = tabsRoute.state;
+      const tab = tabs?.routes?.[tabs.index ?? 0];
+      const stack = tab?.state;
+      const top = stack?.routes?.[stack.index ?? (stack.routes?.length ?? 1) - 1];
+      return tab && top ? { tab: tab.name, name: top.name, params: top.params } : null;
+    }
+    nav = nav.getParent?.();
+  }
+  return null;
+}
+
 /**
  * After a successful save from the form: close the form and land on the
  * product detail inside Produits (ProductList underneath), whatever tab the
- * flow started from (Scanner, Dashboard…).
+ * flow started from (Scanner, Réglages…). Exception: the form was opened from
+ * this product's detail in the Tableau de bord stack — go back to it there.
  */
 export function afterProductSaved(navigation: Nav, productId: string) {
-  goToProduct(navigation, productId);
+  const under = focusedTabTop(navigation);
+  if (under?.name === ROUTES.dashboardProductDetail && under.params?.productId === productId) {
+    navigateInTab(navigation, ROUTES.dashboardTab, ROUTES.dashboardProductDetail, { productId });
+    return;
+  }
+  navigateInTab(navigation, ROUTES.productsTab, ROUTES.productDetail, { productId });
 }
 
-/** After deleting from the form or the detail: back to the list. */
+/**
+ * After deleting from the form or the detail: back to the list — or to the
+ * dashboard when the product was opened from it.
+ */
 export function afterProductDeleted(navigation: Nav) {
+  const fromDashboard = inDashboardStack(navigation) || focusedTabTop(navigation)?.name === ROUTES.dashboardProductDetail;
+  if (fromDashboard) {
+    navigation.navigate(ROUTES.tabs, { screen: ROUTES.dashboardTab, params: { screen: ROUTES.dashboardMain } });
+    return;
+  }
   goToProductList(navigation);
 }

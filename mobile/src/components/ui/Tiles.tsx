@@ -6,12 +6,17 @@
  *     <RichContent/>
  *   </StatTile>
  *
+ *   <StatTile label="Marge moyenne" value="72,5 %" zone="green" highlight caption="objectif 65 %" />
+ *
  *   <ResultTile label="Marge" value={formatPercent(69)} zone="green" highlight caption="objectif 65 %" />
- *   <ResultTile label="Prix HT" value={formatEuro(7.5)} caption="HT · 5 cl" />
+ *   <ResultTile label="Prix HT" value={formatEuro(7.5)} caption="HT · 5 cl" compact />
  *   <ResultGrid>{six ResultTiles}</ResultGrid>   2 rows × 3, gap 8
+ *
+ * Long values shrink to fit their tile on every platform (native:
+ * adjustsFontSizeToFit; web: the font size is computed from the measured width).
  */
-import React, { useEffect, useRef } from 'react';
-import { StyleProp, StyleSheet, Text, TextStyle, View, ViewStyle } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { LayoutChangeEvent, Platform, StyleProp, StyleSheet, Text, TextStyle, View, ViewStyle } from 'react-native';
 import Animated, {
   interpolateColor,
   useAnimatedStyle,
@@ -28,6 +33,22 @@ import { AnimatedNumber } from './AnimatedNumber';
 import { PressableScale } from './PressableScale';
 import { IconName } from './Icon';
 
+/**
+ * Web: react-native-web ignores `adjustsFontSizeToFit`. Estimate the text width
+ * (Jakarta, tabular digits ≈ 0.6 em per character) against the measured room
+ * and return a smaller font size when it would not fit.
+ */
+function useFitFont(text: string, baseSize: number, minSize: number, inset: number) {
+  const [width, setWidth] = useState(0);
+  const onLayout = (e: LayoutChangeEvent) => setWidth(e.nativeEvent.layout.width);
+  if (Platform.OS !== 'web' || !width || !text) return { onLayout, fit: null as TextStyle | null };
+  const room = width - inset;
+  const needed = text.length * baseSize * 0.6;
+  if (needed <= room) return { onLayout, fit: null as TextStyle | null };
+  const size = Math.max(minSize, Math.floor(room / (text.length * 0.6)));
+  return { onLayout, fit: { fontSize: size, lineHeight: Math.round(size * 1.25), letterSpacing: -0.02 * size } as TextStyle };
+}
+
 // ─── StatTile ──────────────────────────────────────────────────────────────
 export interface StatTileProps {
   label: string;
@@ -41,6 +62,12 @@ export interface StatTileProps {
   onPress?: () => void;
   style?: StyleProp<ViewStyle>;
   valueStyle?: StyleProp<TextStyle>;
+  /** Line under the value (footnote, text3), e.g. « objectif 65 % ». */
+  caption?: string;
+  /** Margin zone of the value: colours it (and the tint with `highlight`). */
+  zone?: MarginZone;
+  /** Tinted background in the zone colour (goodBg / warnBg / badBg). */
+  highlight?: boolean;
   accessibilityLabel?: string;
   /** Delay for the count-up (stagger in dashboards). */
   delay?: number;
@@ -57,10 +84,17 @@ export function StatTile({
   onPress,
   style,
   valueStyle,
+  caption,
+  zone,
+  highlight = false,
   accessibilityLabel,
   delay,
 }: StatTileProps) {
   const tone = iconTone === 'trophy' ? { bg: palette.trophyBg, fg: palette.trophy } : { bg: palette.em50, fg: palette.em700 };
+  const z = zone ? marginColors[zone] : null;
+  const valueColor = z ? z.fg : palette.ink;
+  const shownValue = value === undefined ? '' : typeof value === 'number' ? format(value) : value;
+  const { onLayout, fit } = useFitFont(`${shownValue}${unit ? `  ${unit}` : ''}`, type.numL.fontSize as number, 18, 28);
   const body = (
     <>
       <View style={styles.statTop}>
@@ -76,29 +110,45 @@ export function StatTile({
       {children ? (
         children
       ) : (
-        <View style={styles.statValueRow}>
-          {typeof value === 'number' ? (
-            <AnimatedNumber value={value} format={format} style={[type.numL, { color: palette.ink }, valueStyle]} delay={delay} />
-          ) : (
-            <Text style={[type.numL, { color: palette.ink }, valueStyle]} maxFontSizeMultiplier={1.3}>
-              {value}
+        <View>
+          <View style={styles.statValueRow}>
+            {typeof value === 'number' ? (
+              <AnimatedNumber value={value} format={format} style={[type.numL, { color: valueColor }, fit, valueStyle]} delay={delay} />
+            ) : (
+              <Text
+                style={[type.numL, { color: valueColor }, fit, valueStyle]}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.6}
+                maxFontSizeMultiplier={1.3}
+              >
+                {value}
+              </Text>
+            )}
+            {unit ? <Text style={styles.statUnit}>{unit}</Text> : null}
+          </View>
+          {caption ? (
+            <Text style={[styles.statCaption, highlight && z ? { color: z.fg } : null]} numberOfLines={2}>
+              {caption}
             </Text>
-          )}
-          {unit ? <Text style={styles.statUnit}>{unit}</Text> : null}
+          ) : null}
         </View>
       )}
     </>
   );
-  const a11y = accessibilityLabel ?? `${label}${value !== undefined ? ` : ${typeof value === 'number' ? format(value) : value}` : ''}${unit ? ` ${unit}` : ''}`;
+  const a11y =
+    accessibilityLabel ??
+    `${label}${shownValue ? ` : ${shownValue}` : ''}${unit ? ` ${unit}` : ''}${z ? `, ${z.label}` : ''}${caption ? `, ${caption}` : ''}`;
+  const tileStyle = [styles.stat, highlight && z ? { backgroundColor: z.bg, borderColor: 'transparent' } : null, style];
   if (onPress) {
     return (
-      <PressableScale scaleTo="card" onPress={onPress} accessibilityLabel={a11y} style={[styles.stat, style]}>
+      <PressableScale scaleTo="card" onPress={onPress} onLayout={onLayout} accessibilityLabel={a11y} style={tileStyle}>
         {body}
       </PressableScale>
     );
   }
   return (
-    <View style={[styles.stat, style]} accessible accessibilityLabel={a11y}>
+    <View style={tileStyle} onLayout={onLayout} accessible accessibilityLabel={a11y}>
       {body}
     </View>
   );
@@ -115,11 +165,25 @@ export interface ResultTileProps {
   highlight?: boolean;
   /** Colour the value without the tinted background (e.g. Gain/dose in good). */
   valueColor?: string;
+  /** Tighter tile (min height 56, padding 8/10, value 17) for dense grids and sheets. */
+  compact?: boolean;
+  valueStyle?: StyleProp<TextStyle>;
   style?: StyleProp<ViewStyle>;
   accessibilityLabel?: string;
 }
 
-export function ResultTile({ label, value, caption, zone, highlight = false, valueColor, style, accessibilityLabel }: ResultTileProps) {
+export function ResultTile({
+  label,
+  value,
+  caption,
+  zone,
+  highlight = false,
+  valueColor,
+  compact = false,
+  valueStyle,
+  style,
+  accessibilityLabel,
+}: ResultTileProps) {
   const reduce = useReducedMotion();
   const z = zone ? marginColors[zone] : null;
   const prevZone = useRef<MarginZone | undefined>(zone);
@@ -148,13 +212,16 @@ export function ResultTile({ label, value, caption, zone, highlight = false, val
   }));
 
   const color = valueColor ?? (highlight && z ? z.fg : palette.ink);
+  const baseSize = compact ? 17 : (type.numM.fontSize as number);
+  const { onLayout, fit } = useFitFont(value, baseSize, 11, compact ? 22 : 26);
   const a11y =
     accessibilityLabel ??
     `${label} ${value.replace(/ /g, ' ').replace('%', 'pour cent').replace('€', 'euros')}${z ? `, ${z.label}` : ''}${caption ? `, ${caption}` : ''}`;
 
   return (
     <Animated.View
-      style={[styles.result, highlight && z ? { borderColor: 'transparent' } : null, animated, style]}
+      style={[styles.result, compact && styles.resultCompact, highlight && z ? { borderColor: 'transparent' } : null, animated, style]}
+      onLayout={onLayout}
       accessible
       accessibilityLabel={a11y}
     >
@@ -162,7 +229,14 @@ export function ResultTile({ label, value, caption, zone, highlight = false, val
         {label}
       </Text>
       <Text
-        style={[type.numM, { color }, highlight ? { fontFamily: fontFamily.extrabold } : null]}
+        style={[
+          type.numM,
+          { color },
+          compact ? styles.resultValueCompact : null,
+          highlight ? { fontFamily: fontFamily.extrabold } : null,
+          fit,
+          valueStyle,
+        ]}
         numberOfLines={1}
         adjustsFontSizeToFit
         minimumFontScale={0.8}
@@ -221,6 +295,7 @@ const styles = StyleSheet.create({
   statIcon: { width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
   statValueRow: { flexDirection: 'row', alignItems: 'baseline', gap: 6 },
   statUnit: { ...type.footnote, color: palette.text3 },
+  statCaption: { ...type.footnote, color: palette.text3, marginTop: 2 },
   result: {
     minHeight: 66,
     borderRadius: radius.md,
@@ -231,6 +306,8 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-start',
     gap: 2,
   },
+  resultCompact: { minHeight: 56, paddingHorizontal: 10, paddingVertical: 8 },
+  resultValueCompact: { fontSize: 17, lineHeight: 22, letterSpacing: -0.3 },
   resultLabel: { ...type.footnoteStrong, fontSize: 12, lineHeight: 16, color: palette.text3 },
   resultCaption: { ...type.footnote, fontSize: 12, lineHeight: 16, color: palette.text3 },
 });

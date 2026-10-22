@@ -7,6 +7,12 @@
  *   const t = useMarginThresholds();          // { good: 65, medium: 50 }
  *   const zone = getMarginZone(69, t);         // 'green'
  *   await setMarginThresholds({ good: 70, medium: 55 }); // persists + notifies
+ *
+ * Per account: `store/systemParams.store` binds the objectives to the signed-in
+ * account (its own copy under `margebar_margin_thresholds:<userId>`, put back
+ * at each sign-in, defaults for the next account). Screens save through its
+ * `saveMarginObjectives`. A load that was started before a newer write never
+ * overwrites that write (see `writeSeq`).
  */
 import { useEffect, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -21,6 +27,8 @@ export const MARGIN_THRESHOLDS_KEY = 'margebar_margin_thresholds';
 
 let current: MarginThresholds = { ...DEFAULT_MARGIN_THRESHOLDS };
 let loaded = false;
+/** Bumped by every write: a slower storage read started earlier is discarded. */
+let writeSeq = 0;
 const listeners = new Set<(t: MarginThresholds) => void>();
 
 function emit() {
@@ -37,9 +45,11 @@ function sanitize(raw: any): MarginThresholds {
 }
 
 export async function loadMarginThresholds(): Promise<MarginThresholds> {
+  const seq = writeSeq;
   try {
     const raw = await AsyncStorage.getItem(MARGIN_THRESHOLDS_KEY);
-    if (raw) current = sanitize(JSON.parse(raw));
+    // A sign-in / sign-out / save landed while reading: it is newer, keep it.
+    if (raw && seq === writeSeq) current = sanitize(JSON.parse(raw));
   } catch {
     // keep defaults
   }
@@ -49,7 +59,9 @@ export async function loadMarginThresholds(): Promise<MarginThresholds> {
 }
 
 export async function setMarginThresholds(next: MarginThresholds): Promise<void> {
+  writeSeq++;
   current = sanitize(next);
+  loaded = true;
   emit();
   try {
     await AsyncStorage.setItem(MARGIN_THRESHOLDS_KEY, JSON.stringify(current));

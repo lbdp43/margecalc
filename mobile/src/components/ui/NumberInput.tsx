@@ -14,10 +14,16 @@
  * - A quick tap always steps once (press-in has no delay; onPress fallback).
  * - A selection haptic on every step.
  * - Tap the value to type: accepts « , » or « . », formatted again on blur,
- *   clamped to [min, max] and rounded to `step` decimals.
+ *   clamped to [min, max] and rounded to `step` decimals. On web, ↑/↓ step too.
+ * - `error` draws a 2 px bad border and a message line under the field
+ *   (`helper` shows a neutral line instead).
+ * - Long values shrink to fit (« 99 999 999,00 € » is never clipped).
+ * - Accessibility: the field is a labelled spin button (web: role="spinbutton"
+ *   with aria-valuenow/min/max/valuetext on the input, inside a labelled
+ *   group; native: an adjustable element with its value); −/+ are labelled buttons.
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Platform, StyleProp, StyleSheet, Text, TextInput, View, ViewStyle } from 'react-native';
+import { LayoutChangeEvent, Platform, StyleProp, StyleSheet, Text, TextInput, View, ViewStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { fontFamily, palette, radius, type } from '../../theme';
 import { haptics } from '../../theme/haptics';
@@ -44,9 +50,16 @@ export interface NumberInputProps {
   haptic?: boolean;
   /** Called when typing starts / ends (e.g. to make tiles update instantly). */
   onEditingChange?: (editing: boolean) => void;
+  /** Error message: 2 px bad border + an alert line under the field. */
+  error?: string | null;
+  /** Neutral help line under the field (hidden while there is an error). */
+  helper?: string;
   style?: StyleProp<ViewStyle>;
   testID?: string;
 }
+
+/** Widest the md value box gets before long values shrink. */
+const MD_MAX_W = 176;
 
 export function NumberInput({
   value,
@@ -64,9 +77,12 @@ export function NumberInput({
   disabled = false,
   haptic = true,
   onEditingChange,
+  error,
+  helper,
   style,
   testID,
 }: NumberInputProps) {
+  const [valueW, setValueW] = useState(0);
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState('');
   const valueRef = useRef<number>(typeof value === 'number' && isFinite(value) ? value : 0);
@@ -199,6 +215,17 @@ export function NumberInput({
     onEditingChange?.(false);
   };
 
+  // Web: ↑ / ↓ step the value while typing (spin button keyboard contract).
+  const onKeyPress = (e: any) => {
+    const key = e?.nativeEvent?.key;
+    if (key !== 'ArrowUp' && key !== 'ArrowDown') return;
+    e.preventDefault?.();
+    const typed = parseLocaleFloat(text);
+    const base = isFinite(typed) ? typed : valueRef.current;
+    valueRef.current = base;
+    if (stepBy(key === 'ArrowUp' ? 1 : -1)) setText(toInputString(valueRef.current, decimals));
+  };
+
   const atMin = hasValue && (value as number) <= min;
   const atMax = hasValue && (value as number) >= max;
   const large = size === 'large';
@@ -234,26 +261,71 @@ export function NumberInput({
     );
   };
 
-  const inputWidth = large ? undefined : Math.max(92, (shown || placeholder).length * 14 + 24);
+  // ── Fit long values: estimate the text width (Jakarta 800, tabular digits
+  // ≈ 0.62 em per character) against the measured room, and shrink the font.
+  const chars = Math.max(1, (shown || placeholder).length);
+  const suffixRoom = editing && suffix ? suffix.length * (large ? 10 : 9) + 6 : 0;
+  // md grows with its value up to MD_MAX_W (it often sits at the end of a row
+  // whose room it cannot measure), then the font shrinks instead.
+  const desiredMd = Math.max(92, chars * 14 + 24 + suffixRoom);
+  const inputWidth = large ? undefined : Math.min(desiredMd, MD_MAX_W);
+  const baseSize = large ? 30 : 24;
+  const textRoom = large ? valueW - 8 - suffixRoom : (inputWidth as number) - 14 - suffixRoom;
+  const fitSize = textRoom > 0 && isFinite(textRoom) ? Math.floor(textRoom / (chars * 0.62)) : baseSize;
+  const fontSize = Math.max(large ? 16 : 13, Math.min(baseSize, fitSize));
+  const fitted =
+    fontSize < baseSize
+      ? { fontSize, lineHeight: Math.round(fontSize * 1.2), letterSpacing: large ? -0.03 * fontSize : -0.025 * fontSize }
+      : null;
+
+  const hasError = !!error;
+  const web = Platform.OS === 'web';
+  const finiteOr = (n: number) => (isFinite(n) ? n : undefined);
+  const valueText = hasValue ? display(value as number) : '';
+  // Web: the input is the spin button; the wrapper is only a labelled group.
+  const webSpin = web
+    ? ({
+        role: 'spinbutton',
+        'aria-valuenow': hasValue ? (value as number) : undefined,
+        'aria-valuemin': finiteOr(min),
+        'aria-valuemax': finiteOr(max),
+        'aria-valuetext': valueText || undefined,
+        'aria-invalid': hasError || undefined,
+      } as any)
+    : null;
+  const wrapperA11y = web
+    ? ({ role: 'group', 'aria-label': a11y } as any)
+    : {
+        accessibilityRole: 'adjustable' as const,
+        accessibilityLabel: a11y,
+        accessibilityValue: { min: finiteOr(min), max: finiteOr(max), now: hasValue ? (value as number) : undefined, text: valueText },
+        accessibilityActions: [{ name: 'increment' }, { name: 'decrement' }],
+        onAccessibilityAction: (e: any) => stepBy(e.nativeEvent.actionName === 'increment' ? 1 : -1),
+      };
 
   return (
     <View style={style} testID={testID}>
       {label ? <Text style={styles.label}>{label}</Text> : null}
       <View
-        style={[large ? styles.large : styles.md, editing && styles.focused, disabled && { opacity: 0.55 }]}
-        accessibilityRole="adjustable"
-        accessibilityLabel={a11y}
-        accessibilityValue={{ text: hasValue ? display(value as number) : '' }}
-        accessibilityActions={[{ name: 'increment' }, { name: 'decrement' }]}
-        onAccessibilityAction={(e) => stepBy(e.nativeEvent.actionName === 'increment' ? 1 : -1)}
+        style={[
+          large ? styles.large : styles.md,
+          editing && styles.focused,
+          hasError && (large ? styles.errorLarge : styles.errorMd),
+          disabled && { opacity: 0.55 },
+        ]}
+        {...wrapperA11y}
       >
         {stepButton(-1)}
-        <View style={[large ? styles.valueLarge : styles.valueMd, !large && { width: inputWidth }]}>
+        <View
+          style={[large ? styles.valueLarge : styles.valueMd, !large && { width: inputWidth }]}
+          onLayout={large ? (e: LayoutChangeEvent) => setValueW(e.nativeEvent.layout.width) : undefined}
+        >
           <TextInput
             value={shown}
             onChangeText={onChangeText}
             onFocus={onFocus}
             onBlur={onBlur}
+            onKeyPress={web ? onKeyPress : undefined}
             editable={!disabled}
             keyboardType="decimal-pad"
             inputMode="decimal"
@@ -263,15 +335,25 @@ export function NumberInput({
             selectionColor={palette.em700}
             accessibilityLabel={a11y}
             maxFontSizeMultiplier={1.3}
+            {...webSpin}
             style={[
               large ? styles.inputLarge : styles.inputMd,
-              Platform.OS === 'web' ? ({ outlineWidth: 0, outlineStyle: 'none' } as any) : null,
+              fitted,
+              web ? ({ outlineWidth: 0, outlineStyle: 'none' } as any) : null,
             ]}
           />
           {editing && suffix ? <Text style={[styles.editSuffix, large && { fontSize: 18 }]}>{suffix}</Text> : null}
         </View>
         {stepButton(1)}
       </View>
+      {hasError ? (
+        <View style={styles.errorRow} accessibilityLiveRegion="polite">
+          <Ionicons name="alert-circle" size={15} color={palette.bad} style={styles.errorIcon} />
+          <Text style={styles.errorText}>{error}</Text>
+        </View>
+      ) : helper ? (
+        <Text style={styles.helper}>{helper}</Text>
+      ) : null}
     </View>
   );
 }
@@ -301,6 +383,12 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   focused: { borderColor: palette.em700 },
+  errorMd: { borderColor: palette.bad, borderWidth: 2 },
+  errorLarge: { borderColor: palette.bad, borderWidth: 2, paddingHorizontal: 10 },
+  errorRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 6, marginTop: 8 },
+  errorIcon: { marginTop: 1.5 },
+  errorText: { ...type.footnote, color: palette.bad, flex: 1 },
+  helper: { ...type.footnote, color: palette.text3, marginTop: 8 },
   sideBtn: {
     width: 44,
     alignItems: 'center',

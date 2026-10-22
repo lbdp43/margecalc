@@ -105,7 +105,15 @@ export const Button = React.memo(function Button({
   const progress = useSharedValue(0);
 
   const disabledBg = v === 'primary' ? palette.em200 : v === 'lime' ? palette.limeSoft : conf.bg;
-  const fg = disabled && v !== 'primary' ? (v === 'ghostLight' ? 'rgba(255,255,255,0.5)' : palette.text4) : conf.fg;
+  // Disabled primary: em800 on em200 (5,8:1) — readable, yet clearly inactive
+  // next to the white-on-em700 enabled state.
+  const fg = !disabled
+    ? conf.fg
+    : v === 'primary'
+      ? palette.em800
+      : v === 'ghostLight'
+        ? 'rgba(255,255,255,0.5)'
+        : palette.text4;
 
   const bgStyle = useAnimatedStyle(() => ({
     backgroundColor: interpolateColor(progress.value, [0, 1], [conf.bg, conf.bgPressed]),

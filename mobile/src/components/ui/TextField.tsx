@@ -164,7 +164,7 @@ export const TextField = forwardRef<TextInput, TextFieldProps>(function TextFiel
       </View>
       {hasError ? (
         <View style={styles.errorRow} accessibilityLiveRegion="polite">
-          <Ionicons name="alert-circle" size={15} color={palette.bad} />
+          <Ionicons name="alert-circle" size={15} color={palette.bad} style={styles.errorIcon} />
           <Text style={styles.errorText}>{error}</Text>
         </View>
       ) : helper ? (
@@ -204,7 +204,9 @@ const styles = StyleSheet.create({
   searchText: { fontFamily: fontFamily.medium, fontSize: 16, lineHeight: 22, fontVariant: ['tabular-nums'] },
   webInput: { outlineWidth: 0, outlineStyle: 'none' } as any,
   affix: { ...type.calloutStrong, color: palette.text3 },
-  errorRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8 },
+  // Icon on the first line of a multi-line message (footnote line 18, icon 15).
+  errorRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 6, marginTop: 8 },
+  errorIcon: { marginTop: 1.5 },
   errorText: { ...type.footnote, color: palette.bad, flex: 1 },
   helper: { ...type.footnote, color: palette.text3, marginTop: 8 },
 });

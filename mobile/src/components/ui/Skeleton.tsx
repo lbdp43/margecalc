@@ -84,8 +84,11 @@ export function SkeletonText({ lines = 2, lastWidth = '60%', lineHeight = 12, ga
   );
 }
 
-/** Mirrors ProductCard (height 90, thumb 64, 3 lines + badge). */
-/** Mirrors ProductCard: thumb 64 · [name + badge] · [meta + gain] · [price tag]. */
+/**
+ * Mirrors ProductCard: thumb 64 · [name + badge] · [meta + gain] · [price tag].
+ * Same height as a card whose name fits on one line (a long name wraps to two
+ * lines on the real card, which then grows by one line).
+ */
 export function SkeletonProductCard({ style, still }: { style?: StyleProp<ViewStyle>; still?: boolean }) {
   return (
     <View style={[styles.card, style]}>
@@ -107,10 +110,13 @@ export function SkeletonProductCard({ style, still }: { style?: StyleProp<ViewSt
   );
 }
 
-/** Mirrors StatTile (≈100 tall). */
-export function SkeletonStatTile({ style }: { style?: StyleProp<ViewStyle> }) {
+/** Mirrors StatTile (≈100 tall; pass `height` to match a taller or shorter tile). */
+export function SkeletonStatTile({ style, height }: { style?: StyleProp<ViewStyle>; height?: number }) {
+  // A height passed in `style` also wins over the default minimum.
+  const styleHeight = (StyleSheet.flatten(style) as ViewStyle | undefined)?.height;
+  const h = height ?? (typeof styleHeight === 'number' ? styleHeight : undefined);
   return (
-    <View style={[styles.tile, style]}>
+    <View style={[styles.tile, h !== undefined ? { minHeight: h, height: h } : null, style]}>
       <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
         <Skeleton height={12} width="45%" />
         <Skeleton height={32} width={32} radius={10} />

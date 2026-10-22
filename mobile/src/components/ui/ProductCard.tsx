@@ -8,7 +8,8 @@
  *                        onEdit={…} onDuplicate={…} onDelete={…} />
  *
  * Card: thumb 64 (photo or category icon), then three rows:
- *   1. name (ellipsis) + margin Badge
+ *   1. name (wraps to 2 lines, so « Jameson Irish Whiskey (copie) » stays
+ *      distinguishable from the original) + margin Badge, top-aligned
  *   2. meta « Catégorie · 70 cl · 40° » (ellipsis) + gain per dose « +5,18 €/dose »
  *      in the margin colour
  *   3. PriceTag of the primary service (lowest sortOrder, whose figures are
@@ -154,10 +155,10 @@ export const ProductCard = React.memo(function ProductCard({ product, thresholds
         </View>
         <View style={styles.body}>
           <View style={styles.top}>
-            <Text style={styles.name} numberOfLines={1}>
+            <Text style={styles.name} numberOfLines={2}>
               {product.name}
             </Text>
-            <Badge value={margin} thresholds={t} />
+            <Badge value={margin} thresholds={t} style={styles.badge} />
           </View>
           <View style={styles.middle}>
             <Text style={styles.meta} numberOfLines={1}>
@@ -225,8 +226,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   body: { flex: 1, minWidth: 0, gap: 3 },
-  top: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  name: { ...type.headline, color: palette.ink, flex: 1, minWidth: 0 },
+  // Top-aligned: a one-line name sits centred on the 26 px badge (2 px down),
+  // a two-line name keeps the badge level with its first line.
+  top: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
+  name: { ...type.headline, color: palette.ink, flex: 1, minWidth: 0, marginTop: 2 },
+  badge: { flexShrink: 0 },
   middle: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   meta: { ...type.footnote, color: palette.text3, fontVariant: ['tabular-nums'], flex: 1, minWidth: 0 },
   bottom: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6, marginTop: 3 },

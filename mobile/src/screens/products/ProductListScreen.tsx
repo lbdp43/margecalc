@@ -58,7 +58,6 @@ import { getMarginZone, useMarginThresholds } from '../../utils/marginThresholds
 import { goToProduct, openInvoiceScan, openProductForm } from '../../navigation/routes';
 import { useOfflineQuery } from '../../hooks/useOfflineQuery';
 import * as productService from '../../services/product.service';
-import { useAuthStore } from '../../store/auth.store';
 import { ALL_KEY, SortKey, averageMargin, categoryChips, matchesQuery, sortProducts } from './list/listModel';
 import { SortSheet, SortTrigger } from './list/SortSheet';
 import { loadErrorMessage, useProductActions } from './list/productActions';
@@ -223,7 +222,6 @@ function usePages(total: number, resetKey: string) {
 // ─── Screen ────────────────────────────────────────────────────────────────
 export function ProductListScreen({ navigation: nav }: Props) {
   const navigation = nav as any;
-  const isAdmin = useAuthStore((s) => s.user?.role === 'admin');
   const thresholds = useMarginThresholds();
   const actions = useProductActions();
   const insets = useSafeAreaInsets();
@@ -504,15 +502,12 @@ export function ProductListScreen({ navigation: nav }: Props) {
       <EmptyState
         marquee
         title="Votre carte est vide"
-        text={
-          isAdmin
-            ? 'Scannez une bouteille ou une facture : vos marges apparaîtront ici.'
-            : 'Scannez une bouteille ou ajoutez-la à la main : vos marges apparaîtront ici.'
-        }
+        text="Scannez une bouteille ou une facture : vos marges apparaîtront ici."
+        // Graft 14: the same three ways in as the empty dashboard, for every account.
         primary={{ label: 'Scanner une bouteille', icon: 'scan', onPress: scanBottle }}
         secondary={[
-          ...(isAdmin ? [{ label: 'Facture', icon: 'receipt-outline' as const, onPress: importInvoice }] : []),
-          { label: 'À la main', icon: 'create-outline' as const, onPress: addManually },
+          { label: 'Facture', icon: 'receipt-outline', onPress: importInvoice },
+          { label: 'À la main', icon: 'create-outline', onPress: addManually },
         ]}
       />
     );

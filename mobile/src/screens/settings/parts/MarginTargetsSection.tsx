@@ -1,9 +1,10 @@
 /**
  * « Objectifs de marge » — the user's thresholds (objective = good margin,
- * alert = medium), in whole percents. Persisted on this device by
- * `setMarginThresholds` (AsyncStorage `margebar_margin_thresholds`), which
- * notifies every Badge, legend and tile. They are reset on sign-out
- * (AccountSection) so the next account on the device starts from 65 / 50.
+ * alert = medium), in whole percents. Saved on this device for the signed-in
+ * account by `saveMarginObjectives` (store/systemParams.store), which
+ * notifies every Badge, legend and tile and keeps the account's own copy:
+ * they survive a sign-out and come back at the account's next sign-in, while
+ * another account on the device starts from 65 / 50.
  */
 import React, { useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
@@ -12,7 +13,8 @@ import { Button, CompositionBar, Divider, ListGroup, ListRow, MarginLegend, Numb
 import { marginColors, palette, radius } from '../../../theme';
 import { haptics } from '../../../theme/haptics';
 import { formatNumber } from '../../../utils/format';
-import { MarginThresholds, setMarginThresholds, useMarginThresholds } from '../../../utils/marginThresholds';
+import { saveMarginObjectives } from '../../../store/systemParams.store';
+import { MarginThresholds, useMarginThresholds } from '../../../utils/marginThresholds';
 import { formatThreshold } from './helpers';
 import { ErrorLine, SettingsSection, Sheet } from './ui';
 
@@ -45,12 +47,12 @@ export function MarginTargetsSection({ index }: { index: number }) {
     if (!Number.isInteger(thresholds.good) || !Number.isInteger(thresholds.medium)) {
       const good = Math.min(99, Math.max(2, Math.round(thresholds.good)));
       const medium = Math.max(1, Math.min(Math.round(thresholds.medium), good - 1));
-      setMarginThresholds({ good, medium });
+      saveMarginObjectives({ good, medium });
     }
   }, [thresholds.good, thresholds.medium]);
 
   return (
-    <SettingsSection title="Objectifs de marge" index={index} footer="Enregistrés sur cet appareil. Ils colorent toutes les marges de l’app." testID="settings-margins">
+    <SettingsSection title="Objectifs de marge" index={index} footer="Enregistrés pour votre compte sur cet appareil. Ils colorent toutes les marges de l’app." testID="settings-margins">
       <ListGroup>
         <View style={styles.scaleBlock} accessible accessibilityLabel={`Bonne marge dès ${formatThreshold(thresholds.good)}, à revoir sous ${formatThreshold(thresholds.medium)}`}>
           <ZoneScale thresholds={thresholds} />
@@ -110,7 +112,7 @@ function ThresholdsSheet({ visible, onClose, current }: { visible: boolean; onCl
       return;
     }
     setSaving(true);
-    await setMarginThresholds(draft);
+    await saveMarginObjectives(draft);
     setSaving(false);
     haptics.success();
     onClose();
@@ -122,7 +124,7 @@ function ThresholdsSheet({ visible, onClose, current }: { visible: boolean; onCl
       visible={visible}
       onClose={onClose}
       title="Objectifs de marge"
-      subline="Enregistrés sur cet appareil."
+      subline="Enregistrés pour votre compte sur cet appareil."
       footer={
         <View style={{ gap: 4 }}>
           <Button title="Enregistrer" icon="checkmark-circle" onPress={save} loading={saving} disabled={!!error || unchanged} testID="thresholds-save" />

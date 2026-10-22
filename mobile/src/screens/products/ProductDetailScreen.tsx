@@ -38,7 +38,7 @@ import {
   toast,
   useDelayedLoading,
 } from '../../components/ui';
-import type { IconName } from '../../components/ui';
+import { servingIconName } from '../../components/ui/ServingTypeIcon';
 import { layout, marginColors, palette, type } from '../../theme';
 import { formatCoeff, formatDegree, formatEuro, formatNumber, formatPercent, formatVolumeCl, NBSP, plural } from '../../utils/format';
 import { getMarginZone, useMarginThresholds } from '../../utils/marginThresholds';
@@ -64,16 +64,6 @@ import { apiStatus, loadErrorMessage, useProductActions } from './list/productAc
 
 type Props = NativeStackScreenProps<any, 'ProductDetail'>;
 
-const SERVICE_ICONS: { test: RegExp; icon: IconName }[] = [
-  { test: /shot/i, icon: 'flask-outline' },
-  { test: /vin|verre de vin|coupe|champ/i, icon: 'wine-outline' },
-  { test: /demi|pinte|bi[eè]re|galopin|pression/i, icon: 'beer-outline' },
-  { test: /verre/i, icon: 'wine-outline' },
-];
-function serviceIcon(name: string, fallback: IconName): IconName {
-  return SERVICE_ICONS.find((s) => s.test.test(name))?.icon ?? fallback;
-}
-
 /** « bouteille », or « fût » for kegs (10 L and more). */
 function containerNoun(cl: number): string {
   return cl >= 1000 ? 'fût' : 'bouteille';
@@ -92,7 +82,8 @@ function servicesOf(product: ProductWithMargin): ServiceFigures[] {
       out.push({
         key: s.servingTypeId,
         label: servingLabel(s.servingType.name, s.servingType.volumeCl),
-        icon: serviceIcon(s.servingType.name, categoryIcon(product.category?.slug)),
+        // The one service-icon mapping (form chips, Réglages, here).
+        icon: servingIconName(s.servingType.name, s.servingType.volumeCl),
         priceTTC: r.sellingPriceTTC,
         priceHT: r.sellingPriceHT,
         cost: r.costPerServingHT,

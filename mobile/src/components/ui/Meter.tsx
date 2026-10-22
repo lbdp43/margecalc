@@ -43,7 +43,7 @@ export function Meter({
   trackColor = palette.surface2,
   height = 6,
   marker,
-  markerColor = 'rgba(11,28,21,0.35)',
+  markerColor = palette.marker,
   delay = 0,
   duration = 500,
   instant = false,

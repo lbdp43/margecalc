@@ -14,8 +14,8 @@
  * actions stacked (primary, then text button). Destructive actions use a
  * `bad` text button, never a red filled button. Replaces window.alert/confirm.
  */
-import React, { useEffect, useState } from 'react';
-import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { Modal, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, { useAnimatedStyle, useReducedMotion, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 import { elevation, motion, palette, type } from '../../theme';
@@ -103,12 +103,33 @@ const TONES = {
   warn: { bg: palette.warnBg, fg: palette.warn },
 };
 
+/**
+ * Presses within this delay after a dialog opens are ignored: the second tap
+ * of a double tap (or the click that follows the long press which opened the
+ * dialog) must never close it or hit one of its buttons. Same guard as
+ * BottomSheet; keyboard activations (Enter/Space) are always allowed.
+ */
+const OPEN_GUARD_MS = 300;
+
+let lastPointerDown = 0;
+const webDocument: any = Platform.OS === 'web' ? (globalThis as any).document : undefined;
+if (webDocument) {
+  webDocument.addEventListener(
+    'pointerdown',
+    () => {
+      lastPointerDown = Date.now();
+    },
+    true,
+  );
+}
+
 export function DialogHost() {
   const [items, setItems] = useState<Request[]>(pending);
   const reduce = useReducedMotion();
   const current = items[0];
   const scrim = useSharedValue(0);
   const card = useSharedValue(0);
+  const openedAt = useRef(0);
 
   useEffect(() => {
     listeners.add(setItems);
@@ -127,8 +148,23 @@ export function DialogHost() {
     return () => overlayClosed();
   }, [isOpen, overlayOpened, overlayClosed]);
 
+  // Web: swallow a click whose pointer went down before this dialog opened
+  // (the tap that opened it), and any pointer click during the open guard.
+  useEffect(() => {
+    if (!webDocument || !isOpen) return undefined;
+    const swallow = (e: { detail: number; stopPropagation: () => void; preventDefault: () => void }) => {
+      if (e.detail > 0 && (lastPointerDown < openedAt.current || Date.now() - openedAt.current < OPEN_GUARD_MS)) {
+        e.stopPropagation();
+        e.preventDefault();
+      }
+    };
+    webDocument.addEventListener('click', swallow, true);
+    return () => webDocument.removeEventListener('click', swallow, true);
+  }, [isOpen]);
+
   useEffect(() => {
     if (!current) return;
+    openedAt.current = Date.now();
     scrim.value = 0;
     card.value = 0;
     scrim.value = withTiming(1, { duration: 200 });
@@ -143,7 +179,11 @@ export function DialogHost() {
 
   if (!current) return null;
 
+  // Native: presses in the first 300 ms after opening are ignored.
+  const guarded = () => Platform.OS !== 'web' && Date.now() - openedAt.current < OPEN_GUARD_MS;
+
   const finish = (value: unknown) => {
+    if (guarded()) return;
     const req = current;
     pending = pending.filter((p) => p.id !== req.id);
     emit();
@@ -155,7 +195,16 @@ export function DialogHost() {
   const tone = TONES[current.tone ?? 'brand'];
 
   return (
-    <Modal visible transparent animationType="none" onRequestClose={() => finish(cancel?.value)} statusBarTranslucent>
+    <Modal
+      visible
+      transparent
+      animationType="none"
+      onRequestClose={() => {
+        openedAt.current = 0; // Android back is a deliberate gesture: never guarded
+        finish(cancel?.value);
+      }}
+      statusBarTranslucent
+    >
       <View style={styles.root}>
         <ModalFocusSink label={current.title} />
         <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: palette.scrim }, scrimStyle]}>

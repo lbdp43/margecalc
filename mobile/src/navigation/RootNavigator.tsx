@@ -11,9 +11,29 @@ import { OfflineBannerInsets } from '../components/ui/OfflineBanner';
 import { WelcomeModal } from '../components/ui/WelcomeModal';
 import { initOfflineMode, cleanupOfflineMode } from '../services/offline';
 import { loadMarginThresholds } from '../utils/marginThresholds';
+import { getProducts } from '../services/product.service';
 import { palette } from '../theme';
 
 const WELCOME_SEEN_KEY = 'margebar_welcome_seen';
+/** An account created this recently is a new sign-up (RegisterScreen also clears the seen flag). */
+const NEW_ACCOUNT_MS = 30 * 60 * 1000;
+
+/**
+ * The first-run sheet is for people who are starting: a fresh sign-up, or an
+ * account that has no product yet. A returning user signing in on a new
+ * device or browser (no « seen » flag there) does not get it again.
+ */
+async function shouldWelcome(): Promise<boolean> {
+  const user = useAuthStore.getState().user;
+  const created = Date.parse(user?.createdAt ?? '');
+  if (isFinite(created) && Date.now() - created < NEW_ACCOUNT_MS) return true;
+  try {
+    const products = await getProducts();
+    return products.length === 0;
+  } catch {
+    return false; // unknown: never interrupt a returning user
+  }
+}
 
 export function RootNavigator() {
   // The stored session is read by App.tsx before the NavigationContainer
@@ -40,16 +60,22 @@ export function RootNavigator() {
     useRatesStore.getState().loadRates();
   }, []);
 
-  // Show welcome modal once for authenticated users
+  // Welcome sheet: once per device, and only for new accounts (or empty ones).
+  // Otherwise the « seen » flag is set silently.
   useEffect(() => {
     let mounted = true;
-    if (isAuthenticated) {
-      AsyncStorage.getItem(WELCOME_SEEN_KEY).then((seen) => {
-        if (mounted && !seen) setWelcomeVisible(true);
-      }).catch(() => {});
-    } else {
+    if (!isAuthenticated) {
       setWelcomeVisible(false);
+      return () => { mounted = false; };
     }
+    (async () => {
+      const seen = await AsyncStorage.getItem(WELCOME_SEEN_KEY).catch(() => '1');
+      if (seen || !mounted) return;
+      const welcome = await shouldWelcome();
+      if (!mounted) return;
+      if (welcome) setWelcomeVisible(true);
+      else AsyncStorage.setItem(WELCOME_SEEN_KEY, '1').catch(() => {});
+    })();
     return () => { mounted = false; };
   }, [isAuthenticated]);
 

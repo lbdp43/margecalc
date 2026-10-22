@@ -72,6 +72,8 @@ export const palette = {
   trophyBg: '#FFF6D6',
   trophy: '#A86A00',
 
+  /** Objective tick on meters (ink at 35 %). */
+  marker: 'rgba(11,28,21,0.35)',
   scrim: 'rgba(2,20,14,0.48)',
   focusRing: 'rgba(8,117,83,0.12)',
   shadow: '#04281E',
@@ -365,6 +367,20 @@ export const gradients = {
   },
   fadeRight: {
     colors: ['rgba(243,246,244,0)', palette.bg],
+    locations: [0, 1],
+    start: { x: 0, y: 0 },
+    end: { x: 1, y: 0 },
+  },
+  /** Left-edge fade of a horizontal row scrolled away from its start (on bg). */
+  fadeLeft: {
+    colors: [palette.bg, 'rgba(243,246,244,0)'],
+    locations: [0, 1],
+    start: { x: 0, y: 0 },
+    end: { x: 1, y: 0 },
+  },
+  /** fadeLeft on a white surface */
+  fadeLeftSurface: {
+    colors: ['#FFFFFF', 'rgba(255,255,255,0)'],
     locations: [0, 1],
     start: { x: 0, y: 0 },
     end: { x: 1, y: 0 },

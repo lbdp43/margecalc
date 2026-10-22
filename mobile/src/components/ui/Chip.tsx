@@ -9,12 +9,13 @@
  *     selectedKey={cat} onSelect={setCat} />
  *
  * ChipRow is a horizontal ScrollView (gap 8, side padding 20) that bleeds to
- * the screen edges (`bleed`, default true = marginHorizontal −20), with a
- * 44 px right-edge fade, and keeps the selected chip in view. Labels are
- * never truncated.
+ * the screen edges (`bleed`, default true = marginHorizontal −20), and keeps
+ * the selected chip in view. Edge fades (44 px) show only where there is more
+ * to scroll: on the right until the end is reached, on the left once the row
+ * has scrolled from its start. Labels are never truncated.
  */
-import React, { useEffect, useRef } from 'react';
-import { LayoutChangeEvent, ScrollView, StyleProp, StyleSheet, Text, View, ViewStyle } from 'react-native';
+import React, { useCallback, useEffect, useRef } from 'react';
+import { LayoutChangeEvent, NativeScrollEvent, NativeSyntheticEvent, ScrollView, StyleProp, StyleSheet, Text, View, ViewStyle } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, { interpolateColor, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
@@ -77,6 +78,7 @@ export const Chip = React.memo(function Chip({
       onLayout={onLayout}
       accessibilityRole="button"
       accessibilityState={{ selected, disabled: !!disabled }}
+      aria-pressed={onPress ? selected : undefined}
       accessibilityLabel={accessibilityLabel ?? (count !== undefined ? `${label}, ${count}` : label)}
       testID={testID}
       style={[styles.chip, bg, disabled && { opacity: 0.5 }, style]}
@@ -139,7 +141,28 @@ export function ChipRow({
   const ref = useRef<ScrollView>(null);
   const positions = useRef<Record<number, { x: number; width: number }>>({});
   const viewport = useRef(0);
+  const contentW = useRef(0);
+  const offsetX = useRef(0);
   const mounted = useRef(false);
+  // Edge fades: 1 = shown. The right one starts hidden until the row is known to overflow.
+  const leftFade = useSharedValue(0);
+  const rightFade = useSharedValue(0);
+  const updateFades = useCallback(() => {
+    const vw = viewport.current;
+    const cw = contentW.current;
+    if (!vw || !cw) return;
+    const left = offsetX.current > 4 ? 1 : 0;
+    const right = offsetX.current + vw < cw - 4 ? 1 : 0;
+    if (leftFade.value !== left) leftFade.value = withTiming(left, { duration: motion.duration.fast });
+    if (rightFade.value !== right) rightFade.value = withTiming(right, { duration: motion.duration.fast });
+  }, [leftFade, rightFade]);
+  const leftFadeStyle = useAnimatedStyle(() => ({ opacity: leftFade.value }));
+  const rightFadeStyle = useAnimatedStyle(() => ({ opacity: rightFade.value }));
+  const onScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    offsetX.current = e.nativeEvent.contentOffset.x;
+    contentW.current = e.nativeEvent.contentSize.width || contentW.current;
+    updateFades();
+  };
 
   const activeIndex = items ? items.findIndex((i) => i.key === selectedKey) : selectedIndex ?? -1;
 
@@ -193,17 +216,27 @@ export function ChipRow({
         keyboardShouldPersistTaps="handled"
         onLayout={(e) => {
           viewport.current = e.nativeEvent.layout.width;
+          updateFades();
         }}
+        onContentSizeChange={(w) => {
+          contentW.current = w;
+          updateFades();
+        }}
+        onScroll={fade ? onScroll : undefined}
+        scrollEventThrottle={16}
         contentContainerStyle={[{ gap: 8, paddingHorizontal: inset, alignItems: 'center' }, contentContainerStyle]}
       >
         {content}
       </ScrollView>
       {fade ? (
-        <LinearGradient
-          {...(fade === 'surface' ? gradients.fadeRightSurface : gradients.fadeRight)}
-          style={styles.fade}
-          pointerEvents="none"
-        />
+        <>
+          <Animated.View style={[styles.fadeLeft, leftFadeStyle]} pointerEvents="none">
+            <LinearGradient {...(fade === 'surface' ? gradients.fadeLeftSurface : gradients.fadeLeft)} style={StyleSheet.absoluteFill} />
+          </Animated.View>
+          <Animated.View style={[styles.fade, rightFadeStyle]} pointerEvents="none">
+            <LinearGradient {...(fade === 'surface' ? gradients.fadeRightSurface : gradients.fadeRight)} style={StyleSheet.absoluteFill} />
+          </Animated.View>
+        </>
       ) : null}
     </View>
   );
@@ -236,5 +269,12 @@ const styles = StyleSheet.create({
     top: 0,
     bottom: 0,
     width: 44,
+  },
+  fadeLeft: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: 32,
   },
 });

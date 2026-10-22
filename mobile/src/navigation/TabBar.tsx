@@ -3,8 +3,10 @@
  * (Scanner, geometrically centred, raised and labelled) · Tableau de bord
  * (wider right slot). Sliding em50 indicator (snappy spring, stretches mid
  * flight), outline→filled icon pop, fadeBottom gradient behind, safe-area aware.
- * The Scanner opens the staggered spring menu (spec §5.7) for admins, and goes
- * straight to the bottle scan for everyone else (existing logic).
+ * The Scanner opens the staggered spring menu (spec §5.7) for every user:
+ * « Scanner un produit » (bottle photo → product form) and « Scanner une
+ * facture » (invoice import), so the invoice import stays reachable once the
+ * dashboard is no longer empty.
  */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { LayoutChangeEvent, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
@@ -27,7 +29,6 @@ import Animated, {
 } from 'react-native-reanimated';
 import { elevation, gradients, layout, motion, palette, type } from '../theme';
 import { haptics } from '../theme/haptics';
-import { useAuthStore } from '../store/auth.store';
 import { useChromeStore, useKeyboardHeight } from '../components/ui/chrome';
 import { PressableScale } from '../components/ui/PressableScale';
 import type { IconName } from '../components/ui/Icon';
@@ -53,7 +54,6 @@ export function TabBar({ state, descriptors, navigation }: BottomTabBarProps) {
   const reduce = useReducedMotion();
   const rootFocused = useIsFocused();
   const kb = useKeyboardHeight();
-  const isAdmin = useAuthStore((s) => s.user?.role === 'admin');
   const setTabBarVisible = useChromeStore((s) => s.setTabBarVisible);
   const [rowW, setRowW] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -149,12 +149,12 @@ export function TabBar({ state, descriptors, navigation }: BottomTabBarProps) {
   };
   const onScanPress = () => {
     haptics.tap();
-    if (!isAdmin) {
-      (navigation as any).navigate(ROUTES.productForm, {});
-      return;
-    }
     setMenuOpen((o) => !o);
   };
+  // The menu never outlives the bar (a form opened, keyboard up, screen left).
+  useEffect(() => {
+    if (hidden || !rootFocused) setMenuOpen(false);
+  }, [hidden, rootFocused]);
 
   const renderTab = (name: string) => {
     const route = state.routes.find((r) => r.name === name);
@@ -205,18 +205,16 @@ export function TabBar({ state, descriptors, navigation }: BottomTabBarProps) {
         </View>
       </Animated.View>
 
-      {isAdmin ? (
-        <ScannerMenu
-          open={menuOpen}
-          bottom={barBottom + layout.tabBarHeight + RAISE + 14}
-          onClose={() => setMenuOpen(false)}
-          onProduct={() => openScan(ROUTES.productForm)}
-          onInvoice={() => openScan(ROUTES.invoiceScan)}
-        />
-      ) : null}
+      <ScannerMenu
+        open={menuOpen}
+        bottom={barBottom + layout.tabBarHeight + RAISE + 14}
+        onClose={() => setMenuOpen(false)}
+        onProduct={() => openScan(ROUTES.productForm)}
+        onInvoice={() => openScan(ROUTES.invoiceScan)}
+      />
 
       <Animated.View pointerEvents={hidden ? 'none' : 'box-none'} style={[styles.scanWrap, { bottom: barBottom + layout.tabBarHeight - SCAN + RAISE - 4 }, barShown]}>
-        <ScanButton open={menuOpen} onPress={onScanPress} admin={isAdmin} />
+        <ScanButton open={menuOpen} onPress={onScanPress} />
       </Animated.View>
     </View>
   );
@@ -267,6 +265,7 @@ function TabItem({
       onLongPress={onLongPress}
       accessibilityRole="tab"
       accessibilityState={{ selected: focused }}
+      aria-selected={focused}
       accessibilityLabel={accessibilityLabel}
       style={[styles.item, { width }, Platform.OS === 'web' ? ({ cursor: 'pointer', userSelect: 'none' } as any) : null]}
     >
@@ -281,7 +280,7 @@ function TabItem({
 }
 
 // ─── Scan button ───────────────────────────────────────────────────────────
-function ScanButton({ open, onPress, admin }: { open: boolean; onPress: () => void; admin: boolean }) {
+function ScanButton({ open, onPress }: { open: boolean; onPress: () => void }) {
   const reduce = useReducedMotion();
   const p = useSharedValue(open ? 1 : 0);
   useEffect(() => {
@@ -300,8 +299,10 @@ function ScanButton({ open, onPress, admin }: { open: boolean; onPress: () => vo
       onPress={onPress}
       scaleTo="scan"
       accessibilityRole="button"
-      accessibilityLabel={admin ? (open ? 'Fermer le menu Scanner' : 'Scanner') : 'Scanner une bouteille'}
-      accessibilityState={{ expanded: admin ? open : undefined }}
+      accessibilityLabel={open ? 'Fermer le menu Scanner' : 'Scanner'}
+      accessibilityState={{ expanded: open }}
+      aria-expanded={open}
+      aria-haspopup="menu"
       style={styles.scanOuter}
     >
       <View style={[styles.scan, elevation.glow]}>

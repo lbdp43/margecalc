@@ -8,13 +8,14 @@ import { View } from 'react-native';
 import { useQueryClient } from '@tanstack/react-query';
 import { CustomContainer } from '@margebar/shared';
 import { ListGroup, ListRow, toast } from '../../../components/ui';
+import { servingIconName } from '../../../components/ui/ServingTypeIcon';
 import { haptics } from '../../../theme/haptics';
 import { formatVolumeCl, plural } from '../../../utils/format';
 import { useAuthStore } from '../../../store/auth.store';
 import * as servingService from '../../../services/serving.service';
 import * as containerService from '../../../services/container.service';
 import { invalidateProducts, SETTINGS_KEYS, updateMe, useCategories, useContainers, useServingTypes } from './data';
-import { readableError, servingIcon } from './helpers';
+import { readableError } from './helpers';
 import { CONTAINER_COPY, nameIsVolume, SERVING_COPY, VolumeManagerSheet } from './VolumeManagerSheet';
 import { CategoriesSheet } from './CategoriesSheet';
 import { ErrorLine, RowSkeleton, SettingsSection, Sheet } from './ui';
@@ -142,7 +143,7 @@ export function CatalogSection({ index }: { index: number }) {
         loading={servings.isLoading}
         loadError={servingError}
         onRetry={() => servings.refetch()}
-        icon={(s) => servingIcon(s.name, s.volumeCl)}
+        icon={(s) => servingIconName(s.name, s.volumeCl)}
         maxVolumeCl={100_000}
         create={async (name, volumeCl) => {
           const created = await servingService.createServingType({ name, volumeCl, sortOrder: (servingList?.length ?? 0) + 1 });

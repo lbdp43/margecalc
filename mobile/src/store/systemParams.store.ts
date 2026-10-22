@@ -1,7 +1,14 @@
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { SystemParam } from '@margebar/shared';
+import { DEFAULT_MARGIN_THRESHOLDS, SystemParam } from '@margebar/shared';
 import { api } from '../services/api';
+import { useAuthStore } from './auth.store';
+import {
+  MARGIN_THRESHOLDS_KEY,
+  MarginThresholds,
+  getMarginThresholds,
+  setMarginThresholds,
+} from '../utils/marginThresholds';
 
 const CACHE_KEY = 'margebar_system_params';
 const CACHE_TTL = 6 * 60 * 60 * 1000; // 6 hours
@@ -101,3 +108,101 @@ export const useSystemParamsStore = create<SystemParamsState>((set, get) => ({
     return failed;
   },
 }));
+
+// ─── Margin objectives, kept per account on this device ────────────────────
+//
+// Réglages → « Objectifs de marge » lives on the device (AsyncStorage
+// `margebar_margin_thresholds`, read by utils/marginThresholds), but it
+// belongs to the account that set it:
+//   - each account keeps its own copy under `margebar_margin_thresholds:<userId>`;
+//   - on every sign-out (Réglages, or forced by the API on a 401) that copy is
+//     brought up to date, then the device falls back to the defaults, so the
+//     next account starts from 65 % / 50 %;
+//   - on every sign-in (login, register, or the stored session at launch) the
+//     account's copy is put back before anything is coloured.
+// `margebar_margin_thresholds_owner` names the account the device copy belongs
+// to, so a copy left by someone else is never handed to the next account.
+// This module is loaded at launch (RootNavigator imports it), so the binding
+// below sees every change of account.
+
+const THRESHOLDS_OWNER_KEY = 'margebar_margin_thresholds_owner';
+
+/** AsyncStorage key of one account's margin objectives on this device. */
+export const accountThresholdsKey = (userId: string) => `${MARGIN_THRESHOLDS_KEY}:${userId}`;
+
+function parseThresholds(raw: string | null): MarginThresholds | null {
+  if (!raw) return null;
+  try {
+    const t = JSON.parse(raw);
+    const good = Number(t?.good);
+    const medium = Number(t?.medium);
+    return isFinite(good) && isFinite(medium) && good > 0 && medium > 0 ? { good, medium } : null;
+  } catch {
+    return null;
+  }
+}
+
+const getItem = (key: string) => AsyncStorage.getItem(key).catch(() => null);
+const setItem = (key: string, value: string) => AsyncStorage.setItem(key, value).catch(() => {});
+const removeItem = (key: string) => AsyncStorage.removeItem(key).catch(() => {});
+
+/** Account whose objectives are the live ones on the device (null when signed out). */
+let boundUserId: string | null = null;
+
+async function restoreAccountThresholds(userId: string) {
+  const [owner, device, saved] = await Promise.all([
+    getItem(THRESHOLDS_OWNER_KEY),
+    getItem(MARGIN_THRESHOLDS_KEY),
+    getItem(accountThresholdsKey(userId)),
+  ]);
+  const deviceValue = parseThresholds(device);
+  const savedValue = parseThresholds(saved);
+  // The device copy is the freshest one when it is this account's. A copy
+  // with no owner predates per-account storage: it is adopted only by an
+  // account that has no copy of its own yet (the one that was signed in).
+  const useDevice = !!deviceValue && (owner === userId || (!owner && !savedValue));
+  const next = (useDevice ? deviceValue : savedValue) ?? { ...DEFAULT_MARGIN_THRESHOLDS };
+  boundUserId = userId;
+  await setMarginThresholds(next);
+  await Promise.all([
+    setItem(THRESHOLDS_OWNER_KEY, userId),
+    setItem(accountThresholdsKey(userId), JSON.stringify(getMarginThresholds())),
+  ]);
+}
+
+async function releaseAccountThresholds(userId: string) {
+  // Keep this account's objectives for its next sign-in…
+  if (boundUserId === userId) {
+    await setItem(accountThresholdsKey(userId), JSON.stringify(getMarginThresholds()));
+  }
+  boundUserId = null;
+  // …and give whoever signs in next on this device the defaults.
+  await setMarginThresholds({ ...DEFAULT_MARGIN_THRESHOLDS });
+  await Promise.all([removeItem(MARGIN_THRESHOLDS_KEY), removeItem(THRESHOLDS_OWNER_KEY)]);
+}
+
+/**
+ * Saves the margin objectives (Réglages) on the device and in the signed-in
+ * account's own copy. Use it instead of `setMarginThresholds` from screens.
+ */
+export async function saveMarginObjectives(next: MarginThresholds): Promise<void> {
+  await setMarginThresholds(next);
+  const userId = boundUserId ?? useAuthStore.getState().user?.id ?? null;
+  if (userId) await setItem(accountThresholdsKey(userId), JSON.stringify(getMarginThresholds()));
+}
+
+// Account changes are handled one at a time, in order (a sign-out then a
+// sign-in in quick succession must not interleave their storage writes).
+let thresholdsQueue: Promise<void> = Promise.resolve();
+let seenUserId: string | null | undefined;
+
+function onAccountChange(userId: string | null) {
+  if (userId === seenUserId) return;
+  const previous = seenUserId;
+  seenUserId = userId;
+  if (previous) thresholdsQueue = thresholdsQueue.then(() => releaseAccountThresholds(previous)).catch(() => {});
+  if (userId) thresholdsQueue = thresholdsQueue.then(() => restoreAccountThresholds(userId)).catch(() => {});
+}
+
+useAuthStore.subscribe((state) => onAccountChange(state.user?.id ?? null));
+onAccountChange(useAuthStore.getState().user?.id ?? null);

@@ -7,6 +7,7 @@
  *
  *   <ListRow icon="business-outline" title="Établissement" subtitle="Le Comptoir" onPress={…} />
  *   <ListRow title="Mode sombre" right="switch" switchValue={on} onSwitchChange={setOn} />
+ *     (the whole row is the switch: role switch + checked state, 56 tall target)
  *   <ListRow title="Spiritueux" subtitle="Whisky, gin…" right="radio" selected onPress={…} />
  *   <ListRow title="TVA" right="value" value="20 %" onPress={…} />
  *
@@ -16,9 +17,9 @@
  *   <Divider />
  */
 import React from 'react';
-import { Platform, StyleProp, StyleSheet, Switch, Text, TextStyle, View, ViewStyle } from 'react-native';
+import { StyleProp, StyleSheet, Text, TextStyle, View, ViewStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import Animated, { useAnimatedStyle, useReducedMotion, useSharedValue } from 'react-native-reanimated';
+import Animated, { interpolateColor, useAnimatedStyle, useReducedMotion, useSharedValue } from 'react-native-reanimated';
 import { elevation, fontFamily, motion, palette, radius, type } from '../../theme';
 import { haptics } from '../../theme/haptics';
 import { PressableScale } from './PressableScale';
@@ -44,7 +45,7 @@ export function ValueRow({ label, qualifier, value, strong, last, valueColor, st
       accessible
       accessibilityLabel={`${label}${qualifier ? ` ${qualifier}` : ''} : ${value.replace(/ /g, ' ')}`}
     >
-      <Text style={[styles.valueLabel, strong && styles.valueLabelStrong]} numberOfLines={1}>
+      <Text style={[styles.valueLabel, strong && styles.valueLabelStrong]} numberOfLines={2}>
         {label}
         {qualifier ? <Text style={styles.qualifier}>{`  ${qualifier}`}</Text> : null}
       </Text>
@@ -92,6 +93,24 @@ const TONES = {
   bad: { bg: palette.badBg, fg: palette.bad },
   trophy: { bg: palette.trophyBg, fg: palette.trophy },
 };
+
+/** Switch drawn inside the row (the row itself is the control): 48×28, lineStrong off track. */
+function SwitchKnob({ on, disabled }: { on: boolean; disabled?: boolean }) {
+  const reduce = useReducedMotion();
+  const p = useSharedValue(on ? 1 : 0);
+  React.useEffect(() => {
+    p.value = springOrTiming(on ? 1 : 0, motion.spring.snappy, reduce);
+  }, [on, p, reduce]);
+  const track = useAnimatedStyle(() => ({
+    backgroundColor: interpolateColor(Math.min(1, Math.max(0, p.value)), [0, 1], [palette.lineStrong, palette.em600]),
+  }));
+  const knob = useAnimatedStyle(() => ({ transform: [{ translateX: p.value * 20 }] }));
+  return (
+    <Animated.View style={[styles.switchTrack, track, disabled && { opacity: 0.5 }]} pointerEvents="none">
+      <Animated.View style={[styles.switchKnob, knob]} />
+    </Animated.View>
+  );
+}
 
 function Radio({ selected }: { selected: boolean }) {
   const reduce = useReducedMotion();
@@ -150,20 +169,7 @@ export function ListRow({
   } else if (resolvedRight === 'check') {
     rightNode = selected ? <Ionicons name="checkmark" size={22} color={palette.em700} /> : null;
   } else if (resolvedRight === 'switch') {
-    rightNode = (
-      <Switch
-        value={!!switchValue}
-        onValueChange={(v) => {
-          haptics.select();
-          onSwitchChange?.(v);
-        }}
-        disabled={disabled}
-        trackColor={{ false: palette.surface3, true: palette.em600 }}
-        thumbColor="#FFFFFF"
-        {...(Platform.OS === 'web' ? ({ activeThumbColor: '#FFFFFF' } as any) : null)}
-        accessibilityLabel={title}
-      />
-    );
+    rightNode = <SwitchKnob on={!!switchValue} disabled={disabled} />;
   } else if (resolvedRight !== 'none') {
     rightNode = resolvedRight;
   }
@@ -197,7 +203,29 @@ export function ListRow({
     style,
   ];
 
-  const body = onPress || onLongPress ? (
+  const isSwitch = resolvedRight === 'switch';
+  const toggle = () => {
+    haptics.select();
+    onSwitchChange?.(!switchValue);
+  };
+
+  const body = isSwitch ? (
+    <PressableScale
+      onPress={toggle}
+      onLongPress={onLongPress}
+      disabled={disabled}
+      scaleTo="card"
+      accessibilityRole="switch"
+      accessibilityState={{ checked: !!switchValue, disabled: !!disabled }}
+      // react-native-web 0.19 ignores accessibilityState: give the DOM its aria-checked.
+      aria-checked={!!switchValue}
+      accessibilityLabel={accessibilityLabel ?? [title, subtitle, detail].filter(Boolean).join(', ')}
+      testID={testID}
+      style={rowStyle}
+    >
+      {content}
+    </PressableScale>
+  ) : onPress || onLongPress ? (
     <PressableScale
       onPress={onPress}
       onLongPress={onLongPress}
@@ -206,6 +234,7 @@ export function ListRow({
       haptic={resolvedRight === 'radio' ? 'select' : false}
       accessibilityRole={resolvedRight === 'radio' ? 'radio' : 'button'}
       accessibilityState={{ selected, disabled: !!disabled, checked: resolvedRight === 'radio' ? selected : undefined }}
+      aria-checked={resolvedRight === 'radio' ? selected : undefined}
       accessibilityLabel={accessibilityLabel ?? [title, subtitle, detail, value].filter(Boolean).join(', ')}
       testID={testID}
       style={rowStyle}
@@ -213,7 +242,7 @@ export function ListRow({
       {content}
     </PressableScale>
   ) : (
-    <View style={rowStyle} accessible={resolvedRight !== 'switch'} accessibilityLabel={accessibilityLabel} testID={testID}>
+    <View style={rowStyle} accessible accessibilityLabel={accessibilityLabel} testID={testID}>
       {content}
     </View>
   );
@@ -291,10 +320,11 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   divider: { borderBottomWidth: 1, borderBottomColor: palette.line },
-  valueLabel: { ...type.callout, color: palette.text2, flexShrink: 1 },
+  // The label keeps its words (up to 60 %); a long value wraps, right-aligned.
+  valueLabel: { ...type.callout, color: palette.text2, flexShrink: 0, maxWidth: '60%' },
   valueLabelStrong: { fontFamily: fontFamily.bold, color: palette.ink },
   qualifier: { ...type.footnote, color: palette.text3 },
-  valueText: { ...type.valueRow, color: palette.ink },
+  valueText: { ...type.valueRow, color: palette.ink, flexShrink: 1, textAlign: 'right' },
   valueStrong: { fontFamily: fontFamily.extrabold, fontSize: 17, letterSpacing: -0.2 },
 
   row: {
@@ -335,6 +365,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   rowDivider: { height: 1, backgroundColor: palette.line, marginRight: 12 },
+  switchTrack: { width: 48, height: 28, borderRadius: 14, padding: 2, justifyContent: 'center' },
+  switchKnob: { width: 24, height: 24, borderRadius: 12, backgroundColor: '#FFFFFF', ...elevation.knob },
   group: {
     backgroundColor: palette.surface,
     borderRadius: radius.lg,

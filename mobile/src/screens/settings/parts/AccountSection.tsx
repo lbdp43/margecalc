@@ -1,26 +1,19 @@
 /**
  * « Compte » — sign out (confirm) and delete my data (destructive confirm;
- * the account itself is kept). Signing out also resets the margin targets
- * kept on this device, so the next account starts from the defaults.
+ * the account itself is kept). The margin objectives are NOT lost on sign-out:
+ * the account binding in store/systemParams.store keeps them under the
+ * account's own key and puts them back at its next sign-in, while the next
+ * account on this device starts from the defaults.
  */
 import React, { useState } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useQueryClient } from '@tanstack/react-query';
-import { DEFAULT_MARGIN_THRESHOLDS } from '@margebar/shared';
 import { ListGroup, ListRow, dialog, toast } from '../../../components/ui';
 import { haptics } from '../../../theme/haptics';
 import { api } from '../../../services/api';
 import { clearAllOfflineData } from '../../../services/offline';
 import { useAuthStore } from '../../../store/auth.store';
-import { MARGIN_THRESHOLDS_KEY, setMarginThresholds } from '../../../utils/marginThresholds';
 import { readableError } from './helpers';
 import { SettingsSection } from './ui';
-
-/** The margin targets live on the device: never hand them to the next account. */
-async function resetDeviceThresholds() {
-  await setMarginThresholds({ ...DEFAULT_MARGIN_THRESHOLDS });
-  await AsyncStorage.removeItem(MARGIN_THRESHOLDS_KEY).catch(() => {});
-}
 
 export function AccountSection({ index }: { index: number }) {
   const qc = useQueryClient();
@@ -36,7 +29,8 @@ export function AccountSection({ index }: { index: number }) {
     });
     if (!ok) return;
     haptics.select();
-    await resetDeviceThresholds();
+    // The margin objectives are kept for this account by the account binding
+    // (store/systemParams.store), which reacts to the sign-out itself.
     await logout();
     // The logged-in navigator is gone: drop every cached query so the next
     // account never sees this one's data.

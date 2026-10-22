@@ -1,6 +1,7 @@
 /**
  * SegmentedControl (spec §3.5): surface2 track 44 tall, radius 14, padding 4,
  * a white thumb sliding with the snappy spring. Optional unit hint per option.
+ * Every option is a full-height (44) touch target.
  *
  *   <SegmentedControl
  *     options={[{ key: 'price', label: 'Prix', hint: '€' }, { key: 'margin', label: 'Marge', hint: '%' }, { key: 'coeff', label: 'Coeff', hint: '×' }]}
@@ -89,6 +90,7 @@ export function SegmentedControl<K extends string = string>({
             }}
             accessibilityRole="radio"
             accessibilityState={{ selected: on, checked: on }}
+            aria-checked={on}
             accessibilityLabel={o.accessibilityLabel ?? o.label}
             style={[styles.opt, Platform.OS === 'web' ? ({ cursor: 'pointer', userSelect: 'none' } as any) : null]}
           >
@@ -117,10 +119,13 @@ const styles = StyleSheet.create({
     backgroundColor: palette.surface,
     ...elevation.thumb,
   },
+  // Each option spans the full track height (44 by default) as its touch
+  // target; the 4 px inset only shapes the thumb, not the hit area.
   opt: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
+    marginVertical: -4,
   },
   label: { ...type.calloutStrong },
   hint: { ...type.footnoteStrong },

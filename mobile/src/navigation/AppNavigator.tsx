@@ -5,7 +5,8 @@
  *   ├─ Tabs (floating TabBar)
  *   │   ├─ Réglages        → SettingsMain, AdminProducts
  *   │   ├─ Produits        → ProductList, ProductDetail
- *   │   └─ Tableau de bord → DashboardMain, DutyCalculator
+ *   │   └─ Tableau de bord → DashboardMain, DutyCalculator, DashboardProductDetail
+ *   │                        (the same detail screen, for products opened from the dashboard)
  *   ├─ ProductForm   (create / edit — full screen, no tab bar)
  *   └─ InvoiceScan   (full screen, no tab bar)
  *
@@ -58,11 +59,16 @@ function ProductsNavigator() {
   );
 }
 
+// The screen is typed for the « ProductDetail » route name; it only reads `params.productId`.
+const DashboardProductDetail = ProductDetailScreen as unknown as React.ComponentType<any>;
+
 function DashboardNavigator() {
   return (
     <DashboardStack.Navigator screenOptions={stackScreenOptions} initialRouteName={ROUTES.dashboardMain}>
       <DashboardStack.Screen name={ROUTES.dashboardMain} component={DashboardScreen} options={{ title: 'Tableau de bord · MargeBar Pro' }} />
       <DashboardStack.Screen name={ROUTES.dutyCalculator} component={DutyCalculatorRoute} options={{ title: 'Calculateur de droits · MargeBar Pro' }} />
+      {/* Top & flop, « Meilleur produit »: the product opens here, so « Retour » returns to the dashboard. */}
+      <DashboardStack.Screen name={ROUTES.dashboardProductDetail} component={DashboardProductDetail} options={{ title: 'Produit · MargeBar Pro' }} />
     </DashboardStack.Navigator>
   );
 }

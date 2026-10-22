@@ -17,8 +17,11 @@ const HTML_PATH = path.join(PUBLIC_DIR, 'index.html');
 
 const APP_BG = '#F3F6F4';
 
-// 1) Copy icon variants next to index.html so the manifest can reference
-//    them with relative paths.
+// 1) Copy icon variants next to index.html. index.html links them with
+//    ABSOLUTE paths (/manifest.json, /icon-192.png…): a relative href on a deep
+//    URL such as /produits/:id would request /produits/manifest.json, which the
+//    SPA fallback answers with index.html. Inside manifest.json the icon src
+//    values stay relative: they resolve against /manifest.json.
 const iconCopies = ['icon-192.png', 'icon-512.png', 'icon-maskable.png', 'favicon.png', 'apple-touch-icon.png'];
 for (const name of iconCopies) {
   const src = path.join(ASSETS_DIR, name);
@@ -93,10 +96,10 @@ const extraHead = `
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="theme-color" content="${APP_BG}" />
     <meta name="color-scheme" content="light" />
-    <link rel="manifest" href="manifest.json" />
-    <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png" />
-    <link rel="icon" type="image/png" sizes="512x512" href="icon-512.png" />
-    <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png" />
+    <link rel="manifest" href="/manifest.json" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
+    <link rel="icon" type="image/png" sizes="512x512" href="/icon-512.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
 ${fontPreloads}
     <style id="layout-fix">
       html, body, #root {

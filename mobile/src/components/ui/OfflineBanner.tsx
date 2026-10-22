@@ -43,7 +43,7 @@ export function OfflineBanner() {
 function OfflineBannerView({ online, pending }: { online: boolean; pending: number }) {
   const insets = useSafeAreaInsets();
   const text = !online
-    ? `Hors ligne${pending > 0 ? ` · ${pending} modification${pending > 1 ? 's' : ''} en attente` : ' · vos données restent consultables'}`
+    ? `Hors ligne${pending > 0 ? ` · ${pending} modification${pending > 1 ? 's' : ''} en attente` : ' · reconnexion automatique'}`
     : `Synchronisation de ${pending} modification${pending > 1 ? 's' : ''}…`;
   return (
     <View style={[styles.wrap, { paddingTop: insets.top }, online ? styles.syncing : styles.offline]} accessibilityLiveRegion="polite" accessibilityRole="alert">

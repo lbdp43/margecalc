@@ -73,86 +73,31 @@ export function YinYangSpinner({
       [bubble1, bubble2, bubble3, bubble4, bubble5, bubble6, bubble7, bubble8].forEach((b) => b.setValue(0));
       return undefined;
     }
+    // Every timing is `isInteraction: false` (and the pauses too: the stock
+    // Animated.delay registers an interaction). Otherwise the spinner keeps an
+    // InteractionManager handle open, which stalls FlatList windowing and
+    // onEndReached app-wide. Every loop handle is kept and stopped on unmount.
+    const t = (value: Animated.Value, toValue: number, duration: number, easing?: (v: number) => number) =>
+      Animated.timing(value, { toValue, duration, easing, useNativeDriver: false, isInteraction: false });
+    const pause = (ms: number) =>
+      Animated.timing(new Animated.Value(0), { toValue: 0, delay: ms, duration: 0, useNativeDriver: false, isInteraction: false });
+
     const fill = Animated.loop(
       Animated.sequence([
-        // Fill the glass
-        Animated.timing(fillLevel, {
-          toValue: 1,
-          duration: 2800,
-          easing: Easing.out(Easing.cubic),
-          useNativeDriver: false,
-        }),
-        // Foam appears
-        Animated.timing(foamScale, {
-          toValue: 1,
-          duration: 700,
-          easing: Easing.out(Easing.back(1.5)),
-          useNativeDriver: false,
-        }),
-        // Drip starts
-        Animated.timing(dripAnim, {
-          toValue: 1,
-          duration: 800,
-          easing: Easing.in(Easing.ease),
-          useNativeDriver: false,
-        }),
-        // Hold
-        Animated.delay(600),
-        // Reset
-        Animated.parallel([
-          Animated.timing(fillLevel, {
-            toValue: 0,
-            duration: 400,
-            useNativeDriver: false,
-          }),
-          Animated.timing(foamScale, {
-            toValue: 0,
-            duration: 400,
-            useNativeDriver: false,
-          }),
-          Animated.timing(dripAnim, {
-            toValue: 0,
-            duration: 200,
-            useNativeDriver: false,
-          }),
-        ]),
-        Animated.delay(300),
+        t(fillLevel, 1, 2800, Easing.out(Easing.cubic)), // fill the glass
+        t(foamScale, 1, 700, Easing.out(Easing.back(1.5))), // foam appears
+        t(dripAnim, 1, 800, Easing.in(Easing.ease)), // drip starts
+        pause(600), // hold
+        Animated.parallel([t(fillLevel, 0, 400), t(foamScale, 0, 400), t(dripAnim, 0, 200)]), // reset
+        pause(300),
       ]),
     );
 
     const makeBubble = (anim: Animated.Value, delay: number, duration: number) =>
-      Animated.loop(
-        Animated.sequence([
-          Animated.delay(delay),
-          Animated.timing(anim, {
-            toValue: 1,
-            duration,
-            easing: Easing.out(Easing.ease),
-            useNativeDriver: false,
-          }),
-          Animated.timing(anim, {
-            toValue: 0,
-            duration: 0,
-            useNativeDriver: false,
-          }),
-        ]),
-      );
+      Animated.loop(Animated.sequence([pause(delay), t(anim, 1, duration, Easing.out(Easing.ease)), t(anim, 0, 0)]));
 
     const wobble = Animated.loop(
-      Animated.sequence([
-        Animated.timing(foamWobble, {
-          toValue: 1,
-          duration: 1000,
-          easing: Easing.inOut(Easing.ease),
-          useNativeDriver: false,
-        }),
-        Animated.timing(foamWobble, {
-          toValue: 0,
-          duration: 1000,
-          easing: Easing.inOut(Easing.ease),
-          useNativeDriver: false,
-        }),
-      ]),
+      Animated.sequence([t(foamWobble, 1, 1000, Easing.inOut(Easing.ease)), t(foamWobble, 0, 1000, Easing.inOut(Easing.ease))]),
     );
 
     const fade = Animated.timing(fadeMessage, {
@@ -160,27 +105,26 @@ export function YinYangSpinner({
       duration: 600,
       delay: 300,
       useNativeDriver: true,
+      isInteraction: false,
     });
 
-    fill.start();
-    makeBubble(bubble1, 0, 1400).start();
-    makeBubble(bubble2, 250, 1100).start();
-    makeBubble(bubble3, 500, 1300).start();
-    makeBubble(bubble4, 150, 1500).start();
-    makeBubble(bubble5, 400, 1000).start();
-    makeBubble(bubble6, 700, 1200).start();
-    makeBubble(bubble7, 100, 1350).start();
-    makeBubble(bubble8, 550, 1150).start();
-    wobble.start();
-    fade.start();
+    const loops: Animated.CompositeAnimation[] = [
+      fill,
+      makeBubble(bubble1, 0, 1400),
+      makeBubble(bubble2, 250, 1100),
+      makeBubble(bubble3, 500, 1300),
+      makeBubble(bubble4, 150, 1500),
+      makeBubble(bubble5, 400, 1000),
+      makeBubble(bubble6, 700, 1200),
+      makeBubble(bubble7, 100, 1350),
+      makeBubble(bubble8, 550, 1150),
+      wobble,
+      fade,
+    ];
+    loops.forEach((a) => a.start());
 
     return () => {
-      fill.stop();
-      [bubble1, bubble2, bubble3, bubble4, bubble5, bubble6, bubble7, bubble8].forEach(b =>
-        b.stopAnimation(),
-      );
-      wobble.stop();
-      fade.stop();
+      loops.forEach((a) => a.stop());
     };
   }, [reduce, fillLevel, foamScale, dripAnim, bubble1, bubble2, bubble3, bubble4, bubble5, bubble6, bubble7, bubble8, foamWobble, fadeMessage]);
 
