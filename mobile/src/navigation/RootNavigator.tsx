@@ -16,11 +16,12 @@ import { palette } from '../theme';
 const WELCOME_SEEN_KEY = 'margebar_welcome_seen';
 
 export function RootNavigator() {
-  const { isAuthenticated, isLoading, loadStoredAuth, user } = useAuthStore();
+  // The stored session is read by App.tsx before the NavigationContainer
+  // mounts (so deep links resolve against the right linking config).
+  const { isAuthenticated, isLoading } = useAuthStore();
   const [welcomeVisible, setWelcomeVisible] = useState(false);
 
   useEffect(() => {
-    loadStoredAuth();
     initOfflineMode();
     loadMarginThresholds();
     return () => { cleanupOfflineMode(); };

@@ -16,7 +16,7 @@ Application créée par **[La Brasserie des Plantes](https://labrasseriedesplant
 
 → **[https://margecalc-production.up.railway.app/Landing](https://margecalc-production.up.railway.app/Landing)**
 
-Le calculateur de droits d'alcool est utilisable sans compte. Pour le tableau de bord, le scan de factures et la gestion de produits, créez un compte gratuit.
+L'application est **gratuite pour tous** : pas d'abonnement, pas de carte bancaire, pas de code promo. Une inscription (e-mail + mot de passe) suffit pour accéder au tableau de bord, aux fiches produits, au scan et au calculateur.
 
 ---
 
@@ -27,9 +27,10 @@ Le calculateur de droits d'alcool est utilisable sans compte. Pour le tableau de
 - **Calcul des droits d'alcool** — prix HT avec et sans droits d'accise pour les 13 catégories fiscales françaises (vins tranquilles & mousseux, cidres, porto/VDN, bières légères/standard/artisanales, spiritueux, rhum DOM/hors DOM, liqueurs, vermouths). Tarifs 2026 à jour.
 - **Prix de revient précis** — droits d'accise + cotisation sécurité sociale + TVA intégrés en un seul calcul.
 - **Calcul de marges** sur 3 modes : prix de vente fixe, marge cible, ou coefficient — par shot, verre, demi, pinte ou bouteille.
-- **Scan IA** (Claude Vision) :
-  - **Bouteille** — photo → nom, volume, catégorie, prix estimé pré-remplis.
-  - **Facture fournisseur** — import multi-produits depuis une photo.
+- **Scan par lecture automatique (OCR)**, gratuit et sans service externe — [détails](#scan-ocr) :
+  - **Bouteille** — photo de l'étiquette → nom, marque, contenance, degré, catégorie pré-remplis (la fiche reste modifiable).
+  - **Facture fournisseur** — photo → lignes produits (désignation, contenance, prix d'achat HT unitaire, quantité), importées en une fois.
+- **Photo produit** sur chaque fiche (enregistrée avec la fiche, supprimable à tout moment).
 - **Tableau de bord** avec marge par catégorie, top/flop rentabilité, fiches produit complètes par service.
 - **Recettes cocktails** avec calcul de marge sur la composition complète.
 - **Mode hors-ligne** avec synchronisation automatique au retour de connexion.
@@ -57,7 +58,7 @@ Le calculateur de droits d'alcool est utilisable sans compte. Pour le tableau de
 | Base de données    | PostgreSQL + Prisma 5                                          |
 | Auth               | JWT (access 1h + refresh 30j), bcrypt                          |
 | Paiement           | Stripe (Checkout + Customer Portal + webhooks) — dormant       |
-| IA / Scan          | Anthropic Claude Vision                                        |
+| Scan (OCR)         | Tesseract.js 5 sur le serveur (fra + eng), sans clé d'API      |
 | Déploiement        | Railway (railpack auto-detect)                                 |
 
 ### Direction esthétique
@@ -92,7 +93,6 @@ Le monorepo utilise les **npm workspaces**.
 
 - Node.js 22+
 - PostgreSQL 14+
-- (optionnel) Clé API Anthropic pour le scan
 - (optionnel) Compte Stripe pour les abonnements
 
 ### 1. Cloner et installer
@@ -121,8 +121,18 @@ Variables optionnelles :
 
 | Variable                | Description                                          |
 |-------------------------|------------------------------------------------------|
-| `ANTHROPIC_API_KEY`     | Clé Claude pour le scan bouteille / facture         |
-| `STRIPE_SECRET_KEY`     | Clé secrète Stripe                                   |
+| `SCAN_DAILY_LIMIT`      | Scans réussis par compte et par jour (défaut : 50)   |
+| `TESSDATA_DIR`          | Dossier des données de langue OCR (défaut : `<tmp>/margebar-tessdata`) |
+| `OCR_LANGS`             | Langues OCR (défaut : `fra+eng`)                     |
+| `OCR_BOTTLE_TIMEOUT_MS` | Budget d'un scan bouteille (défaut : 15000)          |
+| `OCR_INVOICE_TIMEOUT_MS`| Budget d'un scan facture (défaut : 60000)            |
+| `OCR_INIT_TIMEOUT_MS`   | Démarrage du moteur OCR (défaut : 30000)             |
+| `OCR_IDLE_MS`           | Arrêt du moteur après inactivité (défaut : 600000)   |
+| `OCR_MAX_QUEUE`         | Scans en file d'attente au maximum (défaut : 6)      |
+| `OCR_MAX_SIDE_BOTTLE`   | Plus grand côté d'une photo de bouteille, en px (défaut : 2400) |
+| `OCR_MAX_SIDE_INVOICE`  | Plus grand côté d'une photo de facture, en px (défaut : 3500)   |
+| `REGISTER_LIMIT_PER_HOUR` | Créations de compte par IP et par heure (défaut : 10 en production) |
+| `STRIPE_SECRET_KEY`     | Clé secrète Stripe (paiement dormant, l'app est gratuite) |
 | `STRIPE_WEBHOOK_SECRET` | Secret webhooks Stripe                               |
 | `STRIPE_PRICE_MONTHLY`  | ID du prix Stripe mensuel (3 €)                      |
 | `STRIPE_PRICE_YEARLY`   | ID du prix Stripe annuel (30 €)                      |
@@ -172,6 +182,12 @@ Cette commande :
 4. Exporte l'app Expo en bundle web → `backend/dist/public`
 5. Patche le HTML pour le support PWA (viewport, apple-touch-icon, theme-color émeraude)
 
+Tests unitaires des extracteurs du scan (sans image ni moteur OCR, ~1 s) :
+
+```bash
+npm test --workspace=backend
+```
+
 Pour démarrer en production :
 
 ```bash
@@ -197,7 +213,9 @@ Le déploiement actuel est accessible à [margecalc-production.up.railway.app](h
 
 ## API
 
-Toutes les routes (sauf `/api/auth/*` et `/api/health`) requièrent un header `Authorization: Bearer <token>`.
+Toutes les routes (sauf `/api/auth/*` et `/health`) requièrent un header `Authorization: Bearer <token>`. Le rôle et le bannissement sont relus en base (cache de 60 s, sans cache pour les routes admin) : un compte banni est déconnecté sans attendre l'expiration de son jeton.
+
+Les erreurs ont toujours la forme `{ error: '<phrase en français>', details?: [{ field, label, message, code }], code?, retryable? }` ; une erreur de validation (400) inclut toujours `details`.
 
 ### Auth
 
@@ -211,16 +229,38 @@ Toutes les routes (sauf `/api/auth/*` et `/api/health`) requièrent un header `A
 
 | Méthode    | Endpoint                          | Description                                   |
 |------------|-----------------------------------|-----------------------------------------------|
-| GET / POST / PATCH / DELETE | `/api/products`     | CRUD produits                                 |
+| GET / POST / PUT / DELETE | `/api/products`       | CRUD produits (photo en data URI, services inclus) |
 | GET / POST / PATCH / DELETE | `/api/recipes`      | CRUD recettes cocktails                       |
-| POST       | `/api/scan`                       | Scan IA (bouteille ou facture)                |
-| GET        | `/api/categories`                 | Catégories produits                           |
+| POST       | `/api/scan/product` · `/api/scan/invoice` | Scan OCR d'une bouteille / d'une facture ([détails](#scan-ocr)) |
+| GET        | `/api/scan/quota`                 | Scans réussis du jour (`limit`, `used`, `remaining`) |
+| POST       | `/api/products/import`            | Import des lignes d'une facture (erreurs ligne par ligne) |
+| GET / POST | `/api/categories`                 | Catégories intégrées + catégories personnelles du compte (un admin crée des catégories pour tous) |
 | GET / POST | `/api/servings`                   | Types de service personnalisés                |
 | GET / POST | `/api/containers`                 | Contenants personnalisés                      |
 | GET        | `/api/rates`                      | Tarifs d'accise / cotisations / TVA           |
 | GET / PATCH| `/api/system-params`              | Paramètres système (lien réf., TVA non-alc.)  |
 | POST       | `/api/subscription`               | Stripe Checkout / Portal / redeem code        |
 | POST / GET | `/api/tickets`                    | Bug reports / suggestions / questions         |
+
+### Scan OCR
+
+La lecture des photos se fait **sur le serveur avec [Tesseract.js](https://tesseract.projectnaptha.com/)** (moteur OCR libre, langues français + anglais) : aucune clé d'API, aucun service externe, aucun coût par scan. Les données de langue viennent des paquets npm `@tesseract.js-data/fra` et `@tesseract.js-data/eng` (copiées une fois dans `TESSDATA_DIR`, sans accès réseau).
+
+- `POST /api/scan/product` `{ imageBase64 }` → `{ name, brand, category, containerVolumeCl, alcoholDegree, estimatedPriceHT, confidence, raw }`.
+- `POST /api/scan/invoice` `{ imageBase64 }` → `{ supplier, invoiceDate, products: [...], raw }` ; l'import se fait ensuite via `POST /api/products/import`.
+- Extraction heuristique : plus grandes lignes de texte pour le nom, correction des marques connues mal lues (sans jamais réécrire un mot courant : « Pomme » reste « Pomme »), contenance (cl / ml / L), degré (% vol, °), catégorie par mots-clés.
+- Échec de lecture → **422** `{ error: 'Lecture impossible…', code, retryable }` (`empty`, `bad_image`, `busy`, `timeout`, `engine`). L'application passe alors à la fiche à remplir en gardant la photo.
+- Seuls les scans **réussis** comptent dans le quota quotidien (`SCAN_DAILY_LIMIT`, 50 par défaut). Limites d'équité : 10 scans par minute, un scan à la fois par compte, pause de quelques minutes après 3 photos illisibles d'affilée.
+- L'application réduit la photo à 1 600 px avant l'envoi ; le serveur refuse les images de plus de 2 400 px (bouteille) / 3 500 px (facture) de côté.
+
+### Photos produit
+
+Les photos ne sont pas envoyées à un service tiers : elles sont stockées **dans la base, sur la fiche produit**, sous forme de petites images JPEG en data URI (`data:image/jpeg;base64,…`) :
+
+- `imageUrl` — photo ~640 px (300 000 caractères maximum), renvoyée par `GET /api/products/:id` ;
+- `thumbnailUrl` — miniature ~160 px (40 000 caractères maximum), renvoyée aussi par la liste `GET /api/products`.
+
+Sur `PUT /api/products/:id`, un champ absent ne change rien et `null` supprime la photo. Corps JSON limité à 2 Mo (413 « Photo trop volumineuse » au-delà).
 
 ### Admin (`role: 'admin'` requis)
 

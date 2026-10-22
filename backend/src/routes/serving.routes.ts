@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { authenticate } from '../middleware/auth';
+import { userWriteLimiter } from '../middleware/userRateLimit';
 import { prisma } from '../config/database';
 import { sendKnownError } from '../utils/validation';
 import { ensureServingTypes, resyncPrimary } from '../services/productServing.service';
@@ -31,7 +32,7 @@ router.get('/', async (req: Request, res: Response) => {
 });
 
 // POST /api/servings - Create a serving type
-router.post('/', async (req: Request, res: Response) => {
+router.post('/', userWriteLimiter, async (req: Request, res: Response) => {
   try {
     const data = createSchema.parse(req.body);
     const servingType = await prisma.servingType.create({
@@ -48,9 +49,30 @@ router.post('/', async (req: Request, res: Response) => {
 });
 
 // PUT /api/servings/:id - Update a serving type
-router.put('/:id', async (req: Request, res: Response) => {
+router.put('/:id', userWriteLimiter, async (req: Request, res: Response) => {
   try {
     const data = updateSchema.parse(req.body);
+    if (data.volumeCl !== undefined) {
+      // A bigger glass must still fit in every bottle that is served with it.
+      const tooSmall = await prisma.productServing.findMany({
+        where: {
+          servingTypeId: req.params.id,
+          servingType: { userId: req.user!.userId },
+          product: { containerVolumeCl: { lt: data.volumeCl } },
+        },
+        select: { product: { select: { name: true, containerVolumeCl: true } } },
+        take: 50,
+      });
+      if (tooSmall.length) {
+        const p = tooSmall[0].product;
+        const more = tooSmall.length > 1 ? ` et ${tooSmall.length - 1} autre${tooSmall.length > 2 ? 's' : ''} produit${tooSmall.length > 2 ? 's' : ''}` : '';
+        res.status(400).json({
+          error: `Ce volume dépasse la contenance de « ${p.name} » (${String(p.containerVolumeCl).replace('.', ',')}\u00a0cl)${more}. Retirez ce service de ces produits ou choisissez un volume plus petit.`,
+          details: tooSmall.map(({ product }) => ({ field: 'volumeCl', label: product.name, message: `« ${product.name} » ne contient que ${String(product.containerVolumeCl).replace('.', ',')}\u00a0cl.`, code: 'too_big' })),
+        });
+        return;
+      }
+    }
     const servingType = await prisma.servingType.updateMany({
       where: { id: req.params.id, userId: req.user!.userId },
       data,
@@ -75,7 +97,7 @@ router.put('/:id', async (req: Request, res: Response) => {
 });
 
 // DELETE /api/servings/:id - Delete a serving type
-router.delete('/:id', async (req: Request, res: Response) => {
+router.delete('/:id', userWriteLimiter, async (req: Request, res: Response) => {
   try {
     const uses = await prisma.productServing.findMany({
       where: { servingTypeId: req.params.id, servingType: { userId: req.user!.userId } },

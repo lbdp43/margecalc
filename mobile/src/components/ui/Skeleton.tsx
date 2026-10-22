@@ -85,22 +85,23 @@ export function SkeletonText({ lines = 2, lastWidth = '60%', lineHeight = 12, ga
 }
 
 /** Mirrors ProductCard (height 90, thumb 64, 3 lines + badge). */
+/** Mirrors ProductCard: thumb 64 · [name + badge] · [meta + gain] · [price tag]. */
 export function SkeletonProductCard({ style, still }: { style?: StyleProp<ViewStyle>; still?: boolean }) {
   return (
     <View style={[styles.card, style]}>
       <Skeleton width={64} height={64} radius={16} still={still} />
-      <View style={{ flex: 1, gap: 9 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+      <View style={{ flex: 1, gap: 3 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, height: 26 }}>
           <Skeleton height={14} width="55%" still={still} />
           <View style={{ flex: 1 }} />
           <Skeleton height={26} width={64} radius={13} still={still} />
         </View>
-        <Skeleton height={10} width="45%" still={still} />
-        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-          <Skeleton height={14} width={70} still={still} />
+        <View style={{ flexDirection: 'row', alignItems: 'center', height: 18 }}>
+          <Skeleton height={10} width="45%" still={still} />
           <View style={{ flex: 1 }} />
-          <Skeleton height={10} width={64} still={still} />
+          <Skeleton height={10} width={56} still={still} />
         </View>
+        <Skeleton height={28} width={128} radius={14} still={still} style={{ marginTop: 3 }} />
       </View>
     </View>
   );
@@ -145,7 +146,7 @@ export function useDelayedLoading(loading: boolean, delay = 150): boolean {
 
 const styles = StyleSheet.create({
   card: {
-    height: 90,
+    minHeight: 104,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 14,

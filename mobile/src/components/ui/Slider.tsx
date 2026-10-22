@@ -13,14 +13,18 @@
  * - Magnetic detent at the marker (±1.5 % of the track) with a select haptic.
  * - Values snap to `step`. While dragging, `onChange` fires continuously; use
  *   `onSlidingChange(true/false)` to make AnimatedNumbers update instantly.
+ * - Accessible: role slider with aria-valuemin/max/now/valuetext on web,
+ *   focusable with the keyboard (arrows ± step, PageUp/PageDown, Home/End,
+ *   focus ring on the knob); VoiceOver/TalkBack increment/decrement on native.
  */
 import React, { useEffect, useRef, useState } from 'react';
 import { LayoutChangeEvent, PanResponder, Platform, StyleProp, StyleSheet, Text, View, ViewStyle } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import Animated, { useAnimatedStyle, useReducedMotion, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
+import Animated, { useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
 import { elevation, gradients, motion, palette, type } from '../../theme';
 import { haptics } from '../../theme/haptics';
 import { clamp, roundToStep } from '../../utils/format';
+import { springOrTiming } from './motion';
 
 const KNOB = 28;
 const INSET = KNOB / 2;
@@ -81,6 +85,8 @@ export function Slider({
   testID,
 }: SliderProps) {
   const reduce = useReducedMotion();
+  const reduceRef = useRef(reduce);
+  reduceRef.current = reduce;
   const [trackW, setTrackW] = useState(0);
   const range = max - min || 1;
   const ratioOf = (v: number) => clamp((v - min) / range, 0, 1);
@@ -138,7 +144,7 @@ export function Slider({
       onPanResponderGrant: (e) => {
         dragging.current = true;
         props.current.onSlidingChange?.(true);
-        grab.value = withSpring(1, motion.spring.snappy);
+        grab.value = springOrTiming(1, motion.spring.snappy, reduceRef.current);
         startX.current = (e.nativeEvent.locationX ?? 0) - INSET;
         updateFromX(startX.current);
       },
@@ -152,7 +158,7 @@ export function Slider({
 
   function end() {
     dragging.current = false;
-    grab.value = withSpring(0, motion.spring.snappy);
+    grab.value = springOrTiming(0, motion.spring.snappy, reduceRef.current);
     props.current.onSlidingChange?.(false);
     props.current.onChangeEnd?.(lastValue.current);
   }
@@ -198,23 +204,60 @@ export function Slider({
     markerLeft = clamp(center - markerLabelW / 2, lo, Math.max(lo, hi));
   }
 
-  const stepA11y = (dir: 1 | -1) => {
-    const v = clamp(roundToStep(lastValue.current + dir * step, step), min, max);
+  const setTo = (next: number) => {
+    const v = clamp(roundToStep(next, step), min, max);
+    if (v === lastValue.current) return;
     lastValue.current = v;
     onChange(v);
     onChangeEnd?.(v);
   };
+  const stepA11y = (dir: 1 | -1) => setTo(lastValue.current + dir * step);
+
+  // Web keyboard (WAI-ARIA slider pattern): arrows ± step, PageUp/Down ± 10
+  // steps, Home/End → min/max. A focus ring shows on the knob.
+  const [focused, setFocused] = useState(false);
+  const onKeyDown = (e: any) => {
+    if (disabled) return;
+    const k = e?.nativeEvent?.key ?? e?.key;
+    const big = Math.max(step * 10, (max - min) / 10);
+    let next: number | null = null;
+    if (k === 'ArrowRight' || k === 'ArrowUp') next = lastValue.current + step;
+    else if (k === 'ArrowLeft' || k === 'ArrowDown') next = lastValue.current - step;
+    else if (k === 'PageUp') next = lastValue.current + big;
+    else if (k === 'PageDown') next = lastValue.current - big;
+    else if (k === 'Home') next = min;
+    else if (k === 'End') next = max;
+    if (next === null) return;
+    e.preventDefault?.();
+    setTo(next);
+  };
+  const valueText = accessibilityValueText ?? label(value);
+  const webA11y =
+    Platform.OS === 'web'
+      ? ({
+          'aria-valuemin': min,
+          'aria-valuemax': max,
+          'aria-valuenow': value,
+          'aria-valuetext': valueText,
+          'aria-disabled': disabled || undefined,
+          tabIndex: disabled ? -1 : 0,
+          onKeyDown,
+          onFocus: () => setFocused(true),
+          onBlur: () => setFocused(false),
+        } as any)
+      : null;
 
   return (
     <View style={[{ opacity: disabled ? 0.5 : 1 }, style]} testID={testID}>
       <View
-        style={[styles.row, Platform.OS === 'web' ? ({ cursor: disabled ? 'default' : 'grab', touchAction: 'none', userSelect: 'none' } as any) : null]}
+        style={[styles.row, Platform.OS === 'web' ? ({ cursor: disabled ? 'default' : 'grab', touchAction: 'none', userSelect: 'none', outlineStyle: 'none' } as any) : null]}
         onLayout={onTrackLayout}
         {...responder.panHandlers}
+        {...webA11y}
         accessible
         accessibilityRole="adjustable"
         accessibilityLabel={accessibilityLabel}
-        accessibilityValue={{ min, max, now: value, text: accessibilityValueText ?? label(value) }}
+        accessibilityValue={{ min, max, now: value, text: valueText }}
         accessibilityActions={[{ name: 'increment' }, { name: 'decrement' }]}
         onAccessibilityAction={(e) => stepA11y(e.nativeEvent.actionName === 'increment' ? 1 : -1)}
       >
@@ -233,7 +276,7 @@ export function Slider({
         {markerRatio !== null && trackW ? (
           <View pointerEvents="none" style={[styles.markerTick, { left: INSET + markerRatio * trackW - 1 }]} />
         ) : null}
-        <Animated.View pointerEvents="none" style={[styles.knob, knobStyle]}>
+        <Animated.View pointerEvents="none" style={[styles.knob, focused && styles.knobFocused, knobStyle]}>
           <Animated.View style={[StyleSheet.absoluteFill, styles.knobGrabShadow, knobShadow]} />
           <View style={styles.knobCore} />
         </Animated.View>
@@ -309,6 +352,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     ...elevation.knob,
   },
+  knobFocused: { borderWidth: 2, borderColor: palette.em700, ...(Platform.OS === 'web' ? ({ boxShadow: `0 0 0 4px ${palette.focusRing}` } as any) : null) },
   knobGrabShadow: {
     borderRadius: KNOB / 2,
     ...elevation.knobGrab,

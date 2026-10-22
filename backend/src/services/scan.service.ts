@@ -59,6 +59,10 @@ const INVOICE_TIMEOUT_MS = envInt('OCR_INVOICE_TIMEOUT_MS', 60_000);
 const IDLE_MS = envInt('OCR_IDLE_MS', 10 * 60_000);
 const MAX_QUEUE = envInt('OCR_MAX_QUEUE', 6);
 const MAX_IMAGE_BYTES = 12 * 1024 * 1024;
+// Pixel size limits (long side). The app sends ~1600 px; a bigger photo only makes Tesseract
+// slower (a noisy 4000 px photo holds the shared worker for the whole budget) without reading more.
+const MAX_SIDE_BOTTLE = envInt('OCR_MAX_SIDE_BOTTLE', 2400);
+const MAX_SIDE_INVOICE = envInt('OCR_MAX_SIDE_INVOICE', 3500);
 
 export type OcrErrorCode = 'bad_image' | 'empty' | 'busy' | 'timeout' | 'engine';
 
@@ -338,7 +342,48 @@ export async function shutdownOcr(): Promise<void> {
 // Image decoding / validation
 // ---------------------------------------------------------------------------
 
-function decodeImage(imageBase64: string): Buffer {
+/**
+ * Width × height read from the image header (JPEG SOFn, PNG IHDR, WebP VP8/VP8L/VP8X, BMP),
+ * without decoding the image. Null when the header cannot be read.
+ */
+export function imageSize(buf: Buffer): { width: number; height: number } | null {
+  try {
+    if (buf.length >= 24 && buf.readUInt32BE(0) === 0x89504e47 && buf.toString('ascii', 12, 16) === 'IHDR') {
+      return { width: buf.readUInt32BE(16), height: buf.readUInt32BE(20) };
+    }
+    if (buf[0] === 0xff && buf[1] === 0xd8) {
+      let i = 2;
+      while (i + 9 < buf.length) {
+        if (buf[i] !== 0xff) { i++; continue; }
+        const marker = buf[i + 1];
+        if (marker === 0xff) { i++; continue; } // fill byte
+        if (marker === 0xd8 || marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) { i += 2; continue; }
+        const len = buf.readUInt16BE(i + 2);
+        const isSof = marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc;
+        if (isSof) return { height: buf.readUInt16BE(i + 5), width: buf.readUInt16BE(i + 7) };
+        if (len < 2) return null;
+        i += 2 + len;
+      }
+      return null;
+    }
+    if (buf.length >= 30 && buf.toString('ascii', 0, 4) === 'RIFF' && buf.toString('ascii', 8, 12) === 'WEBP') {
+      const chunk = buf.toString('ascii', 12, 16);
+      if (chunk === 'VP8 ') return { width: buf.readUInt16LE(26) & 0x3fff, height: buf.readUInt16LE(28) & 0x3fff };
+      if (chunk === 'VP8L') {
+        const b = buf.readUInt32LE(21);
+        return { width: (b & 0x3fff) + 1, height: ((b >> 14) & 0x3fff) + 1 };
+      }
+      if (chunk === 'VP8X') return { width: buf.readUIntLE(24, 3) + 1, height: buf.readUIntLE(27, 3) + 1 };
+      return null;
+    }
+    if (buf.length >= 26 && buf[0] === 0x42 && buf[1] === 0x4d) {
+      return { width: Math.abs(buf.readInt32LE(18)), height: Math.abs(buf.readInt32LE(22)) };
+    }
+  } catch { /* truncated header */ }
+  return null;
+}
+
+function decodeImage(imageBase64: string, maxSide: number): Buffer {
   const b64 = imageBase64.replace(/^data:[^;,]+;base64,/, '').replace(/\s+/g, '');
   const buf = Buffer.from(b64, 'base64');
   if (buf.length < 64) throw new OcrError('Lecture impossible : l’image est vide ou illisible.', 'bad_image');
@@ -349,6 +394,14 @@ function decodeImage(imageBase64: string): Buffer {
   const isBmp = buf[0] === 0x42 && buf[1] === 0x4d;
   if (!isJpeg && !isPng && !isWebp && !isBmp) {
     throw new OcrError('Lecture impossible : format d’image non supporté (utilisez JPEG, PNG ou WebP).', 'bad_image');
+  }
+  const size = imageSize(buf);
+  if (size && Math.max(size.width, size.height) > maxSide) {
+    const fmt = (n: number) => n.toLocaleString('fr-FR').replace(/\s/g, '\u202f');
+    throw new OcrError(
+      `Lecture impossible : la photo est trop grande (${fmt(size.width)} × ${fmt(size.height)} px, ${fmt(maxSide)} px maximum). Reprenez-la depuis l’application, qui la réduit automatiquement.`,
+      'bad_image',
+    );
   }
   return buf;
 }
@@ -531,6 +584,8 @@ export function detectCategory(text: string, abv: number | null = null, volumeCl
   }
   // ABV coherence bonus
   if (abv !== null) {
+    // No wine (port/VDN ≤ 22 %), beer or soft reaches 23 %: « Marc de Bourgogne 45 % » is a spirit.
+    if (abv >= 23) { scores.vins = 0; scores.bieres = 0; scores.softs = 0; }
     if (abv >= 30) scores.spiritueux += 2;
     else if (abv >= 8.5 && abv <= 16) scores.vins += 1.5;
     else if (abv >= 0.5 && abv < 8.5) { scores.bieres += 1.5; scores.vins += 0.5; }
@@ -577,8 +632,53 @@ const BRANDS = [
   'Lipton', 'Tropicana', 'Joker', 'Pago', 'Granini', 'Moet', 'Veuve Clicquot', 'Ruinart', 'Laurent-Perrier', 'Taittinger',
   'Mumm', 'Nicolas Feuillatte', 'Pommery', 'Bollinger', 'Krug',
 ];
-const BRAND_INDEX = BRANDS.flatMap((b) => b.split(/\s+/).filter((t) => t.replace(/[^A-Za-z]/g, '').length >= 4)
-  .map((t) => ({ key: norm(t).replace(/[^a-z0-9]/g, ''), display: t })));
+/**
+ * Tokens of multi-word brands that do not identify the brand on their own ("Four Roses" -> "roses"
+ * would turn every « Rosé » into « Roses »). Only the distinctive token of a brand is used to fix
+ * OCR typos; the full name is still recognised by extractBrand().
+ */
+const GENERIC_BRAND_TOKENS = new Set([
+  'four', 'roses', 'makers', 'mark', 'grey', 'goose', 'club', 'morgan', 'trois', 'rivieres', 'saint', 'james',
+  'papa', 'sapphire', 'walker', 'jack', 'label', 'martin', 'pastis', 'jose', 'grand', 'veuve', 'nicolas',
+  'bull', 'clan', 'beam',
+]);
+const BRAND_INDEX = BRANDS.flatMap((b) => b.split(/\s+/)
+  .map((t) => ({ key: norm(t).replace(/[^a-z0-9]/g, ''), display: t }))
+  .filter((t) => t.key.replace(/[^a-z]/g, '').length >= 4 && !GENERIC_BRAND_TOKENS.has(t.key)));
+
+/**
+ * Ordinary words (French bar vocabulary, names) that sit within one or two letters of a brand:
+ * read correctly by the OCR, they must be kept as printed (« Jus de Pomme » is not « Pommery »,
+ * « Rosé » is not « Roses »).
+ */
+const NEVER_CORRECT = new Set([
+  'rose', 'roses', 'pomme', 'pommes', 'marc', 'dark', 'sainte', 'page', 'sure', 'riviere', 'martine', 'poker',
+  'granit', 'jupiter', 'duval', 'bullet', 'remi', 'serra', 'pichon',
+  // Every French / English dictionary word (pyspellchecker 0.9.1 fr + en lists, 300k words,
+  // normalised like the keys) that the rules below would still have turned into a brand, e.g.
+  // grands→Grant's, billet→Lillet, élément→Clément, terrier→Perrier, tropical→Tropicana.
+  // Regenerate with backend/scripts/brand-lookalikes.ts when BRANDS or the rules change.
+  'absolue', 'absolus', 'affligea', 'affligee', 'affligees', 'affligent', 'affliger', 'affligera', 'affliges',
+  'affligez', 'affligiez', 'angina', 'aperos', 'artel', 'bailees', 'ballantes', 'barleys', 'bellemere',
+  'benedicite', 'benedictins', 'benediction', 'benedictions', 'billet', 'bordons', 'botanize', 'boulanger',
+  'brants', 'bushnells', 'campobello', 'captais', 'captait', 'carnier', 'cement', 'chanteuse', 'charmeuse',
+  'chartres', 'chartreux', 'chauffe', 'chinas', 'chives', 'citadels', 'clament', 'clemens', 'colliger',
+  'cordons', 'corina', 'coronal', 'corons', 'courtoisie', 'danials', 'defeater', 'deliriez', 'delirious',
+  'dillinger', 'diplomatics', 'diplomatie', 'diplomaties', 'diplomatist', 'donkey', 'element', 'eventree',
+  'evertuee', 'faulkner', 'fenetree', 'feuillage', 'feuillant', 'feuillete', 'feuilletee', 'feuillette',
+  'feuillettes', 'fillet', 'gainless', 'galantines', 'garants', 'gardons', 'geants', 'gerants', 'giants',
+  'glibness', 'gluiness', 'gorgons', 'grafts', 'grands', 'granits', 'granta', 'granth', 'grimness', 'grunts',
+  'guindees', 'habana', 'handpicks', 'haubaner', 'havanan', 'havane', 'honkey', 'implantation', 'jarlsberg',
+  'jubiler', 'kendrick', 'kendricks', 'lactation', 'lazaretto', 'lepton', 'linton', 'liston', 'litton',
+  'lutanist', 'manier', 'manquera', 'manquerai', 'manqueras', 'marier', 'marinier', 'marner', 'martela',
+  'martele', 'martina', 'martins', 'marvell', 'matron', 'merrier', 'meson', 'millet', 'monkery', 'mordons',
+  'natron', 'palisser', 'patrol', 'patroon', 'patton', 'pavana', 'period', 'perkier', 'perries', 'picard',
+  'piler', 'placation', 'placentation', 'plantain', 'playstation', 'pointeau', 'pouliner', 'pranging',
+  'ricardo', 'richard', 'rillet', 'ritard', 'romanist', 'routing', 'ruinait', 'ruinant', 'satanist',
+  'schlepped', 'schlepper', 'schlepps', 'shivas', 'sierran', 'tanguera', 'tapisser', 'terrier', 'thinness',
+  'tordons', 'tourtes', 'tropical', 'tropicale', 'tropicaux', 'velarium', 'verrier', 'votarist', 'willet',
+  'woodward', 'woodwork', 'woodworm',
+]);
 
 function levenshtein(a: string, b: string): number {
   const prev = Array.from({ length: b.length + 1 }, (_, i) => i);
@@ -594,18 +694,43 @@ function levenshtein(a: string, b: string): number {
   return prev[b.length];
 }
 
+/** Allowed edit distance for a token / brand key pair: 1 from 6 letters, 2 from 8 letters, else exact. */
+function maxBrandDistance(tokenLen: number, brandLen: number): number {
+  const n = Math.min(tokenLen, brandLen);
+  return n >= 8 ? 2 : n >= 6 ? 1 : 0;
+}
+
+/**
+ * OCR often loses the first / last letter of a stylised brand ("AMESO" for JAMESON): a token of
+ * 5+ letters found INSIDE a 7+ letter brand key, at most 2 letters short and not at its start
+ * (a prefix is an ordinary word too often: « pomme » / Pommery), is that brand.
+ */
+function isEdgeTruncation(key: string, brandKey: string): boolean {
+  if (key.length < 5 || brandKey.length < 7 || brandKey.length - key.length > 2 || key.length >= brandKey.length) return false;
+  const at = brandKey.indexOf(key);
+  return at > 0;
+}
+
 /** Replace OCR-mangled tokens by the closest known brand token. Returns the fixed text + hit flag. */
 export function fixBrands(text: string): { text: string; hit: boolean } {
   let hit = false;
   const out = text.split(/(\s+)/).map((tok) => {
     const key = norm(tok).replace(/[^a-z0-9]/g, '');
-    if (key.length < 4) return tok;
+    if (key.length < 4 || NEVER_CORRECT.has(key)) return tok;
     let best: { display: string; d: number } | null = null;
     for (const b of BRAND_INDEX) {
+      if (b.key === key) { best = { display: b.display, d: 0 }; break; }
+      // A word that starts a brand (« pomme » / Pommery) or a brand + plural/feminine ending
+      // (« patrons » / Patron) is an ordinary word, not a misread brand.
+      if (b.key.startsWith(key)) continue;
+      if (key.startsWith(b.key) && /^(s|e|es|x)$/.test(key.slice(b.key.length))) continue;
       if (Math.abs(b.key.length - key.length) > 2) continue;
-      const d = levenshtein(key, b.key);
-      const max = b.key.length >= 7 ? 2 : 1;
-      if (d <= max && (!best || d < best.d)) best = { display: b.display, d };
+      let d = levenshtein(key, b.key);
+      if (d > maxBrandDistance(key.length, b.key.length)) {
+        if (!isEdgeTruncation(key, b.key)) continue;
+        d = b.key.length - key.length;
+      }
+      if (!best || d < best.d) best = { display: b.display, d };
     }
     if (!best) return tok;
     hit = true;
@@ -708,12 +833,21 @@ function vote<T>(passes: PassResult<BottleRead>[], pick: (r: BottleRead) => T | 
  * The client sends a JPEG ~1024 px wide; 1280-1600 px gives better results on small text.
  */
 export async function analyzeBottleImage(imageBase64: string): Promise<ScanResult> {
-  const image = decodeImage(imageBase64);
+  const image = decodeImage(imageBase64, MAX_SIDE_BOTTLE);
   const passes = await ocrPasses(image, PSM.SPARSE_TEXT, BOTTLE_TIMEOUT_MS, BOTTLE_PASSES, readBottle, 0.8);
   const ranked = [...passes].sort((a, b) => b.quality - a.quality);
   const best = ranked[0].value;
   const volume = best.volume ?? vote(passes, (r) => r.volume);
-  const name = best.name || ranked.find((p) => p.value.name)?.value.name || '';
+  let name = best.name || ranked.find((p) => p.value.name)?.value.name || '';
+  // Another good pass that read the same name further (« MARC DE » vs « MARC DE BOURGOGNE »,
+  // « Jameson » vs « Jameson Irish Whiskey »): keep the longer reading.
+  if (name) {
+    const base = norm(name);
+    const longer = ranked.find((p) => p.quality >= ranked[0].quality - 0.15
+      && norm(p.value.name).startsWith(`${base} `)
+      && p.value.name.split(/\s+/).length - name.split(/\s+/).length <= 3);
+    if (longer) name = longer.value.name;
+  }
   // An ABV on its own is not a usable read (one OCR noise token such as "2%" is enough to
   // produce it): without a name or a volume the scan is a failure (422, quota not counted).
   if (!name && volume === null) {
@@ -909,7 +1043,7 @@ function cleanProductName(designation: string): string {
  * Unit prices are HT per container: "x24" / "carton de 6" packs are divided down.
  */
 export async function analyzeInvoiceImage(imageBase64: string): Promise<InvoiceScanResult> {
-  const image = decodeImage(imageBase64);
+  const image = decodeImage(imageBase64, MAX_SIDE_INVOICE);
   const passes = await ocrPasses(image, PSM.SINGLE_COLUMN, INVOICE_TIMEOUT_MS, INVOICE_PASSES, readInvoice, 0.75);
   const best = [...passes].sort((a, b) => b.quality - a.quality)[0];
   const r = best.value;

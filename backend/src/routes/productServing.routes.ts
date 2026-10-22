@@ -1,7 +1,10 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { authenticate } from '../middleware/auth';
+import { userWriteLimiter } from '../middleware/userRateLimit';
 import { prisma } from '../config/database';
+import { MarginMode } from '@margebar/shared';
+import { assertMarginInputs } from '../services/product.service';
 import { sendKnownError } from '../utils/validation';
 import { getServingResults, lockProduct, replaceServings, resyncPrimary, validateServings } from '../services/productServing.service';
 
@@ -39,7 +42,7 @@ router.get('/:productId/servings', async (req: Request, res: Response) => {
  * product.sellingPriceTTC / doseVolumeCl to the primary serving (lowest sortOrder).
  * A price ≤ 0 is rejected with a message naming the service(s).
  */
-router.put('/:productId/servings', async (req: Request, res: Response) => {
+router.put('/:productId/servings', userWriteLimiter, async (req: Request, res: Response) => {
   try {
     const { servings } = upsertSchema.parse(req.body);
     const product = await prisma.product.findFirst({
@@ -50,7 +53,17 @@ router.put('/:productId/servings', async (req: Request, res: Response) => {
       return;
     }
 
-    const validated = await validateServings(req.user!.userId, servings);
+    // Every serving must fit in the bottle, and the new primary serving (which becomes the
+    // headline price/dose) must give a computable margin — checked before anything is written.
+    const validated = await validateServings(req.user!.userId, servings, { containerVolumeCl: product.containerVolumeCl });
+    if (validated.length) {
+      assertMarginInputs({
+        ...product,
+        marginMode: MarginMode.FIX_SELLING_PRICE,
+        sellingPriceTTC: validated[0].sellingPriceTTC,
+        doseVolumeCl: validated[0].volumeCl,
+      }, 'servings');
+    }
     await prisma.$transaction((tx) => replaceServings(tx, product.id, validated));
 
     res.json(await getServingResults(product));
@@ -62,7 +75,7 @@ router.put('/:productId/servings', async (req: Request, res: Response) => {
 });
 
 // DELETE /api/products/:productId/servings/:servingTypeId
-router.delete('/:productId/servings/:servingTypeId', async (req: Request, res: Response) => {
+router.delete('/:productId/servings/:servingTypeId', userWriteLimiter, async (req: Request, res: Response) => {
   try {
     const product = await prisma.product.findFirst({
       where: { id: req.params.productId, userId: req.user!.userId },

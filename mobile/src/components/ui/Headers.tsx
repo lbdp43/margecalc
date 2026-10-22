@@ -10,7 +10,8 @@
  *
  * NavBar — pushed screens. Pass it to <Screen header={…}> (fixed).
  *   <NavBar title="Nouveau produit" trailing={<Badge variant="brand" label="Tarifs 2026" />} />
- *   (back defaults to navigation.goBack(); pass onBack to override, back={false} to hide)
+ *   (back defaults to navigation.goBack(), or goHome() when there is nothing
+ *   underneath; pass onBack to override, back={false} to hide)
  *
  * HeroHeader — landing & dashboard. heroBase + heroGlint gradients, concentric
  * ring watermark, bottom radius 28, white status bar. Use with
@@ -30,6 +31,7 @@ import { gradients, layout, palette, radius, type } from '../../theme';
 import { IconButton } from './Button';
 import { useRegisterCompactTitle, useScreen } from './Screen';
 import { useSafeIsFocused } from './chrome';
+import { goHome } from '../../navigation/routes';
 
 // ─── LargeTitleHeader ──────────────────────────────────────────────────────
 export interface LargeTitleHeaderProps {
@@ -89,7 +91,11 @@ export function NavBar({ title, onBack, back = true, trailing, close, style, hai
   const screen = useScreen();
   const handleBack = () => {
     if (onBack) return onBack();
-    if (navigation?.canGoBack()) navigation.goBack();
+    if (!navigation) return;
+    // A URL opened directly may have nothing underneath: go home instead of
+    // doing nothing (dashboard when logged in, landing when logged out).
+    if (navigation.canGoBack()) navigation.goBack();
+    else goHome(navigation as any);
   };
   const line = useAnimatedStyle(() => {
     const y = screen && hairline ? screen.scrollY.value : 0;

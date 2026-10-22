@@ -72,17 +72,29 @@ export function TabBar({ state, descriptors, navigation }: BottomTabBarProps) {
 
   const barBottom = layout.tabBarBottom(insets.bottom);
 
-  // ── indicator geometry (computed, no per-item measuring) ──
-  const centers = useMemo(() => {
-    const inner = rowW - 8;
-    const half = (inner - SCAN_SLOT) / 2;
-    const free = half - ITEM_W * 2;
-    return {
-      [ROUTES.settingsTab]: 4 + free / 4 + ITEM_W / 2,
-      [ROUTES.productsTab]: 4 + (free * 3) / 4 + ITEM_W * 1.5,
-      [ROUTES.dashboardTab]: 4 + half + SCAN_SLOT + half / 2,
+  // ── geometry (computed, no per-item measuring) ──
+  // Narrow phones (< 340 px row, e.g. 320 px screens): narrower scan slot,
+  // items shrink to fit their half, 11 px labels.
+  const geo = useMemo(() => {
+    const compact = rowW > 0 && rowW < 340;
+    const scanSlot = compact ? 60 : SCAN_SLOT;
+    const half = rowW ? (rowW - 8 - scanSlot) / 2 : 0;
+    const itemW = rowW ? Math.min(ITEM_W, Math.floor(half / 2)) : ITEM_W;
+    const wideW = rowW ? Math.min(WIDE_W, Math.floor(half)) : WIDE_W;
+    const pillW = Math.min(PILL_W, itemW - (compact ? 8 : 4));
+    const free = half - itemW * 2;
+    const centers = {
+      [ROUTES.settingsTab]: 4 + free / 4 + itemW / 2,
+      [ROUTES.productsTab]: 4 + (free * 3) / 4 + itemW * 1.5,
+      [ROUTES.dashboardTab]: 4 + half + scanSlot + half / 2,
     } as Record<string, number>;
+    return { compact, scanSlot, itemW, wideW, pillW, centers };
   }, [rowW]);
+  const centers = geo.centers;
+  const pillBase = useSharedValue(PILL_W);
+  useEffect(() => {
+    pillBase.value = geo.pillW;
+  }, [geo.pillW, pillBase]);
 
   const activeName = focusedRoute.name;
   const x = useSharedValue(0);
@@ -110,7 +122,7 @@ export function TabBar({ state, descriptors, navigation }: BottomTabBarProps) {
   const pill = useAnimatedStyle(() => {
     const cx = from.value + (to.value - from.value) * t.value;
     const stretch = 8 * 4 * Math.max(0, Math.min(1, t.value)) * (1 - Math.max(0, Math.min(1, t.value)));
-    const w = PILL_W + stretch;
+    const w = pillBase.value + stretch;
     return { width: w, transform: [{ translateX: cx - w / 2 }] };
   });
 
@@ -156,7 +168,9 @@ export function TabBar({ state, descriptors, navigation }: BottomTabBarProps) {
         label={conf.label}
         icon={conf.icon}
         iconActive={conf.iconActive}
-        wide={!!conf.wide}
+        width={conf.wide ? geo.wideW : geo.itemW}
+        pillW={geo.pillW}
+        compact={geo.compact}
         focused={focused}
         onPress={() => onTabPress(route.name, route.key, focused)}
         onLongPress={() => navigation.emit({ type: 'tabLongPress', target: route.key })}
@@ -182,8 +196,8 @@ export function TabBar({ state, descriptors, navigation }: BottomTabBarProps) {
         <View style={styles.row} onLayout={(e: LayoutChangeEvent) => setRowW(e.nativeEvent.layout.width)}>
           {rowW ? <Animated.View pointerEvents="none" style={[styles.pill, pill]} /> : null}
           <View style={styles.half}>{leftTabs}</View>
-          <View style={styles.scanSlot}>
-            <Text style={[styles.label, { color: menuOpen ? palette.em700 : palette.text3 }]} numberOfLines={1}>
+          <View style={[styles.scanSlot, { width: geo.scanSlot }]}>
+            <Text style={[styles.label, geo.compact && styles.labelCompact, { color: menuOpen ? palette.em700 : palette.text3 }]} numberOfLines={1}>
               Scanner
             </Text>
           </View>
@@ -213,7 +227,9 @@ function TabItem({
   label,
   icon,
   iconActive,
-  wide,
+  width,
+  pillW,
+  compact,
   focused,
   onPress,
   onLongPress,
@@ -222,7 +238,9 @@ function TabItem({
   label: string;
   icon: IconName;
   iconActive: IconName;
-  wide: boolean;
+  width: number;
+  pillW: number;
+  compact: boolean;
   focused: boolean;
   onPress: () => void;
   onLongPress: () => void;
@@ -250,12 +268,12 @@ function TabItem({
       accessibilityRole="tab"
       accessibilityState={{ selected: focused }}
       accessibilityLabel={accessibilityLabel}
-      style={[styles.item, { width: wide ? WIDE_W : ITEM_W }, Platform.OS === 'web' ? ({ cursor: 'pointer', userSelect: 'none' } as any) : null]}
+      style={[styles.item, { width }, Platform.OS === 'web' ? ({ cursor: 'pointer', userSelect: 'none' } as any) : null]}
     >
-      <Animated.View style={[styles.iconBox, iconStyle]}>
+      <Animated.View style={[styles.iconBox, { width: pillW }, iconStyle]}>
         <Ionicons name={focused ? iconActive : icon} size={23} color={focused ? palette.em700 : palette.text3} />
       </Animated.View>
-      <Animated.Text style={[styles.label, labelStyle]} numberOfLines={1} maxFontSizeMultiplier={1.3}>
+      <Animated.Text style={[styles.label, compact && styles.labelCompact, labelStyle]} numberOfLines={1} maxFontSizeMultiplier={1.3}>
         {label}
       </Animated.Text>
     </Pressable>
@@ -407,7 +425,7 @@ const styles = StyleSheet.create({
   },
   row: { flex: 1, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 4 },
   half: { flex: 1, flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center', height: '100%' },
-  scanSlot: { width: SCAN_SLOT, height: '100%', alignItems: 'center', justifyContent: 'flex-end', paddingBottom: 9 },
+  scanSlot: { height: '100%', alignItems: 'center', justifyContent: 'flex-end', paddingBottom: 9 },
   pill: {
     position: 'absolute',
     left: 0,
@@ -419,6 +437,7 @@ const styles = StyleSheet.create({
   item: { height: 60, alignItems: 'center', justifyContent: 'center', gap: 3 },
   iconBox: { width: PILL_W, height: PILL_H, alignItems: 'center', justifyContent: 'center' },
   label: { ...type.tabLabel },
+  labelCompact: { fontSize: 11, lineHeight: 14, letterSpacing: -0.2 },
   scanWrap: { position: 'absolute', left: 0, right: 0, alignItems: 'center' },
   scanOuter: { width: SCAN + 8, height: SCAN + 8, borderRadius: (SCAN + 8) / 2, alignItems: 'center', justifyContent: 'center' },
   scan: { width: SCAN, height: SCAN, borderRadius: SCAN / 2, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.em700 },

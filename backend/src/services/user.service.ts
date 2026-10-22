@@ -48,5 +48,6 @@ export async function deleteUserData(userId: string) {
     await tx.customContainer.deleteMany({ where: { userId } });
     await tx.scanUsage.deleteMany({ where: { userId } });
     await tx.ticket.deleteMany({ where: { userId } });
+    await tx.category.deleteMany({ where: { userId } }); // private categories (after their products)
   });
 }

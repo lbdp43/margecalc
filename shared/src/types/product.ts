@@ -46,6 +46,12 @@ export interface ProductWithMargin extends Product {
   computed: MarginResult;
   servings?: ProductServing[];
   category?: Category;
+  /**
+   * `PUT /api/products/:id` only, when the product has services: the headline fields the body
+   * sent that were NOT applied, because a product with services is priced by its primary
+   * service (lowest sortOrder). Send `servings` in the same PUT to change the price/dose.
+   */
+  ignoredFields?: Array<'sellingPriceTTC' | 'doseVolumeCl' | 'marginMode'>;
 }
 
 export interface MarginInput {
@@ -74,12 +80,25 @@ export interface MarginResult {
 
 export interface Category {
   id: string;
+  /** null = built-in category shared by every account; otherwise private to that user. */
+  userId?: string | null;
   name: string;
   slug: string;
   icon: string;
   sortOrder: number;
 }
 
+/**
+ * Body of `POST /api/products` and (all fields optional) `PUT /api/products/:id`.
+ *
+ * Products with services (`servings`): the headline `sellingPriceTTC`, `doseVolumeCl` and
+ * `marginMode` always mirror the PRIMARY service (lowest sortOrder) — `marginMode` is
+ * `fix_selling_price`. On a PUT without `servings`, those three fields are overwritten by the
+ * primary service and listed in the response's `ignoredFields` when they differed. To change a
+ * product's price, send `servings` in the same PUT (atomic) or use `PUT /api/products/:id/servings`.
+ *
+ * Volumes: `doseVolumeCl` and every service volume must be ≤ `containerVolumeCl` (400 otherwise).
+ */
 export interface CreateProductInput {
   name: string;
   categoryId: string;
@@ -97,6 +116,11 @@ export interface CreateProductInput {
   imageUrl?: string | null;
   /** Data URI (≤ 40 000 chars). On update: omitted = unchanged, null = remove. */
   thumbnailUrl?: string | null;
+  /**
+   * Optional: replace the product's services in the same transaction (same rules as
+   * `PUT /api/products/:id/servings`: services not sent are deleted, prices must be > 0).
+   */
+  servings?: { servingTypeId: string; sellingPriceTTC: number }[];
 }
 
 /** Limits enforced by the API for product photos (string length of the data URI). */

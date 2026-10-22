@@ -10,6 +10,7 @@ import Svg, {
   LinearGradient,
   Stop,
 } from 'react-native-svg';
+import { useReducedMotion } from 'react-native-reanimated';
 import { palette, spacing, type } from '../../theme';
 
 /**
@@ -59,8 +60,19 @@ export function YinYangSpinner({
   const foamWobble = useRef(new Animated.Value(0)).current;
   const fadeMessage = useRef(new Animated.Value(0)).current;
   const dripAnim = useRef(new Animated.Value(0)).current;
+  // Reduce motion: a static, filled mug (no loops), message shown at once.
+  const reduce = useReducedMotion();
 
   useEffect(() => {
+    if (reduce) {
+      fillLevel.setValue(1);
+      foamScale.setValue(1);
+      dripAnim.setValue(0);
+      foamWobble.setValue(0.5);
+      fadeMessage.setValue(1);
+      [bubble1, bubble2, bubble3, bubble4, bubble5, bubble6, bubble7, bubble8].forEach((b) => b.setValue(0));
+      return undefined;
+    }
     const fill = Animated.loop(
       Animated.sequence([
         // Fill the glass
@@ -170,7 +182,7 @@ export function YinYangSpinner({
       wobble.stop();
       fade.stop();
     };
-  }, [fillLevel, foamScale, dripAnim, bubble1, bubble2, bubble3, bubble4, bubble5, bubble6, bubble7, bubble8, foamWobble, fadeMessage]);
+  }, [reduce, fillLevel, foamScale, dripAnim, bubble1, bubble2, bubble3, bubble4, bubble5, bubble6, bubble7, bubble8, foamWobble, fadeMessage]);
 
   // ────────── DIMENSIONS ──────────
   // All coordinates are relative to size for scalability

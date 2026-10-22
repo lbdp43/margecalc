@@ -18,10 +18,11 @@
 import React from 'react';
 import { Platform, StyleProp, StyleSheet, Switch, Text, TextStyle, View, ViewStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
+import Animated, { useAnimatedStyle, useReducedMotion, useSharedValue } from 'react-native-reanimated';
 import { elevation, fontFamily, motion, palette, radius, type } from '../../theme';
 import { haptics } from '../../theme/haptics';
 import { PressableScale } from './PressableScale';
+import { springOrTiming } from './motion';
 import { IconName } from './Icon';
 
 // ─── ValueRow ──────────────────────────────────────────────────────────────
@@ -77,6 +78,8 @@ export interface ListRowProps {
   divider?: boolean;
   /** Lines for the subtitle (default 2, so descriptions wrap). */
   subtitleLines?: number;
+  /** Extra line under the subtitle, never clamped (footnoteStrong, tabular): e.g. an official rate. */
+  detail?: string;
   style?: StyleProp<ViewStyle>;
   titleStyle?: StyleProp<TextStyle>;
   accessibilityLabel?: string;
@@ -91,10 +94,11 @@ const TONES = {
 };
 
 function Radio({ selected }: { selected: boolean }) {
+  const reduce = useReducedMotion();
   const s = useSharedValue(selected ? 1 : 0);
   React.useEffect(() => {
-    s.value = withSpring(selected ? 1 : 0, motion.spring.pop);
-  }, [selected, s]);
+    s.value = springOrTiming(selected ? 1 : 0, motion.spring.pop, reduce);
+  }, [selected, s, reduce]);
   const fill = useAnimatedStyle(() => ({ transform: [{ scale: s.value }], opacity: s.value > 0.02 ? 1 : 0 }));
   return (
     <View style={[styles.radio, selected && { borderColor: palette.em700 }]}>
@@ -122,6 +126,7 @@ export function ListRow({
   disabled,
   divider,
   subtitleLines = 2,
+  detail,
   style,
   titleStyle,
   accessibilityLabel,
@@ -179,6 +184,7 @@ export function ListRow({
             {subtitle}
           </Text>
         ) : null}
+        {detail ? <Text style={styles.detail}>{detail}</Text> : null}
       </View>
       {rightNode}
     </>
@@ -200,7 +206,7 @@ export function ListRow({
       haptic={resolvedRight === 'radio' ? 'select' : false}
       accessibilityRole={resolvedRight === 'radio' ? 'radio' : 'button'}
       accessibilityState={{ selected, disabled: !!disabled, checked: resolvedRight === 'radio' ? selected : undefined }}
-      accessibilityLabel={accessibilityLabel ?? [title, subtitle, value].filter(Boolean).join(', ')}
+      accessibilityLabel={accessibilityLabel ?? [title, subtitle, detail, value].filter(Boolean).join(', ')}
       testID={testID}
       style={rowStyle}
     >
@@ -305,6 +311,7 @@ const styles = StyleSheet.create({
   texts: { flex: 1, minWidth: 0, gap: 2 },
   title: { ...type.headline, color: palette.ink },
   subtitle: { ...type.footnote, color: palette.text3 },
+  detail: { ...type.footnoteStrong, color: palette.text2, fontVariant: ['tabular-nums'] },
   rightRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   rightValue: { ...type.calloutStrong, color: palette.text3, fontVariant: ['tabular-nums'] },
   radio: {

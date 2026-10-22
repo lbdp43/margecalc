@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { prisma } from '../config/database';
-import { authenticate, requireAdmin } from '../middleware/auth';
+import { authenticate, forgetAccountStatus, requireAdmin } from '../middleware/auth';
 import { Prisma } from '@prisma/client';
 import { computeMarginSafe } from '../services/product.service';
 
@@ -343,6 +343,7 @@ router.patch('/users/:userId/ban', async (req: Request, res: Response): Promise<
       data: { bannedAt: new Date() },
       select: { id: true, email: true, bannedAt: true },
     });
+    forgetAccountStatus(updated.id); // the ban applies to the user's current token right away
     res.json({
       id: updated.id,
       email: updated.email,
@@ -367,6 +368,7 @@ router.patch('/users/:userId/unban', async (req: Request, res: Response): Promis
       data: { bannedAt: null },
       select: { id: true, email: true, bannedAt: true },
     });
+    forgetAccountStatus(updated.id);
     res.json({
       id: updated.id,
       email: updated.email,
@@ -404,8 +406,10 @@ router.delete('/users/:userId', async (req: Request, res: Response): Promise<voi
       prisma.customContainer.deleteMany({ where: { userId: req.params.userId } }),
       prisma.scanUsage.deleteMany({ where: { userId: req.params.userId } }),
       prisma.ticket.deleteMany({ where: { userId: req.params.userId } }),
+      prisma.category.deleteMany({ where: { userId: req.params.userId } }),
       prisma.user.delete({ where: { id: req.params.userId } }),
     ]);
+    forgetAccountStatus(req.params.userId);
     res.json({ ok: true });
   } catch (err: any) {
     console.error('Admin delete user error:', err.message);

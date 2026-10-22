@@ -1,270 +1,118 @@
+/**
+ * WelcomeModal — shown once after the first sign-in (RootNavigator, global
+ * chrome owned by the foundation). A BottomSheet: what the app does, how the
+ * data is handled, one primary « Commencer ».
+ *
+ *   <WelcomeModal visible={welcomeVisible} onClose={handleCloseWelcome} />
+ */
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Modal, ScrollView, Platform } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
+import { StyleSheet, Text, View } from 'react-native';
+import { palette, radius, type } from '../../theme';
+import { BottomSheet } from './BottomSheet';
+import { Button } from './Button';
+import { Icon, IconName } from './Icon';
+import { SectionHeader } from './ListRow';
 
 interface WelcomeModalProps {
   visible: boolean;
   onClose: () => void;
 }
 
-const FEATURES: Array<{ icon: string; title: string; desc: string }> = [
+const FEATURES: Array<{ icon: IconName; title: string; desc: string }> = [
   {
     icon: 'calculator-outline',
     title: 'Calcul de marges',
-    desc: 'Prix de vente, marge cible ou coefficient — visualisez votre rentabilité en temps réel pour chaque boisson.',
+    desc: 'Prix de vente, marge cible ou coefficient : votre rentabilité par verre, en temps réel.',
   },
   {
     icon: 'wine-outline',
-    title: 'Gestion produits & recettes',
-    desc: 'Spiritueux, vins, bières, softs, ingrédients, cocktails… avec historique de prix et fournisseurs.',
+    title: 'Produits et services',
+    desc: 'Spiritueux, vins, bières, softs : chaque bouteille avec ses services (verre, shot, pinte…).',
   },
   {
     icon: 'scan-outline',
-    title: 'Scan IA',
-    desc: 'Photographiez une bouteille ou une facture, l\'app extrait automatiquement les informations.',
+    title: 'Scan de bouteille et de facture',
+    desc: 'Photographiez une étiquette ou une facture : l’app lit le texte et pré-remplit la fiche.',
   },
   {
     icon: 'receipt-outline',
-    title: 'Droits d\'accise & TVA',
-    desc: 'Calcul automatique des droits, de la cotisation sécurité sociale et de la TVA selon la catégorie fiscale.',
+    title: 'Droits d’accise et TVA',
+    desc: 'Droits, cotisation sécurité sociale et TVA calculés selon la catégorie fiscale, au barème officiel.',
   },
   {
-    icon: 'bar-chart-outline',
+    icon: 'stats-chart-outline',
     title: 'Tableau de bord',
-    desc: 'Top/flop des marges, répartition par catégorie, suivi de la rentabilité globale.',
+    desc: 'Top et flop des marges, répartition par catégorie et rentabilité globale.',
   },
 ];
 
-const DATA_POINTS: Array<{ icon: string; text: string }> = [
-  {
-    icon: 'lock-closed-outline',
-    text: 'Vos données sont stockées de manière sécurisée. Aucun autre utilisateur ne peut voir vos produits, vos prix ou vos marges.',
-  },
-  {
-    icon: 'shield-checkmark-outline',
-    text: 'Vos données ne sont jamais partagées avec des tiers — elles ne servent qu\'à faire fonctionner votre espace MargeBar Pro.',
-  },
-  {
-    icon: 'trash-outline',
-    text: 'Vous pouvez supprimer vos données ou votre compte à tout moment depuis les Réglages.',
-  },
-  {
-    icon: 'sparkles-outline',
-    text: 'Le scan IA utilise Claude (Anthropic) uniquement pour extraire les informations de l\'image — les photos ne sont pas conservées.',
-  },
+const DATA_POINTS: Array<{ icon: IconName; text: string }> = [
+  { icon: 'lock-closed-outline', text: 'Vos produits, vos prix et vos marges ne sont visibles que par vous.' },
+  { icon: 'shield-checkmark-outline', text: 'Vos données ne sont jamais partagées ni revendues.' },
+  { icon: 'eye-off-outline', text: 'Le scan lit la photo sur nos serveurs, sans service tiers, et ne la conserve pas.' },
+  { icon: 'chatbubble-ellipses-outline', text: 'Pour supprimer votre compte, écrivez-nous depuis Réglages › Aide & retours.' },
 ];
 
 export const WelcomeModal = React.memo(function WelcomeModal({ visible, onClose }: WelcomeModalProps) {
-  if (!visible) return null;
-
   return (
-    <Modal visible transparent animationType="fade" onRequestClose={onClose}>
-      <View style={styles.overlay}>
-        <View style={styles.sheet}>
-          <ScrollView
-            contentContainerStyle={styles.scrollContent}
-            showsVerticalScrollIndicator={false}
-            bounces={false}
-          >
-            {/* Header */}
-            <View style={styles.header}>
-              <Text style={styles.title}>Bienvenue dans MargeBar Pro</Text>
-              <Text style={styles.subtitle}>
-                Calculateur de marges pour bars, restaurants et hôtels
-              </Text>
-            </View>
-
-            {/* Features */}
-            <Text style={styles.sectionTitle}>À quoi sert l'application ?</Text>
-            <Text style={styles.sectionIntro}>
-              MargeBar Pro vous aide à piloter la rentabilité de votre établissement, de l'achat au verre servi.
-            </Text>
-            {FEATURES.map((f, i) => (
-              <View key={i} style={styles.featureRow}>
-                <View style={styles.featureIconBox}>
-                  <Ionicons name={f.icon as any} size={20} color={colors.accent} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.featureTitle}>{f.title}</Text>
-                  <Text style={styles.featureDesc}>{f.desc}</Text>
-                </View>
-              </View>
-            ))}
-
-            {/* Data handling */}
-            <Text style={styles.sectionTitle}>Vos données sont protégées</Text>
-            <Text style={styles.sectionIntro}>
-              Vos produits et marges restent privés vis-à-vis des autres utilisateurs.
-            </Text>
-            {DATA_POINTS.map((d, i) => (
-              <View key={i} style={styles.dataRow}>
-                <Ionicons name={d.icon as any} size={18} color={colors.primary} style={styles.dataIcon} />
-                <Text style={styles.dataText}>{d.text}</Text>
-              </View>
-            ))}
-          </ScrollView>
-
-          {/* CTA */}
-          <View style={styles.ctaContainer}>
-            <TouchableOpacity style={styles.ctaBtn} onPress={onClose} activeOpacity={0.8}>
-              <Ionicons name="checkmark" size={20} color={colors.white} style={{ marginRight: spacing.sm }} />
-              <Text style={styles.ctaBtnText}>J'ai compris, commencer</Text>
-            </TouchableOpacity>
+    <BottomSheet
+      visible={visible}
+      onClose={onClose}
+      snap="full"
+      title="Bienvenue dans MargeBar Pro"
+      subline="Gratuit et sans engagement. Voici l’essentiel."
+      footer={<Button title="Commencer" trailingIcon="arrow-forward" onPress={onClose} />}
+      accessibilityLabel="Bienvenue dans MargeBar Pro"
+      testID="welcome-sheet"
+    >
+      <SectionHeader variant="caps" title="Ce que fait l’application" style={styles.firstHeader} />
+      {FEATURES.map((f) => (
+        <View key={f.title} style={styles.featureRow}>
+          <View style={styles.iconTile}>
+            <Icon name={f.icon} size={22} color={palette.em700} />
+          </View>
+          <View style={styles.featureText}>
+            <Text style={styles.featureTitle}>{f.title}</Text>
+            <Text style={styles.featureDesc}>{f.desc}</Text>
           </View>
         </View>
+      ))}
+
+      <SectionHeader variant="caps" title="Vos données restent privées" style={styles.header} />
+      <View style={styles.dataCard}>
+        {DATA_POINTS.map((d, i) => (
+          <View key={d.icon} style={[styles.dataRow, i > 0 && styles.dataRowGap]}>
+            <Icon name={d.icon} size={20} color={palette.em700} style={styles.dataIcon} />
+            <Text style={styles.dataText}>{d.text}</Text>
+          </View>
+        ))}
       </View>
-    </Modal>
+    </BottomSheet>
   );
 });
 
 const styles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    backgroundColor: colors.overlay,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: spacing.md,
-    ...(Platform.OS === 'web' ? { height: '100vh' as any } : {}),
-  },
-  sheet: {
-    width: '100%',
-    maxWidth: 560,
-    maxHeight: '90%',
-    backgroundColor: colors.background,
-    borderRadius: borderRadius.lg,
-    overflow: 'hidden',
-    ...shadows.lg,
-  },
-  scrollContent: {
-    padding: spacing.lg,
-    paddingBottom: spacing.md,
-  },
-  header: {
-    alignItems: 'center',
-    marginBottom: spacing.lg,
-  },
-  betaBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.accent,
-    paddingHorizontal: spacing.sm + 2,
-    paddingVertical: 4,
-    borderRadius: borderRadius.full,
-    marginBottom: spacing.sm,
-  },
-  betaBadgeText: {
-    ...typography.caption,
-    fontWeight: '800',
-    color: colors.white,
-    marginLeft: 4,
-    letterSpacing: 1,
-  },
-  title: {
-    ...typography.h2,
-    color: colors.primary,
-    textAlign: 'center',
-    marginBottom: spacing.xs,
-  },
-  subtitle: {
-    ...typography.bodySmall,
-    color: colors.textSecondary,
-    textAlign: 'center',
-  },
-  noticeCard: {
-    backgroundColor: colors.light,
-    borderRadius: borderRadius.md,
-    padding: spacing.md,
-    marginBottom: spacing.lg,
-    borderLeftWidth: 3,
-    borderLeftColor: colors.primary,
-  },
-  noticeHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: spacing.xs,
-  },
-  noticeTitle: {
-    ...typography.bodySmall,
-    fontWeight: '700',
-    color: colors.primary,
-    marginLeft: spacing.sm,
-    flex: 1,
-  },
-  noticeText: {
-    ...typography.bodySmall,
-    color: colors.text,
-    lineHeight: 20,
-  },
-  sectionTitle: {
-    ...typography.h3,
-    color: colors.primary,
-    marginBottom: spacing.xs,
-    marginTop: spacing.sm,
-  },
-  sectionIntro: {
-    ...typography.bodySmall,
-    color: colors.textSecondary,
-    marginBottom: spacing.md,
-    lineHeight: 20,
-  },
-  featureRow: {
-    flexDirection: 'row',
-    marginBottom: spacing.md,
-  },
-  featureIconBox: {
-    width: 40,
-    height: 40,
-    borderRadius: borderRadius.sm,
-    backgroundColor: colors.light,
+  firstHeader: { marginTop: 4 },
+  header: { marginTop: 20 },
+  featureRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 14, paddingVertical: 8 },
+  iconTile: {
+    width: 44,
+    height: 44,
+    borderRadius: radius.icon,
+    backgroundColor: palette.em50,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: spacing.sm + 4,
   },
-  featureTitle: {
-    ...typography.bodySmall,
-    fontWeight: '700',
-    color: colors.text,
-    marginBottom: 2,
+  featureText: { flex: 1, minWidth: 0, paddingTop: 1 },
+  featureTitle: { ...type.headline, color: palette.ink },
+  featureDesc: { ...type.callout, color: palette.text2, marginTop: 2 },
+  dataCard: {
+    backgroundColor: palette.surface2,
+    borderRadius: radius.md,
+    padding: 16,
   },
-  featureDesc: {
-    ...typography.caption,
-    color: colors.textSecondary,
-    lineHeight: 17,
-  },
-  dataRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    marginBottom: spacing.sm + 4,
-    paddingRight: spacing.sm,
-  },
-  dataIcon: {
-    marginRight: spacing.sm + 2,
-    marginTop: 2,
-  },
-  dataText: {
-    ...typography.bodySmall,
-    color: colors.text,
-    flex: 1,
-    lineHeight: 20,
-  },
-  ctaContainer: {
-    padding: spacing.md,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-    backgroundColor: colors.cardBackground,
-  },
-  ctaBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.primary,
-    borderRadius: borderRadius.md,
-    paddingVertical: spacing.md,
-    ...shadows.md,
-  },
-  ctaBtnText: {
-    ...typography.button,
-    color: colors.white,
-  },
+  dataRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
+  dataRowGap: { marginTop: 12 },
+  dataIcon: { marginTop: 1 },
+  dataText: { ...type.callout, color: palette.ink, flex: 1, minWidth: 0 },
 });

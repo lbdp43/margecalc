@@ -7,6 +7,7 @@
 import React, { useMemo, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { getMarginColor } from '@margebar/shared';
+import type { ProductWithMargin } from '@margebar/shared';
 import {
   AnimatedNumber,
   Avatar,
@@ -23,14 +24,20 @@ import {
   EmptyState,
   FAB,
   FadeIn,
+  FiscalCategorySheet,
   HeroHeader,
   IconButton,
   LargeTitleHeader,
   ListGroup,
   ListRow,
+  MarginLegend,
+  countByZone,
   Meter,
   NavBar,
   NumberInput,
+  PriceTag,
+  ProductActionsSheet,
+  ProductCard,
   ResultGrid,
   ResultTile,
   Screen,
@@ -46,6 +53,7 @@ import {
   TextField,
   toast,
   ValueRow,
+  WelcomeModal,
   Wordmark,
   YinYangSpinner,
 } from '../components/ui';
@@ -53,7 +61,7 @@ import { ErrorBoundary } from '../components/ui/ErrorBoundary';
 import { fontFamily, palette, type } from '../theme';
 import { haptics } from '../theme/haptics';
 import { alert, confirm } from '../utils/alert';
-import { formatCoeff, formatDegree, formatEuro, formatNumber, formatPercent, formatRate } from '../utils/format';
+import { formatCoeff, formatDegree, formatEuro, formatNumber, formatPercent } from '../utils/format';
 
 const PURCHASE_HT = 32.5;
 const DOSES = 14;
@@ -63,6 +71,40 @@ function marginFromPrice(ttc: number) {
   const cost = PURCHASE_HT / DOSES;
   return { ht, cost, gain: ht - cost, margin: ht > 0 ? ((ht - cost) / ht) * 100 : 0, coeff: ht / cost };
 }
+
+const st = (id: string, name: string, volumeCl: number, sortOrder: number) => ({ id, userId: 'demo', name, volumeCl, icon: '', sortOrder });
+const sv = (id: string, price: number, type: ReturnType<typeof st>) => ({ id, productId: 'p', servingTypeId: type.id, sellingPriceTTC: price, servingType: type });
+const comp = (marginPercent: number, sellingPriceTTC: number, marginPerDoseHT: number) => ({
+  sellingPriceTTC, sellingPriceHT: sellingPriceTTC / 1.2, marginPercent, coefficient: 3, glassesPerContainer: 14,
+  costPerDoseHT: 1, marginPerDoseHT, revenuePerContainer: 0, marginPerContainer: 0, colorCode: 'green' as const,
+});
+// Dev-only demo data shaped like GET /api/products
+const DEMO_PRODUCTS: ProductWithMargin[] = [
+  {
+    id: 'gin', name: 'Hendrick’s Gin', containerVolumeCl: 70, alcoholDegree: 41.4, thumbnailUrl: null,
+    category: { id: 'c1', name: 'Spiritueux', slug: 'spiritueux', icon: '', sortOrder: 1 },
+    servings: [sv('s1', 9, st('t1', 'Verre (spiritueux)', 5, 2)), sv('s2', 6, st('t0', 'Shot', 3, 1))],
+    computed: comp(69, 6, 3.18),
+  },
+  {
+    id: 'chablis', name: 'Chablis 1er cru Montmains', containerVolumeCl: 75, alcoholDegree: 12.5, thumbnailUrl: null,
+    category: { id: 'c2', name: 'Vins', slug: 'vins', icon: '', sortOrder: 2 },
+    servings: [sv('s3', 5.5, st('t3', 'Verre de vin', 12, 3))],
+    computed: comp(42.7, 5.5, 1.96),
+  },
+  {
+    id: 'hdd', name: 'Herbe des Druides', containerVolumeCl: 3000, alcoholDegree: 6.5, thumbnailUrl: null,
+    category: { id: 'c3', name: 'Bières', slug: 'bieres', icon: '', sortOrder: 3 },
+    servings: [sv('s4', 4, st('t4', 'Demi', 25, 4)), sv('s5', 7.5, st('t5', 'Pinte', 50, 5)), sv('s6', 2.5, st('t6', 'Galopin', 12, 6))],
+    computed: comp(58.3, 4, 1.94),
+  },
+  {
+    id: 'coca', name: 'Coca-Cola', containerVolumeCl: 33, alcoholDegree: 0, thumbnailUrl: null, doseVolumeCl: 33, sellingPriceTTC: 4,
+    category: { id: 'c4', name: 'Softs & Jus', slug: 'softs', icon: '', sortOrder: 4 },
+    servings: [],
+    computed: comp(75.2, 4, 2.51),
+  },
+] as unknown as ProductWithMargin[];
 
 function Boom({ crash }: { crash: boolean }) {
   if (crash) throw new Error('Erreur simulée (galerie)');
@@ -86,7 +128,8 @@ export function Gallery() {
   const [cat, setCat] = useState('all');
   const [service, setService] = useState('verre5');
   const [sheet, setSheet] = useState(false);
-  const [sheetQuery, setSheetQuery] = useState('');
+  const [welcome, setWelcome] = useState(false);
+  const [actionsFor, setActionsFor] = useState<{ name: string } | null>(null);
   const [fiscal, setFiscal] = useState('spiritueux');
   const [sw, setSw] = useState(true);
   const [sticky, setSticky] = useState(false);
@@ -99,17 +142,6 @@ export function Gallery() {
   const m = useMemo(() => marginFromPrice(price), [price]);
   const zone = getMarginColor(m.margin);
   const objectivePrice = (PURCHASE_HT / DOSES / (1 - 0.65)) * 1.2;
-
-  const fiscalRows = [
-    { group: 'Spiritueux & liqueurs', key: 'spiritueux', title: 'Spiritueux', sub: `Whisky, vodka, gin, cognac, tequila… · ${formatRate(1932.42, 'hl AP')}` },
-    { group: 'Spiritueux & liqueurs', key: 'rhum-dom', title: 'Rhum des DOM', sub: `Martinique, Guadeloupe, Réunion · tarif réduit · ${formatRate(966.21, 'hl AP')}` },
-    { group: 'Spiritueux & liqueurs', key: 'liqueur', title: 'Liqueur', sub: 'Crèmes de fruits, amaretto, limoncello…' },
-    { group: 'Bières', key: 'biere', title: 'Bière (plus de 2,8 %)', sub: `IPA, lagers, stouts, blondes, ambrées · ${formatRate(8.12, 'hl/°')}` },
-    { group: 'Bières', key: 'biere-legere', title: 'Bière légère (0,5 % à 2,8 %)', sub: 'Panachés, radlers, bières sans alcool' },
-    { group: 'Vins, cidres & produits intermédiaires', key: 'vin', title: 'Vin tranquille', sub: `Rouges, blancs, rosés non effervescents · ${formatRate(4.08, 'hl')}` },
-    { group: 'Vins, cidres & produits intermédiaires', key: 'cidre', title: 'Cidre et poiré', sub: `Cidres bruts, doux, poirés · ${formatRate(1.48, 'hl')}` },
-    { group: 'Vins, cidres & produits intermédiaires', key: 'pi', title: 'Produits intermédiaires', sub: `Porto, Lillet, Martini, Pineau · ${formatRate(498.98, 'hl')}` },
-  ].filter((r) => !sheetQuery || `${r.title} ${r.sub}`.toLowerCase().includes(sheetQuery.toLowerCase()));
 
   const save = () => {
     setSaving(true);
@@ -437,6 +469,17 @@ export function Gallery() {
         </Card>
       </Section>
 
+      <Section title="Produits" meta="appui long = actions">
+        <MarginLegend counts={countByZone(DEMO_PRODUCTS)} />
+        {DEMO_PRODUCTS.map((p) => (
+          <ProductCard key={p.id} product={p} onPress={() => toast.info(p.name)} onLongPress={() => setActionsFor(p)} testID={`card-${p.id}`} />
+        ))}
+        <View style={[styles.row, { gap: 8, flexWrap: 'wrap' }]}>
+          <PriceTag label="Verre 12 cl" price={7} />
+          <PriceTag label="Pinte 50 cl" price={7.5} />
+        </View>
+      </Section>
+
       <Section title="En-têtes">
         <Card noPadding style={{ overflow: 'hidden' }}>
           <NavBar title="Nouveau produit" onBack={() => toast.info('Retour')} trailing={<Badge variant="neutral" icon="checkmark-circle" label="Brouillon" />} />
@@ -491,6 +534,7 @@ export function Gallery() {
 
       <Section title="Superpositions">
         <Button title="Ouvrir la feuille « Catégorie fiscale »" variant="secondary" icon="list-outline" onPress={() => setSheet(true)} testID="open-sheet" />
+        <Button title="Ouvrir l’accueil (WelcomeModal)" variant="secondary" icon="sparkles-outline" onPress={() => setWelcome(true)} testID="open-welcome" />
         <View style={[styles.row, { gap: 8, flexWrap: 'wrap' }]}>
           <Button title="Toast succès" size="sm" variant="tonal" onPress={() => toast.success('Hendrick’s Gin enregistré')} testID="toast-success" />
           <Button title="Toast erreur" size="sm" variant="tonal" onPress={() => toast.error('Connexion impossible. Réessayez.')} />
@@ -540,38 +584,24 @@ export function Gallery() {
         ))}
       </Section>
 
-      <BottomSheet
+      <FiscalCategorySheet
         visible={sheet}
+        value={fiscal}
+        onSelect={(r) => {
+          setFiscal(r.slug);
+          toast.success(`${r.label} sélectionné`);
+        }}
         onClose={() => setSheet(false)}
-        title="Catégorie fiscale"
-        subline="13 catégories · barème des douanes 2026"
-        search={{ value: sheetQuery, onChangeText: setSheetQuery, placeholder: 'Porto, IPA, Lillet, cidre…' }}
-        contentPadding={8}
         testID="sheet"
-      >
-        {fiscalRows.map((r, i) => (
-          <View key={r.key}>
-            {i === 0 || fiscalRows[i - 1].group !== r.group ? (
-              <SectionHeader variant="caps" title={r.group} style={{ paddingHorizontal: 12, marginTop: i === 0 ? 0 : 12 }} />
-            ) : null}
-            <ListRow
-              title={r.title}
-              subtitle={r.sub}
-              right="radio"
-              divider={fiscalRows[i + 1]?.group === r.group && fiscal !== r.key && fiscal !== fiscalRows[i + 1]?.key}
-              selected={fiscal === r.key}
-              onPress={() => {
-                setFiscal(r.key);
-                setTimeout(() => {
-                  setSheet(false);
-                  toast.success(`${r.title} sélectionné`);
-                }, 120);
-              }}
-            />
-          </View>
-        ))}
-        {fiscalRows.length === 0 ? <EmptyState variant="noResults" query={sheetQuery} /> : null}
-      </BottomSheet>
+      />
+      <ProductActionsSheet
+        product={actionsFor}
+        onClose={() => setActionsFor(null)}
+        onEdit={() => toast.info('Modifier')}
+        onDuplicate={() => toast.info('Dupliquer')}
+        onDelete={() => confirm('Supprimer ce produit ?', 'Cette action est définitive.', () => toast.success('Produit supprimé'), 'Supprimer', true)}
+      />
+      <WelcomeModal visible={welcome} onClose={() => setWelcome(false)} />
     </Screen>
   );
 }

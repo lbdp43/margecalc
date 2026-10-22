@@ -7,9 +7,31 @@ import { palette } from '../theme';
 
 export { createStackNavigator as createAppStackNavigator } from '@react-navigation/stack';
 
-/** Web: fade + 16 px slide over 220 ms (spec §5.5). */
+// Reduce motion (web): read the media query live, so the stack transition
+// becomes a plain cross-fade as soon as the OS setting changes.
+let reduceMotion = false;
+if (Platform.OS === 'web') {
+  try {
+    const mq = (globalThis as any).matchMedia?.('(prefers-reduced-motion: reduce)');
+    if (mq) {
+      reduceMotion = !!mq.matches;
+      const onChange = (e: { matches: boolean }) => {
+        reduceMotion = e.matches;
+      };
+      if (mq.addEventListener) mq.addEventListener('change', onChange);
+      else mq.addListener?.(onChange);
+    }
+  } catch {
+    // ignore
+  }
+}
+
+/** Web: fade + 16 px slide over 220 ms (spec §5.5); opacity only under reduce motion. */
 function forFadeSlide({ current, next, layouts }: StackCardInterpolationProps) {
   const progress = current.progress;
+  if (reduceMotion) {
+    return { cardStyle: { opacity: progress.interpolate({ inputRange: [0, 1], outputRange: [0, 1] }) } };
+  }
   return {
     cardStyle: {
       opacity: progress.interpolate({ inputRange: [0, 1], outputRange: [0, 1] }),

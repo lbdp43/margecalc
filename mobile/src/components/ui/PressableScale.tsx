@@ -35,6 +35,12 @@ export interface PressableScaleProps extends Omit<PressableProps, 'style'> {
   haptic?: HapticKind | false;
   /** Driven 0→1 while pressed (90 ms in, 160 ms out). */
   progress?: SharedValue<number>;
+  /**
+   * Web: delay before onPressIn (react-native-web defaults to 50 ms, so a
+   * quick tap never fires onPressIn). Pass 0 for press-and-hold controls.
+   * Native Pressable has no default delay.
+   */
+  delayPressIn?: number;
 }
 
 function resolveScale(s: PressableScaleProps['scaleTo']): number {

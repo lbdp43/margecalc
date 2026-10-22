@@ -50,14 +50,36 @@ export async function ensureServingTypes(userId: string, db: Tx | typeof prisma 
   return createDefaultServingTypes(db as Tx, userId);
 }
 
+const fmtCl = (n: number) => `${String(Math.round(n * 100) / 100).replace('.', ',')} cl`;
+
+/**
+ * Every serving must fit in the container: a 5 cl glass from a 3 cl miniature is a meaningless
+ * (negative) margin. Throws a 400 naming the first offending service, with one detail per service.
+ */
+export function assertServingsFit(servings: { name: string; volumeCl: number; servingTypeId?: string }[], containerVolumeCl: number, field = 'servings'): void {
+  const over = servings.filter((s) => s.volumeCl > containerVolumeCl);
+  if (!over.length) return;
+  const first = over[0];
+  const more = over.length > 1 ? ` (et ${over.length - 1} autre${over.length > 2 ? 's' : ''})` : '';
+  throw new HttpError(400,
+    `Le service « ${first.name} » (${fmtCl(first.volumeCl)}) dépasse la contenance (${fmtCl(containerVolumeCl)})${more}. Retirez-le ou augmentez la contenance.`,
+    { details: over.map((s) => ({ field, label: s.name, message: `Le service « ${s.name} » (${fmtCl(s.volumeCl)}) dépasse la contenance (${fmtCl(containerVolumeCl)}).`, code: 'too_big', ...(s.servingTypeId ? { servingTypeId: s.servingTypeId } : {}) })) });
+}
+
 /**
  * Check a full set of servings before writing anything:
  * - every serving type must belong to the user,
  * - every price must be > 0 (the message names the services concerned),
+ * - with `containerVolumeCl`, every serving must fit in the container,
  * - duplicates are merged (last one wins).
  * Returned list is sorted primary first (lowest sortOrder, then smallest volume).
  */
-export async function validateServings(userId: string, servings: ServingInput[], db: Tx | typeof prisma = prisma): Promise<ValidatedServing[]> {
+export async function validateServings(
+  userId: string,
+  servings: ServingInput[],
+  opts: { containerVolumeCl?: number } = {},
+  db: Tx | typeof prisma = prisma,
+): Promise<ValidatedServing[]> {
   const byId = new Map<string, ServingInput>();
   for (const s of servings) byId.set(s.servingTypeId, s);
   const ids = [...byId.keys()];
@@ -69,7 +91,7 @@ export async function validateServings(userId: string, servings: ServingInput[],
   if (unknown.length) {
     throw new HttpError(400, unknown.length > 1
       ? `${unknown.length} services sont introuvables (supprimés ou d’un autre compte). Rechargez la page puis réessayez.`
-      : 'Un des services est introuvable (supprimé ou d’un autre compte). Rechargez la page puis réessayez.');
+      : 'Un des services est introuvable (supprimé ou d’un autre compte). Rechargez la page puis réessayez.', { field: 'servings' });
   }
 
   const zero = ids.filter((id) => !(Number.isFinite(byId.get(id)!.sellingPriceTTC) && byId.get(id)!.sellingPriceTTC > 0));
@@ -83,7 +105,11 @@ export async function validateServings(userId: string, servings: ServingInput[],
 
   const tooHigh = ids.filter((id) => byId.get(id)!.sellingPriceTTC > 10_000);
   if (tooHigh.length) {
-    throw new HttpError(400, `Le prix de vente de « ${typeById.get(tooHigh[0])!.name} » semble trop élevé (${fmtPrice(byId.get(tooHigh[0])!.sellingPriceTTC)}).`);
+    throw new HttpError(400, `Le prix de vente de « ${typeById.get(tooHigh[0])!.name} » semble trop élevé (${fmtPrice(byId.get(tooHigh[0])!.sellingPriceTTC)}).`, { field: 'servings' });
+  }
+
+  if (opts.containerVolumeCl !== undefined) {
+    assertServingsFit(ids.map((id) => ({ name: typeById.get(id)!.name, volumeCl: typeById.get(id)!.volumeCl, servingTypeId: id })), opts.containerVolumeCl);
   }
 
   return ids

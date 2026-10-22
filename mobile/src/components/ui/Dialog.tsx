@@ -23,6 +23,7 @@ import { haptics } from '../../theme/haptics';
 import { Button } from './Button';
 import { IconName } from './Icon';
 import { useChromeStore } from './chrome';
+import { ModalFocusSink } from './ModalFocusSink';
 
 export type DialogActionStyle = 'primary' | 'secondary' | 'cancel' | 'destructive';
 
@@ -156,6 +157,7 @@ export function DialogHost() {
   return (
     <Modal visible transparent animationType="none" onRequestClose={() => finish(cancel?.value)} statusBarTranslucent>
       <View style={styles.root}>
+        <ModalFocusSink label={current.title} />
         <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: palette.scrim }, scrimStyle]}>
           <Pressable
             style={StyleSheet.absoluteFill}

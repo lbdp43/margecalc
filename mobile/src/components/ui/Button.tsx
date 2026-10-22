@@ -15,6 +15,7 @@ import { ActivityIndicator, StyleProp, StyleSheet, Text, TextStyle, View, ViewSt
 import Animated, {
   interpolateColor,
   useAnimatedStyle,
+  useReducedMotion,
   useSharedValue,
   withSequence,
   withSpring,
@@ -110,14 +111,20 @@ export const Button = React.memo(function Button({
     backgroundColor: interpolateColor(progress.value, [0, 1], [conf.bg, conf.bgPressed]),
   }));
 
-  // Success check pop
+  // Success check pop (a 160 ms fade under reduce motion)
+  const reduce = useReducedMotion();
   const checkScale = useSharedValue(success ? 1 : 0);
   React.useEffect(() => {
     checkScale.value = success
-      ? withSequence(withTiming(0, { duration: 0 }), withSpring(1, motion.spring.pop))
+      ? reduce
+        ? withTiming(1, { duration: motion.duration.fast })
+        : withSequence(withTiming(0, { duration: 0 }), withSpring(1, motion.spring.pop))
       : withTiming(0, { duration: motion.duration.fast });
-  }, [success, checkScale]);
-  const checkStyle = useAnimatedStyle(() => ({ transform: [{ scale: checkScale.value }], opacity: checkScale.value > 0.01 ? 1 : 0 }));
+  }, [success, checkScale, reduce]);
+  const checkStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: reduce ? 1 : checkScale.value }],
+    opacity: reduce ? checkScale.value : checkScale.value > 0.01 ? 1 : 0,
+  }));
 
   const iconSize = sm ? 18 : 20;
   const showLabel = !loading && !success;

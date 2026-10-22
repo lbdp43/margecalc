@@ -51,7 +51,6 @@ export const Display = React.memo(function Display({ children, size = 24, color 
       style={[
         { fontFamily: fontFamily.extrabold, fontSize: Math.min(size, 30), lineHeight: Math.round(Math.min(size, 30) * 1.2), letterSpacing: -0.6, color },
         style,
-        styles.upright,
       ]}
     >
       {children}
@@ -74,7 +73,6 @@ export const Script = React.memo(function Script({ children, size = 16, color, s
       style={[
         { fontFamily: fontFamily.semibold, fontSize: Math.min(Math.max(size, 13), 18), lineHeight: Math.round(Math.min(Math.max(size, 13), 18) * 1.35), color: isLight ? color : palette.em700 },
         style,
-        styles.upright,
       ]}
     >
       {children}
@@ -92,7 +90,7 @@ interface NumProps {
 
 export const Num = React.memo(function Num({ children, size = 16, color = palette.ink, style }: NumProps) {
   return (
-    <Text style={[{ fontFamily: fontFamily.extrabold, fontSize: size, letterSpacing: -0.5, color, fontVariant: ['tabular-nums'] }, style, styles.upright]}>
+    <Text style={[{ fontFamily: fontFamily.extrabold, fontSize: size, letterSpacing: -0.5, color, fontVariant: ['tabular-nums'] }, style]}>
       {children}
     </Text>
   );
@@ -168,7 +166,6 @@ export const SectionLabel = React.memo(function SectionLabel({ children, style, 
 });
 
 const styles = StyleSheet.create({
-  upright: { fontStyle: 'normal', fontWeight: 'normal' },
   tag: {
     alignSelf: 'flex-start',
     height: 26,

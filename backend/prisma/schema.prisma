@@ -31,6 +31,7 @@ model User {
   scanUsages               ScanUsage[]
   tickets                  Ticket[]
   monthlyLogins            UserMonthlyLogin[]
+  categories               Category[]
 }
 
 model UserMonthlyLogin {
@@ -104,13 +105,21 @@ model CustomContainer {
   @@index([userId])
 }
 
+/// userId null = built-in category shared by every account (seeded / created by an admin);
+/// otherwise a private category of that user (visible to them only).
+/// Built-in names and slugs are unique (partial unique indexes in migration 0005_user_categories).
 model Category {
   id        String    @id @default(uuid())
-  name      String    @unique
-  slug      String    @unique
+  userId    String?
+  user      User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  slug      String
   icon      String    @default("")
   sortOrder Int       @default(0)
   products  Product[]
+
+  @@unique([userId, slug])
+  @@index([userId])
 }
 
 model Product {

@@ -11,7 +11,7 @@ import {
   ImportProductsResult,
 } from '@margebar/shared';
 import { HttpError } from '../utils/validation';
-import { ensureServingTypes, lockProduct, replaceServings, resyncPrimary, ServingInput, validateServings } from './productServing.service';
+import { assertServingsFit, ensureServingTypes, lockProduct, replaceServings, resyncPrimary, ServingInput, validateServings } from './productServing.service';
 
 const EMPTY_MARGIN: MarginResult = {
   sellingPriceTTC: 0, sellingPriceHT: 0, marginPercent: 0, coefficient: 0, glassesPerContainer: 0,
@@ -58,37 +58,52 @@ function enrichProduct<T extends MarginFields>(product: T): T & { computed: Marg
   return { ...product, computed: computeMarginSafe(product) };
 }
 
-/** Throws a readable 400 when the margin-mode fields are inconsistent — checked BEFORE any write. */
-export function assertMarginInputs(p: MarginFields): void {
+const fmtCl = (n: number) => `${String(Math.round(n * 100) / 100).replace('.', ',')} cl`;
+
+/**
+ * Throws a readable 400 when the margin-mode fields are inconsistent — checked BEFORE any write.
+ * `doseField` names the field reported in `details` for a dose problem (a primary serving's dose
+ * comes from `servings`, not from `doseVolumeCl`).
+ */
+export function assertMarginInputs(p: MarginFields, doseField = 'doseVolumeCl'): void {
+  // A dose bigger than the bottle gives a meaningless (negative) margin: refused on every path
+  // (create, update, primary serving, import).
+  if (p.doseVolumeCl > p.containerVolumeCl) {
+    throw new HttpError(400, `La dose servie (${fmtCl(p.doseVolumeCl)}) ne peut pas dépasser la contenance (${fmtCl(p.containerVolumeCl)}).`, { field: doseField });
+  }
   switch (p.marginMode) {
     case MarginMode.FIX_SELLING_PRICE:
       if (!(typeof p.sellingPriceTTC === 'number' && p.sellingPriceTTC > 0)) {
-        throw new HttpError(400, 'Indiquez un prix de vente TTC supérieur à 0 €.');
+        throw new HttpError(400, 'Indiquez un prix de vente TTC supérieur à 0 €.', { field: 'sellingPriceTTC' });
       }
       break;
     case MarginMode.FIX_TARGET_MARGIN:
       if (!(typeof p.targetMarginPercent === 'number' && p.targetMarginPercent >= 0 && p.targetMarginPercent < 100)) {
-        throw new HttpError(400, 'Indiquez une marge cible comprise entre 0 et 99,9 %.');
+        throw new HttpError(400, 'Indiquez une marge cible comprise entre 0 et 99,9 %.', { field: 'targetMarginPercent' });
       }
       break;
     case MarginMode.FIX_COEFFICIENT:
       if (!(typeof p.coefficient === 'number' && p.coefficient > 0)) {
-        throw new HttpError(400, 'Indiquez un coefficient supérieur à 0.');
+        throw new HttpError(400, 'Indiquez un coefficient supérieur à 0.', { field: 'coefficient' });
       }
       break;
     default:
-      throw new HttpError(400, 'Mode de calcul inconnu.');
+      throw new HttpError(400, 'Mode de calcul inconnu.', { field: 'marginMode' });
   }
   try {
     calculateMargin(marginInput(p));
   } catch {
-    throw new HttpError(400, 'Les prix et volumes saisis ne permettent pas de calculer la marge. Vérifiez la contenance et la dose.');
+    throw new HttpError(400, 'Les prix et volumes saisis ne permettent pas de calculer la marge. Vérifiez la contenance et la dose.', { field: doseField });
   }
 }
 
-async function assertCategory(categoryId: string): Promise<void> {
-  const cat = await prisma.category.findUnique({ where: { id: categoryId }, select: { id: true } });
-  if (!cat) throw new HttpError(400, 'Catégorie inconnue : choisissez une catégorie dans la liste.');
+/** The category must be a built-in one (userId null) or one of the user's own categories. */
+async function assertCategory(categoryId: string, userId: string): Promise<void> {
+  const cat = await prisma.category.findFirst({
+    where: { id: categoryId, OR: [{ userId: null }, { userId }] },
+    select: { id: true },
+  });
+  if (!cat) throw new HttpError(400, 'Catégorie inconnue : choisissez une catégorie dans la liste.', { field: 'categoryId' });
 }
 
 const servingsInclude = {
@@ -157,11 +172,11 @@ export async function createProduct(userId: string, data: CreateProductInput & {
     tvaRate: data.tvaRate,
   };
   // Validate everything first: a failure must never leave a half-created product behind.
-  await assertCategory(data.categoryId);
-  const servings = data.servings ? await validateServings(userId, data.servings) : null;
+  await assertCategory(data.categoryId, userId);
+  const servings = data.servings ? await validateServings(userId, data.servings, { containerVolumeCl: data.containerVolumeCl }) : null;
   if (servings?.length) {
     // The primary serving sets the headline price: validate with it.
-    assertMarginInputs({ ...fields, marginMode: MarginMode.FIX_SELLING_PRICE, sellingPriceTTC: servings[0].sellingPriceTTC, doseVolumeCl: servings[0].volumeCl });
+    assertMarginInputs({ ...fields, marginMode: MarginMode.FIX_SELLING_PRICE, sellingPriceTTC: servings[0].sellingPriceTTC, doseVolumeCl: servings[0].volumeCl }, 'servings');
   } else {
     assertMarginInputs(fields);
   }
@@ -187,6 +202,10 @@ export async function createProduct(userId: string, data: CreateProductInput & {
   return getProduct(id, userId);
 }
 
+/** Headline fields a PUT may send that are overwritten by the primary serving (see ProductWithMargin.ignoredFields). */
+const SYNCED_FIELDS = ['sellingPriceTTC', 'doseVolumeCl', 'marginMode'] as const;
+type SyncedField = (typeof SYNCED_FIELDS)[number];
+
 export async function updateProduct(id: string, userId: string, data: ProductWrite) {
   const existing = await prisma.product.findFirst({ where: { id, userId } });
   if (!existing) throw new Error('Produit non trouvé');
@@ -202,14 +221,23 @@ export async function updateProduct(id: string, userId: string, data: ProductWri
     coefficient: rest.coefficient === undefined ? existing.coefficient : rest.coefficient,
     tvaRate: rest.tvaRate ?? existing.tvaRate,
   };
-  if (rest.categoryId && rest.categoryId !== existing.categoryId) await assertCategory(rest.categoryId);
-  const servings = servingsInput ? await validateServings(userId, servingsInput) : null;
+  if (rest.categoryId && rest.categoryId !== existing.categoryId) await assertCategory(rest.categoryId, userId);
+  const servings = servingsInput
+    ? await validateServings(userId, servingsInput, { containerVolumeCl: merged.containerVolumeCl })
+    : null;
   // Without `servings` in the body, a product that has servings keeps its headline price/dose
   // synced to its primary serving (contract §3): validate against that serving, not the body.
-  const currentPrimary = servings ? null : await currentPrimaryServing(id);
-  const primary = servings?.length ? { sellingPriceTTC: servings[0].sellingPriceTTC, volumeCl: servings[0].volumeCl } : currentPrimary;
+  let primary: { sellingPriceTTC: number; volumeCl: number } | null = null;
+  if (servings) {
+    primary = servings[0] ?? null;
+  } else {
+    const current = await currentServings(id);
+    // A smaller container must still hold every serving the product already has.
+    if (rest.containerVolumeCl !== undefined) assertServingsFit(current, merged.containerVolumeCl, 'containerVolumeCl');
+    primary = current[0] ?? null;
+  }
   if (primary) {
-    assertMarginInputs({ ...merged, marginMode: MarginMode.FIX_SELLING_PRICE, sellingPriceTTC: primary.sellingPriceTTC, doseVolumeCl: primary.volumeCl });
+    assertMarginInputs({ ...merged, marginMode: MarginMode.FIX_SELLING_PRICE, sellingPriceTTC: primary.sellingPriceTTC, doseVolumeCl: primary.volumeCl }, servings ? 'servings' : 'containerVolumeCl');
   } else {
     assertMarginInputs(merged);
   }
@@ -249,15 +277,20 @@ export async function updateProduct(id: string, userId: string, data: ProductWri
     else await resyncPrimary(tx, id); // no-op when the product has no servings
   });
 
-  return getProduct(id, userId);
+  const product = await getProduct(id, userId);
+  // Tell the client which headline fields it sent were replaced by the primary serving's values
+  // (a product with services is priced by its services: send `servings` to change the price).
+  const ignoredFields: SyncedField[] = product.servings.length
+    ? SYNCED_FIELDS.filter((f) => rest[f] !== undefined && rest[f] !== null && rest[f] !== product[f])
+    : [];
+  return ignoredFields.length ? { ...product, ignoredFields } : product;
 }
 
-/** Primary serving (lowest sortOrder, then smallest volume) of a product, or null. */
-async function currentPrimaryServing(productId: string): Promise<{ sellingPriceTTC: number; volumeCl: number } | null> {
+/** Current servings of a product with their volume, primary first (lowest sortOrder, then smallest volume). */
+async function currentServings(productId: string): Promise<{ name: string; sellingPriceTTC: number; volumeCl: number }[]> {
   const rows = await prisma.productServing.findMany({ where: { productId }, include: { servingType: true } });
-  if (!rows.length) return null;
   rows.sort((a, b) => a.servingType.sortOrder - b.servingType.sortOrder || a.servingType.volumeCl - b.servingType.volumeCl);
-  return { sellingPriceTTC: rows[0].sellingPriceTTC, volumeCl: rows[0].servingType.volumeCl };
+  return rows.map((r) => ({ name: r.servingType.name, sellingPriceTTC: r.sellingPriceTTC, volumeCl: r.servingType.volumeCl }));
 }
 
 export async function getPriceHistory(productId: string, userId: string) {
@@ -320,16 +353,18 @@ export async function importProducts(
 ): Promise<ImportProductsResult> {
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user) throw new HttpError(404, 'Utilisateur non trouvé');
-  const categories = await prisma.category.findMany({ orderBy: { sortOrder: 'asc' } });
-  const bySlug = new Map(categories.map((c) => [c.slug, c]));
+  // Built-in categories first (slug lookups must resolve to them), then the user's own ones.
+  const categories = await prisma.category.findMany({
+    where: { OR: [{ userId: null }, { userId }] },
+    orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+  });
+  const bySlug = new Map<string, (typeof categories)[number]>();
+  for (const c of [...categories].sort((a, b) => Number(a.userId !== null) - Number(b.userId !== null))) {
+    if (!bySlug.has(c.slug)) bySlug.set(c.slug, c);
+  }
   const byId = new Map(categories.map((c) => [c.id, c]));
   const fallbackCat = bySlug.get('spiritueux') ?? categories[0];
   const servingTypes = await ensureServingTypes(userId);
-  const existing = await prisma.product.findMany({
-    where: { userId },
-    select: { id: true, name: true, containerVolumeCl: true, purchasePriceHT: true },
-  });
-  const existingByKey = new Map(existing.map((p) => [`${normName(p.name)}|${p.containerVolumeCl}`, p]));
 
   const userTva = user.isAutoEntrepreneur ? 0 : user.defaultTvaRate;
   const userContainer = user.defaultContainerVolumeCl > 0 ? user.defaultContainerVolumeCl : 70;
@@ -344,12 +379,13 @@ export async function importProducts(
       let cat = fallbackCat;
       if (line.categoryId) {
         const c = byId.get(line.categoryId);
-        if (!c) throw new HttpError(400, 'Catégorie inconnue.');
+        if (!c) throw new HttpError(400, 'Catégorie inconnue.', { field: 'categoryId' });
         cat = c;
       } else if (line.category) {
         cat = bySlug.get(line.category) ?? fallbackCat;
       }
       if (!cat) throw new HttpError(500, 'Aucune catégorie disponible.');
+      const categoryId = cat.id;
 
       const purchasePriceHT = line.purchasePriceHT && line.purchasePriceHT > 0 ? round3(line.purchasePriceHT) : 0;
       const containerVolumeCl = line.containerVolumeCl && line.containerVolumeCl > 0 ? line.containerVolumeCl : userContainer;
@@ -361,49 +397,55 @@ export async function importProducts(
       const doseVolumeCl = Math.min(doseRaw, containerVolumeCl);
       const tvaRate = typeof line.tvaRate === 'number' && line.tvaRate >= 0 && line.tvaRate < 1 ? line.tvaRate : userTva;
       const lineSupplier = (line.supplier || supplier || '').trim().slice(0, 200) || null;
+      const key = normName(line.name);
 
-      // Existing product (same name + container): update the purchase price only.
-      const key = `${normName(line.name)}|${containerVolumeCl}`;
-      const match = existingByKey.get(key);
-      if (match) {
-        if (purchasePriceHT > 0 && purchasePriceHT !== match.purchasePriceHT) {
-          await prisma.$transaction([
-            prisma.priceHistory.create({ data: { productId: match.id, oldPrice: match.purchasePriceHT, newPrice: purchasePriceHT, source: 'invoice' } }),
-            prisma.product.update({ where: { id: match.id }, data: { purchasePriceHT, ...(lineSupplier ? { supplier: lineSupplier } : {}) } }),
-          ]);
-          match.purchasePriceHT = purchasePriceHT;
+      const outcome = await prisma.$transaction(async (tx) => {
+        // Same user + same product name + same container: one import at a time. Two concurrent
+        // imports of the same new line (double tap, client retry after a timeout) wait here, and
+        // the second one finds the product created by the first instead of duplicating it.
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`import|${userId}|${key}|${containerVolumeCl}`}))`;
+        const sameContainer = await tx.product.findMany({
+          where: { userId, containerVolumeCl },
+          select: { id: true, name: true, purchasePriceHT: true, sellingPriceTTC: true },
+          orderBy: { createdAt: 'asc' },
+        });
+        const match = sameContainer.find((p) => normName(p.name) === key);
+
+        // Existing product (same name + container): update the purchase price only.
+        if (match) {
+          if (purchasePriceHT > 0 && purchasePriceHT !== match.purchasePriceHT) {
+            await tx.priceHistory.create({ data: { productId: match.id, oldPrice: match.purchasePriceHT, newPrice: purchasePriceHT, source: 'invoice' } });
+            await tx.product.update({ where: { id: match.id }, data: { purchasePriceHT, ...(lineSupplier ? { supplier: lineSupplier } : {}) } });
+          }
+          return { action: 'updated' as const, productId: match.id, sellingPriceTTC: match.sellingPriceTTC ?? 0, priceDerived: false };
         }
-        const current = await prisma.product.findUnique({ where: { id: match.id }, select: { sellingPriceTTC: true } });
-        results.push({ index, ok: true, name: line.name, productId: match.id, sellingPriceTTC: current?.sellingPriceTTC ?? 0, priceDerived: false, action: 'updated' });
-        continue;
-      }
 
-      let sellingPriceTTC = line.sellingPriceTTC && line.sellingPriceTTC > 0 ? Math.round(line.sellingPriceTTC * 100) / 100 : 0;
-      let priceDerived = false;
-      if (!(sellingPriceTTC > 0)) {
-        sellingPriceTTC = deriveSellingPriceTTC(purchasePriceHT, containerVolumeCl, doseVolumeCl, tvaRate, IMPORT_DEFAULT_COEFFICIENT);
-        priceDerived = true;
-      }
-      if (!(sellingPriceTTC > 0)) {
-        throw new HttpError(400, 'Prix d’achat manquant : impossible de calculer un prix de vente. Indiquez le prix d’achat HT ou un prix de vente.');
-      }
+        let sellingPriceTTC = line.sellingPriceTTC && line.sellingPriceTTC > 0 ? Math.round(line.sellingPriceTTC * 100) / 100 : 0;
+        let priceDerived = false;
+        if (!(sellingPriceTTC > 0)) {
+          sellingPriceTTC = deriveSellingPriceTTC(purchasePriceHT, containerVolumeCl, doseVolumeCl, tvaRate, IMPORT_DEFAULT_COEFFICIENT);
+          priceDerived = true;
+        }
+        if (!(sellingPriceTTC > 0)) {
+          throw new HttpError(400, 'Prix d’achat manquant : impossible de calculer un prix de vente. Indiquez le prix d’achat HT ou un prix de vente.', { field: 'purchasePriceHT' });
+        }
 
-      const fields = {
-        purchasePriceHT, containerVolumeCl, doseVolumeCl,
-        marginMode: MarginMode.FIX_SELLING_PRICE as string,
-        sellingPriceTTC, targetMarginPercent: null, coefficient: null, tvaRate,
-      };
-      assertMarginInputs(fields);
+        const fields = {
+          purchasePriceHT, containerVolumeCl, doseVolumeCl,
+          marginMode: MarginMode.FIX_SELLING_PRICE as string,
+          sellingPriceTTC, targetMarginPercent: null, coefficient: null, tvaRate,
+        };
+        // Throwing here rolls the (still empty) transaction back: nothing is written for this line.
+        assertMarginInputs(fields);
 
-      const serving = servingTypes
-        .filter((st) => Math.abs(st.volumeCl - doseVolumeCl) < 0.01)
-        .sort((a, b) => a.sortOrder - b.sortOrder)[0];
+        const serving = servingTypes
+          .filter((st) => Math.abs(st.volumeCl - doseVolumeCl) < 0.01)
+          .sort((a, b) => a.sortOrder - b.sortOrder)[0];
 
-      const productId = await prisma.$transaction(async (tx) => {
         const created = await tx.product.create({
           data: {
             userId,
-            categoryId: cat!.id,
+            categoryId,
             name: line.name,
             ...fields,
             alcoholDegree: line.alcoholDegree && line.alcoholDegree > 0 ? line.alcoholDegree : 0,
@@ -414,10 +456,9 @@ export async function importProducts(
         if (serving) {
           await tx.productServing.create({ data: { productId: created.id, servingTypeId: serving.id, sellingPriceTTC } });
         }
-        return created.id;
+        return { action: 'created' as const, productId: created.id, sellingPriceTTC, priceDerived };
       });
-      existingByKey.set(key, { id: productId, name: line.name, containerVolumeCl, purchasePriceHT });
-      results.push({ index, ok: true, name: line.name, productId, sellingPriceTTC, priceDerived, action: 'created' });
+      results.push({ index, ok: true, name: line.name, ...outcome });
     } catch (err: any) {
       const message = err instanceof HttpError ? err.message : 'Erreur serveur lors de l’enregistrement de cette ligne.';
       if (!(err instanceof HttpError)) console.error(`[IMPORT] line ${index} failed:`, err?.message ?? err);

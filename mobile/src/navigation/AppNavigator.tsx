@@ -27,6 +27,7 @@ import { TabBar } from './TabBar';
 import { withTabTransition } from './TabScene';
 import { DutyCalculatorRoute } from './DutyCalculatorRoute';
 import { ROUTES } from './routes';
+import { useAuthStore } from '../store/auth.store';
 
 const RootStack = createAppStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -35,10 +36,15 @@ const SettingsStack = createAppStackNavigator();
 const DashboardStack = createAppStackNavigator();
 
 function SettingsNavigator() {
+  // Admin screens are only registered for admins: a non-admin opening
+  // /reglages/produits lands on Réglages instead of an empty admin screen.
+  const isAdmin = useAuthStore((s) => s.user?.role === 'admin');
   return (
-    <SettingsStack.Navigator screenOptions={stackScreenOptions}>
+    <SettingsStack.Navigator screenOptions={stackScreenOptions} initialRouteName={ROUTES.settingsMain}>
       <SettingsStack.Screen name={ROUTES.settingsMain} component={SettingsScreen} options={{ title: 'Réglages · MargeBar Pro' }} />
-      <SettingsStack.Screen name={ROUTES.adminProducts} component={AdminProductsScreen} options={{ title: 'Tous les produits · MargeBar Pro' }} />
+      {isAdmin ? (
+        <SettingsStack.Screen name={ROUTES.adminProducts} component={AdminProductsScreen} options={{ title: 'Tous les produits · MargeBar Pro' }} />
+      ) : null}
     </SettingsStack.Navigator>
   );
 }
@@ -69,6 +75,9 @@ function MainTabs() {
   return (
     <Tab.Navigator
       initialRouteName={ROUTES.dashboardTab}
+      // Back (Android, PWA, « Retour » at a tab root) returns to the
+      // dashboard instead of the first tab; tab jumps push a browser entry.
+      backBehavior="initialRoute"
       tabBar={(props) => <TabBar {...props} />}
       screenOptions={{ headerShown: false }}
       sceneContainerStyle={{ backgroundColor: 'transparent' }}
@@ -78,8 +87,9 @@ function MainTabs() {
         component={SettingsTab}
         listeners={({ navigation }) => ({
           tabPress: (e) => {
+            if (!navigation.isFocused()) return; // switching tabs keeps the tab's stack
             e.preventDefault();
-            navigation.navigate(ROUTES.settingsTab, { screen: ROUTES.settingsMain });
+            navigation.navigate(ROUTES.settingsTab, { screen: ROUTES.settingsMain }); // re-press → stack root
           },
         })}
       />
@@ -88,8 +98,9 @@ function MainTabs() {
         component={ProductsTab}
         listeners={({ navigation }) => ({
           tabPress: (e) => {
+            if (!navigation.isFocused()) return; // switching tabs keeps the tab's stack
             e.preventDefault();
-            navigation.navigate(ROUTES.productsTab, { screen: ROUTES.productList });
+            navigation.navigate(ROUTES.productsTab, { screen: ROUTES.productList }); // re-press → stack root
           },
         })}
       />
@@ -98,8 +109,9 @@ function MainTabs() {
         component={DashboardTab}
         listeners={({ navigation }) => ({
           tabPress: (e) => {
+            if (!navigation.isFocused()) return; // switching tabs keeps the tab's stack
             e.preventDefault();
-            navigation.navigate(ROUTES.dashboardTab, { screen: ROUTES.dashboardMain });
+            navigation.navigate(ROUTES.dashboardTab, { screen: ROUTES.dashboardMain }); // re-press → stack root
           },
         })}
       />
@@ -109,7 +121,7 @@ function MainTabs() {
 
 export function AppNavigator() {
   return (
-    <RootStack.Navigator screenOptions={stackScreenOptions}>
+    <RootStack.Navigator screenOptions={stackScreenOptions} initialRouteName={ROUTES.tabs}>
       <RootStack.Screen name={ROUTES.tabs} component={MainTabs} options={{ title: 'MargeBar Pro' }} />
       <RootStack.Screen name={ROUTES.productForm} component={ProductFormScreen} options={{ title: 'Produit · MargeBar Pro' }} />
       <RootStack.Screen name={ROUTES.invoiceScan} component={InvoiceScanScreen} options={{ title: 'Scanner une facture · MargeBar Pro' }} />

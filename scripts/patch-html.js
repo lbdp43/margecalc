@@ -19,7 +19,7 @@ const APP_BG = '#F3F6F4';
 
 // 1) Copy icon variants next to index.html so the manifest can reference
 //    them with relative paths.
-const iconCopies = ['icon-192.png', 'icon-512.png', 'icon-maskable.png', 'favicon.png'];
+const iconCopies = ['icon-192.png', 'icon-512.png', 'icon-maskable.png', 'favicon.png', 'apple-touch-icon.png'];
 for (const name of iconCopies) {
   const src = path.join(ASSETS_DIR, name);
   const dst = path.join(PUBLIC_DIR, name);
@@ -96,8 +96,7 @@ const extraHead = `
     <link rel="manifest" href="manifest.json" />
     <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png" />
     <link rel="icon" type="image/png" sizes="512x512" href="icon-512.png" />
-    <link rel="apple-touch-icon" sizes="192x192" href="icon-192.png" />
-    <link rel="apple-touch-icon" sizes="512x512" href="icon-512.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png" />
 ${fontPreloads}
     <style id="layout-fix">
       html, body, #root {

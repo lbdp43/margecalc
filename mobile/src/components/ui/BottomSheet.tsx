@@ -45,6 +45,19 @@ import { elevation, gradients, layout, motion, palette, radius, type } from '../
 import { IconButton } from './Button';
 import { TextField } from './TextField';
 import { useChromeStore, useKeyboardHeight } from './chrome';
+import { ModalFocusSink } from './ModalFocusSink';
+
+let lastPointerDown = 0;
+const webDocument: any = Platform.OS === 'web' ? (globalThis as any).document : undefined;
+if (webDocument) {
+  webDocument.addEventListener(
+    'pointerdown',
+    () => {
+      lastPointerDown = Date.now();
+    },
+    true,
+  );
+}
 
 export interface BottomSheetProps {
   visible: boolean;
@@ -92,18 +105,36 @@ export function BottomSheet({
   const scrim = useSharedValue(0);
   const scrollTop = useRef(0);
   const [overflowing, setOverflowing] = useState(false);
+  const [atEnd, setAtEnd] = useState(false);
   const viewportH = useRef(0);
   const contentH = useRef(0);
   const closing = useRef(false);
+  // Web: a click whose pointer went down BEFORE the sheet opened (the touch
+  // that long-pressed a card) must not land on the scrim or a row of the sheet.
+  const openedAt = useRef(0);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
   const sheetOpened = useChromeStore((s) => s.sheetOpened);
   const sheetClosed = useChromeStore((s) => s.sheetClosed);
 
+  useEffect(() => {
+    if (!webDocument || !visible) return undefined;
+    const swallowGhostClick = (e: { detail: number; stopPropagation: () => void; preventDefault: () => void }) => {
+      // detail 0 = keyboard-generated click: always allowed.
+      if (e.detail > 0 && lastPointerDown < openedAt.current) {
+        e.stopPropagation();
+        e.preventDefault();
+      }
+    };
+    webDocument.addEventListener('click', swallowGhostClick, true);
+    return () => webDocument.removeEventListener('click', swallowGhostClick, true);
+  }, [visible]);
+
   // Mount / unmount with animations
   useEffect(() => {
     if (visible) {
       closing.current = false;
+      openedAt.current = Date.now();
       setMounted(true);
       sheetOpened();
       return () => {
@@ -233,8 +264,14 @@ export function BottomSheet({
   return (
     <Modal visible transparent animationType="none" onRequestClose={requestClose} statusBarTranslucent>
       <View style={styles.root} testID={testID}>
+        <ModalFocusSink label={accessibilityLabel ?? title} />
         <Animated.View style={[StyleSheet.absoluteFill, styles.scrim, scrimStyle]}>
-          <Pressable style={StyleSheet.absoluteFill} onPress={requestClose} accessibilityRole="button" accessibilityLabel="Fermer" />
+          <Pressable
+            style={StyleSheet.absoluteFill}
+            onPress={requestClose}
+            accessibilityRole="button"
+            accessibilityLabel="Fermer"
+          />
         </Animated.View>
         <Animated.View
           onLayout={onSheetLayout}
@@ -266,13 +303,16 @@ export function BottomSheet({
           <View style={[snap === 'full' ? { flex: 1 } : { flexShrink: 1 }, { minHeight: 0 }]} {...contentPan.panHandlers}>
             {scrollable ? (
               <ScrollView
-                style={{ flexGrow: 0, flexShrink: 1 }}
+                style={[{ flexGrow: 0, flexShrink: 1 }, Platform.OS === 'web' ? ({ outlineStyle: 'none' } as any) : null]}
                 contentContainerStyle={[{ paddingHorizontal: contentPadding, paddingTop: 4, paddingBottom: footer ? 12 : insets.bottom + 24 }, contentStyle]}
                 keyboardShouldPersistTaps="handled"
                 showsVerticalScrollIndicator={false}
                 scrollEventThrottle={16}
                 onScroll={(e) => {
-                  scrollTop.current = e.nativeEvent.contentOffset.y;
+                  const y = e.nativeEvent.contentOffset.y;
+                  scrollTop.current = y;
+                  const end = y + viewportH.current >= contentH.current - 8;
+                  if (end !== atEnd) setAtEnd(end);
                 }}
                 onLayout={(e) => {
                   viewportH.current = e.nativeEvent.layout.height;
@@ -288,8 +328,8 @@ export function BottomSheet({
             ) : (
               <View style={[{ paddingHorizontal: contentPadding, paddingBottom: footer ? 12 : insets.bottom + 24 }, contentStyle]}>{children}</View>
             )}
-            {overflowing && !footer ? (
-              <LinearGradient {...gradients.fadeBottomSurface} style={styles.fade} pointerEvents="none" />
+            {overflowing && !atEnd ? (
+              <LinearGradient {...gradients.fadeBottomSurface} style={[styles.fade, footer ? { height: 40 } : null]} pointerEvents="none" />
             ) : null}
           </View>
           {footer ? <View style={[styles.footer, { paddingBottom: insets.bottom + 12 }]}>{footer}</View> : null}

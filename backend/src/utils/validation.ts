@@ -186,11 +186,30 @@ export function isZodError(err: unknown): err is ZodError {
   return err instanceof ZodError || (!!err && typeof err === 'object' && (err as any).name === 'ZodError' && Array.isArray((err as any).issues));
 }
 
-/** Error with an HTTP status and a French message safe to show to the user. */
+/**
+ * Error with an HTTP status and a French message safe to show to the user.
+ *
+ * A 400 always carries `details` (contract §3: `{ error, details: ApiValidationIssue[] }`):
+ * pass `{ field: 'sellingPriceTTC' }` to name the field concerned, or your own `details`.
+ */
 export class HttpError extends Error {
-  constructor(public readonly status: number, message: string, public readonly extra: Record<string, unknown> = {}) {
+  public readonly extra: Record<string, unknown>;
+
+  constructor(public readonly status: number, message: string, extra: Record<string, unknown> & { field?: string } = {}) {
     super(message);
     this.name = 'HttpError';
+    const { field, ...rest } = extra;
+    if (status === 400 && !('details' in rest)) {
+      const issue: ApiValidationIssue = {
+        field: field ?? '',
+        label: field ? fieldLabel(field.split('.').map((s) => (/^\d+$/.test(s) ? Number(s) : s))) : '',
+        message,
+        code: 'custom',
+      };
+      this.extra = { details: [issue], ...rest };
+    } else {
+      this.extra = rest;
+    }
   }
 }
 

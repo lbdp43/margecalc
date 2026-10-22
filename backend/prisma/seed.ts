@@ -108,7 +108,8 @@ async function seedCategories() {
   let created = 0;
   let fixed = 0;
   for (const cat of DEFAULT_CATEGORIES) {
-    const existing = await prisma.category.findUnique({ where: { slug: cat.slug } });
+    // Built-in categories only (userId null): a user's private category may reuse a slug.
+    const existing = await prisma.category.findFirst({ where: { slug: cat.slug, userId: null } });
     if (!existing) {
       await prisma.category.create({ data: { name: cat.name, slug: cat.slug, icon: cat.icon, sortOrder: cat.sortOrder } });
       created++;

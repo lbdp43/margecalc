@@ -9,6 +9,9 @@
  * - md: 56 tall bordered group [− 44×54][value][+ 44×54].
  * - large: ≈72 tall field with 48 round −/+ buttons inside.
  * - Long-press repeats: 400 ms delay, then every 80 ms, twice as fast after 1 s.
+ *   The rate is computed from the elapsed time (one 40 ms ticker), so a slow
+ *   parent render never slows it down.
+ * - A quick tap always steps once (press-in has no delay; onPress fallback).
  * - A selection haptic on every step.
  * - Tap the value to type: accepts « , » or « . », formatted again on blur,
  *   clamped to [min, max] and rounded to `step` decimals.
@@ -67,7 +70,11 @@ export function NumberInput({
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState('');
   const valueRef = useRef<number>(typeof value === 'number' && isFinite(value) ? value : 0);
-  const timers = useRef<{ delay?: ReturnType<typeof setTimeout>; repeat?: ReturnType<typeof setInterval>; fast?: ReturnType<typeof setTimeout> }>({});
+  const repeat = useRef<{ timer?: ReturnType<typeof setInterval>; start: number; done: number; dir: 1 | -1 }>({ start: 0, done: 0, dir: 1 });
+  // Set by onPressIn (which already stepped) so the click-based onPress
+  // fallback does not step a second time; cleared shortly after release.
+  const pressHandled = useRef(false);
+  const pressHandledReset = useRef<ReturnType<typeof setTimeout>>();
 
   useEffect(() => {
     if (typeof value === 'number' && isFinite(value)) valueRef.current = value;
@@ -98,34 +105,71 @@ export function NumberInput({
   );
 
   const stopRepeat = useCallback(() => {
-    const t = timers.current;
-    if (t.delay) clearTimeout(t.delay);
-    if (t.repeat) clearInterval(t.repeat);
-    if (t.fast) clearTimeout(t.fast);
-    timers.current = {};
+    const r = repeat.current;
+    if (r.timer) clearInterval(r.timer);
+    r.timer = undefined;
   }, []);
+
+  // Long press: one 40 ms ticker; the number of steps owed is a function of
+  // the elapsed time (see repeatSteps), so a slow re-render of the parent
+  // never changes the rate — a late tick simply catches up.
+  const tick = useCallback(() => {
+    const r = repeat.current;
+    const owed = repeatSteps(Date.now() - r.start) - r.done;
+    if (owed <= 0) return;
+    r.done += owed;
+    const changed = apply(valueRef.current + r.dir * step * owed);
+    if (!changed) {
+      stopRepeat();
+      return;
+    }
+    if (haptic) haptics.select();
+  }, [apply, step, haptic, stopRepeat]);
+  const tickRef = useRef(tick);
+  tickRef.current = tick;
 
   const startRepeat = useCallback(
     (dir: 1 | -1) => {
       stopRepeat();
+      const r = repeat.current;
+      r.dir = dir;
+      r.start = Date.now();
+      r.done = 1;
       stepBy(dir);
-      // 400 ms delay, then every 80 ms; twice as fast once held for 1 s.
-      timers.current.delay = setTimeout(() => {
-        timers.current.repeat = setInterval(() => {
-          if (!stepBy(dir)) stopRepeat();
-        }, 80);
-      }, 400);
-      timers.current.fast = setTimeout(() => {
-        if (timers.current.repeat) clearInterval(timers.current.repeat);
-        timers.current.repeat = setInterval(() => {
-          if (!stepBy(dir)) stopRepeat();
-        }, 40);
-      }, 1000);
+      r.timer = setInterval(() => tickRef.current(), 40);
     },
     [stepBy, stopRepeat],
   );
 
-  useEffect(() => stopRepeat, [stopRepeat]);
+  useEffect(
+    () => () => {
+      stopRepeat();
+      if (pressHandledReset.current) clearTimeout(pressHandledReset.current);
+    },
+    [stopRepeat],
+  );
+
+  const onStepPressIn = (dir: 1 | -1) => {
+    if (pressHandledReset.current) clearTimeout(pressHandledReset.current);
+    pressHandled.current = true;
+    startRepeat(dir);
+  };
+  const onStepPressOut = () => {
+    stopRepeat();
+    // The click (onPress) follows the release within the same input task.
+    pressHandledReset.current = setTimeout(() => {
+      pressHandled.current = false;
+    }, 350);
+  };
+  // Fallback for presses that never produced a press-in (keyboard on some
+  // browsers, assistive technology « click »): step exactly once.
+  const onStepPress = (dir: 1 | -1) => {
+    if (pressHandled.current) {
+      pressHandled.current = false;
+      return;
+    }
+    stepBy(dir);
+  };
 
   const onFocus = () => {
     setEditing(true);
@@ -166,8 +210,11 @@ export function NumberInput({
       <PressableScale
         scaleTo={large ? 'button' : 'none'}
         disabled={isDisabled}
-        onPressIn={() => startRepeat(dir)}
-        onPressOut={stopRepeat}
+        // RNW delays onPressIn by 50 ms by default: a quick tap would be lost.
+        delayPressIn={0}
+        onPressIn={() => onStepPressIn(dir)}
+        onPressOut={onStepPressOut}
+        onPress={() => onStepPress(dir)}
         accessibilityRole="button"
         accessibilityLabel={`${dir === 1 ? 'Augmenter' : 'Diminuer'} ${a11y.toLowerCase()}`}
         hitSlop={large ? 4 : 0}
@@ -227,6 +274,17 @@ export function NumberInput({
       </View>
     </View>
   );
+}
+
+/**
+ * Steps owed after holding for `t` ms: 1 at press, then one every 80 ms from
+ * 400 ms (8 of them up to 960 ms), then one every 40 ms from 1 s.
+ */
+export function repeatSteps(t: number): number {
+  let n = 1;
+  if (t >= 400) n += Math.min(Math.floor((t - 400) / 80) + 1, 8);
+  if (t >= 1000) n += Math.floor((t - 1000) / 40) + 1;
+  return n;
 }
 
 const styles = StyleSheet.create({

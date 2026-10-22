@@ -16,14 +16,16 @@ import { isZodError, sendKnownError } from '../utils/validation';
  * counted in the daily quota: only successful scans are recorded.
  *
  * Fair use of the single shared OCR worker: every scan request (failed or not) counts toward
- * the 10/min burst limit, and one user can only have ONE scan in flight at a time (429 busy).
+ * the 10/min burst limit, one user can only have ONE scan in flight at a time (429 busy), and
+ * after 3 timed-out (unreadable) photos in 10 minutes the user waits (429 cooldown).
+ * A missing/empty image is a 422 bad_image like any unreadable photo.
  */
 const router = Router();
 
 const PHOTO_TOO_BIG = 'Photo trop volumineuse';
 
 const scanSchema = z.object({
-  imageBase64: z.string({ required_error: 'Aucune image reçue.' })
+  imageBase64: z.string({ required_error: 'Lecture impossible : aucune image reçue. Reprenez la photo.', invalid_type_error: 'Lecture impossible : aucune image reçue. Reprenez la photo.' })
     .min(200, 'Lecture impossible : l’image reçue est vide.')
     .max(8_000_000, PHOTO_TOO_BIG),
 });
@@ -99,14 +101,64 @@ function countSuccess(userId: string): void {
   });
 }
 
-function sendScanError(res: Response, err: any, kind: 'bottle' | 'invoice'): void {
+// --- Unreadable photos in a row ----------------------------------------------------------------
+// A noisy / textless photo holds the single shared OCR worker for its whole time budget, then the
+// worker is restarted. One user re-sending such photos back to back could keep it busy for
+// everyone: after TIMEOUT_STRIKES timeouts within TIMEOUT_WINDOW_MS, that user waits a bit.
+const TIMEOUT_STRIKES = 3;
+const TIMEOUT_WINDOW_MS = 10 * 60 * 1000;
+const timeoutStrikes = new Map<string, number[]>();
+
+function recentTimeouts(uid: string): number[] {
+  const cutoff = Date.now() - TIMEOUT_WINDOW_MS;
+  const list = (timeoutStrikes.get(uid) || []).filter((t) => t > cutoff);
+  if (list.length) timeoutStrikes.set(uid, list);
+  else timeoutStrikes.delete(uid);
+  return list;
+}
+
+function recordTimeout(uid: string): void {
+  timeoutStrikes.set(uid, [...recentTimeouts(uid), Date.now()]);
+}
+
+setInterval(() => {
+  for (const uid of [...timeoutStrikes.keys()]) recentTimeouts(uid);
+}, TIMEOUT_WINDOW_MS).unref();
+
+/** Answers 429 and returns false while the user is cooling down after unreadable photos. */
+function checkTimeoutCooldown(req: Request, res: Response): boolean {
+  const list = recentTimeouts(req.user!.userId);
+  if (list.length < TIMEOUT_STRIKES) return true;
+  const retryInMs = list[0] + TIMEOUT_WINDOW_MS - Date.now();
+  const minutes = Math.max(1, Math.ceil(retryInMs / 60_000));
+  res.setHeader('Retry-After', String(Math.ceil(retryInMs / 1000)));
+  res.status(429).json({
+    error: `Trop de photos illisibles d’affilée, réessayez dans ${minutes} minute${minutes > 1 ? 's' : ''} — ou remplissez la fiche à la main.`,
+    code: 'cooldown',
+    retryable: true,
+  });
+  return false;
+}
+
+function sendScanError(req: Request, res: Response, err: any, kind: 'bottle' | 'invoice'): void {
   if (err instanceof OcrError) {
+    if (err.code === 'timeout') recordTimeout(req.user!.userId);
     res.status(422).json({ error: err.message, code: err.code, retryable: err.retryable });
     return;
   }
   // Same contract as the body-size limit: an oversized image is a 413, not a validation 400.
   if (isZodError(err) && err.issues.some((i) => i.message === PHOTO_TOO_BIG)) {
     res.status(413).json({ error: PHOTO_TOO_BIG });
+    return;
+  }
+  // Missing / empty image: a failed read like any other (422 bad_image), not a validation 400.
+  if (isZodError(err) && err.issues.length && err.issues.every((i) => i.path[0] === 'imageBase64' || i.path.length === 0)) {
+    const msg = err.issues[0].message;
+    res.status(422).json({
+      error: msg.startsWith('Lecture impossible') ? msg : 'Lecture impossible : aucune image reçue. Reprenez la photo.',
+      code: 'bad_image',
+      retryable: false,
+    });
     return;
   }
   if (sendKnownError(res, err)) return;
@@ -140,12 +192,13 @@ async function scanBottle(req: Request, res: Response) {
   await oneScanAtATime(req, res, async () => {
     try {
       const { imageBase64 } = scanSchema.parse(req.body);
+      if (!checkTimeoutCooldown(req, res)) return;
       if (!(await checkDailyLimit(req, res))) return;
       const result = await analyzeBottleImage(imageBase64);
       countSuccess(req.user!.userId);
       res.json(result);
     } catch (err) {
-      sendScanError(res, err, 'bottle');
+      sendScanError(req, res, err, 'bottle');
     }
   });
 }
@@ -157,12 +210,13 @@ router.post('/invoice', async (req: Request, res: Response) => {
   await oneScanAtATime(req, res, async () => {
     try {
       const { imageBase64 } = scanSchema.parse(req.body);
+      if (!checkTimeoutCooldown(req, res)) return;
       if (!(await checkDailyLimit(req, res))) return;
       const result = await analyzeInvoiceImage(imageBase64);
       countSuccess(req.user!.userId);
       res.json(result);
     } catch (err) {
-      sendScanError(res, err, 'invoice');
+      sendScanError(req, res, err, 'invoice');
     }
   });
 });
