@@ -444,7 +444,8 @@ const styles = StyleSheet.create({
     borderRadius: PILL_H / 2,
     backgroundColor: palette.em50,
   },
-  item: { height: 60, alignItems: 'center', justifyContent: 'center', gap: 3 },
+  // borderRadius: the keyboard focus ring (outline) follows the tab's rounded shape.
+  item: { height: 60, alignItems: 'center', justifyContent: 'center', gap: 3, borderRadius: 16 },
   iconBox: { width: PILL_W, height: PILL_H, alignItems: 'center', justifyContent: 'center' },
   label: { ...type.tabLabel },
   labelCompact: { fontSize: 11, lineHeight: 14, letterSpacing: -0.2 },

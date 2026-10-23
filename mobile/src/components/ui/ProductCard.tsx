@@ -13,7 +13,8 @@
  *   2. meta « Catégorie · 70 cl · 40° » (only the category shortens) + gain per dose « +5,18 €/dose »
  *      in the margin colour
  *   3. PriceTag of the primary service (lowest sortOrder, whose figures are
- *      `product.computed`) + « +1 » chip for the other services. The service
+ *      `product.computed`) + « +1 » chip for the other services, and the
+ *      purchase price « Achat 18,50 € HT » on the right. The service
  *      name is never truncated (the row wraps if it ever must). Margin colours use the user's
  * thresholds (or `thresholds`). Mirrors SkeletonProductCard.
  */
@@ -125,6 +126,7 @@ export const ProductCard = React.memo(function ProductCard({ product, thresholds
     category,
     `${formatEuro(price)} ${label}${extra > 0 ? `, et ${extra} autre${extra > 1 ? 's' : ''} service${extra > 1 ? 's' : ''}` : ''}`,
     `marge ${formatPercent(margin)}, ${marginColors[zone].label}`,
+    `achat ${formatEuro(product.purchasePriceHT)} hors taxes`,
   ]
     .filter(Boolean)
     .join(', ');
@@ -186,6 +188,9 @@ export const ProductCard = React.memo(function ProductCard({ product, thresholds
                 <Text style={styles.extraText}>+{extra}</Text>
               </View>
             ) : null}
+            <Text style={styles.cost} numberOfLines={1} maxFontSizeMultiplier={1.3}>
+              Achat <Text style={styles.costValue}>{formatEuro(product.purchasePriceHT)}</Text> HT
+            </Text>
           </View>
         </View>
       </View>
@@ -268,6 +273,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   extraText: { ...type.footnoteStrong, color: palette.em700, fontVariant: ['tabular-nums'] },
+  // Purchase price, right-aligned on the price row (moves under it when the row is full).
+  cost: { ...type.footnote, color: palette.text3, fontVariant: ['tabular-nums'], marginLeft: 'auto' },
+  costValue: { ...type.footnoteStrong, color: palette.text2 },
   gain: { fontFamily: fontFamily.bold, fontSize: 13, lineHeight: 18, fontVariant: ['tabular-nums'] },
   gainUnit: { fontFamily: fontFamily.medium, color: palette.text3 },
 });
