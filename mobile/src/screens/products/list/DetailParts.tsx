@@ -26,14 +26,14 @@ import {
 } from '../../../components/ui';
 import { elevation, fontFamily, marginColors, MarginZone, motion, palette, radius, type } from '../../../theme';
 import { formatEuro, formatNumber, formatPercent, NBSP } from '../../../utils/format';
+import { formatServings } from '../form/pricing';
 
 /** Photo frame height: a portrait bottle shows whole (contain) at every phone width. */
 export const PHOTO_HEIGHT = 240;
 
-/** « 23,3 doses », « 14 doses », « 1 dose » (one wording for the tile and the service rows). */
+/** « ≈ 23 doses », « 14 doses », « 1,5 dose »: whole servings, as the form counts them (formatServings). */
 export function dosesLabel(n: number): string {
-  const whole = Math.abs(n - Math.round(n)) < 1e-6;
-  return `${formatNumber(n, whole ? 0 : 1)}${NBSP}${n >= 2 ? 'doses' : 'dose'}`;
+  return `${formatServings(n)}${NBSP}${n >= 2 ? 'doses' : 'dose'}`;
 }
 
 // ─── Photo hero ────────────────────────────────────────────────────────────

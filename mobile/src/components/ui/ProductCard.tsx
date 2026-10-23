@@ -10,7 +10,7 @@
  * Card: thumb 64 (photo or category icon), then three rows:
  *   1. name (wraps to 2 lines, so « Jameson Irish Whiskey (copie) » stays
  *      distinguishable from the original) + margin Badge, top-aligned
- *   2. meta « Catégorie · 70 cl · 40° » (ellipsis) + gain per dose « +5,18 €/dose »
+ *   2. meta « Catégorie · 70 cl · 40° » (only the category shortens) + gain per dose « +5,18 €/dose »
  *      in the margin colour
  *   3. PriceTag of the primary service (lowest sortOrder, whose figures are
  *      `product.computed`) + « +1 » chip for the other services. The service
@@ -115,7 +115,8 @@ export const ProductCard = React.memo(function ProductCard({ product, thresholds
   const { label, price, extra } = primaryPrice(product);
   const category = product.category?.name;
 
-  const meta = [category, formatVolumeCl(product.containerVolumeCl), product.alcoholDegree > 0 ? compactDegree(product.alcoholDegree) : null]
+  // Only the category name may be shortened: the volume and degree always stay visible.
+  const specs = [formatVolumeCl(product.containerVolumeCl), product.alcoholDegree > 0 ? compactDegree(product.alcoholDegree) : null]
     .filter(Boolean)
     .join(' · ');
 
@@ -161,9 +162,18 @@ export const ProductCard = React.memo(function ProductCard({ product, thresholds
             <Badge value={margin} thresholds={t} style={styles.badge} />
           </View>
           <View style={styles.middle}>
-            <Text style={styles.meta} numberOfLines={1}>
-              {meta}
-            </Text>
+            <View style={styles.metaRow}>
+              {category ? (
+                <Text style={[styles.meta, styles.metaCategory]} numberOfLines={1}>
+                  {category}
+                </Text>
+              ) : null}
+              {specs ? (
+                <Text style={[styles.meta, styles.metaSpecs]} numberOfLines={1}>
+                  {category ? `${NBSP}·${NBSP}${specs}` : specs}
+                </Text>
+              ) : null}
+            </View>
             <Text style={[styles.gain, { color: marginColors[zone].fg }]} maxFontSizeMultiplier={1.3}>
               {formatEuro(gain, { sign: true })}
               <Text style={styles.gainUnit}>/dose</Text>
@@ -232,7 +242,10 @@ const styles = StyleSheet.create({
   name: { ...type.headline, color: palette.ink, flex: 1, minWidth: 0, marginTop: 2 },
   badge: { flexShrink: 0 },
   middle: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  meta: { ...type.footnote, color: palette.text3, fontVariant: ['tabular-nums'], flex: 1, minWidth: 0 },
+  metaRow: { flex: 1, minWidth: 0, flexDirection: 'row' },
+  meta: { ...type.footnote, color: palette.text3, fontVariant: ['tabular-nums'] },
+  metaCategory: { flexShrink: 1, minWidth: 0 },
+  metaSpecs: { flexShrink: 0 },
   bottom: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6, marginTop: 3 },
   tag: {
     minHeight: 28,

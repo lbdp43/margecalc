@@ -4,9 +4,9 @@
  * and the % in the zone colour. Footer: what the tick and the colours mean.
  *
  * Every row has the same columns (name 118 · meter · % 78), so the objective
- * ticks line up and every row is 48 tall: the name is one line (the full name
- * is in the accessibility label) and a long % shrinks to its column. Below
- * 360 px the meter moves under the name, full width, and the name may wrap.
+ * ticks line up. Rows are 48 tall; a long category name (« Ingrédients
+ * cocktails ») wraps to a second line instead of being cut, and a long %
+ * shrinks to its column. Below 360 px the meter moves under the name, full width.
  */
 import React from 'react';
 import { StyleSheet, Text, useWindowDimensions, View } from 'react-native';
@@ -51,10 +51,11 @@ const MeterRow = React.memo(function MeterRow({
   const pctSize = Math.floor(PCT.size * fitScale([[pct, PCT.size, PCT.ls]], PCT_W - 2, 0.7));
   const name = (
     <View style={[styles.nameCol, stacked && styles.nameColStacked]}>
-      <Text style={styles.name} numberOfLines={stacked ? 2 : 1}>
+      {/* The count flows right after the last word, even when the name wraps. */}
+      <Text style={styles.name} numberOfLines={2}>
         {stat.name}
+        <Text style={styles.count}>{`  ${stat.count}`}</Text>
       </Text>
-      <Text style={styles.count}>{stat.count}</Text>
     </View>
   );
   const meter = <Meter value={stat.avg / 100} color={c.solid} marker={thresholds.good / 100} delay={delay + index * 50} style={styles.meter} />;
@@ -118,11 +119,11 @@ export const CategoryMeters = React.memo(function CategoryMeters({ stats, thresh
 
 const styles = StyleSheet.create({
   rows: { paddingHorizontal: 16, paddingVertical: 4 },
-  row: { flexDirection: 'row', alignItems: 'center', gap: 12, height: 48 },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 48, paddingVertical: 6 },
   rowStacked: { paddingVertical: 10, gap: 6 },
   stackTop: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   divider: { borderBottomWidth: 1, borderBottomColor: palette.line },
-  nameCol: { width: NAME_W, flexDirection: 'row', alignItems: 'baseline', gap: 6 },
+  nameCol: { width: NAME_W, flexDirection: 'row' },
   nameColStacked: { width: undefined, flex: 1, minWidth: 0 },
   name: { ...type.headline, color: palette.ink, flexShrink: 1 },
   count: { ...type.footnote, color: palette.text3, flexShrink: 0 },
