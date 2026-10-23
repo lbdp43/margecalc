@@ -42,6 +42,7 @@ import { servingIconName } from '../../components/ui/ServingTypeIcon';
 import { layout, marginColors, palette, type } from '../../theme';
 import { formatCoeff, formatDegree, formatEuro, formatNumber, formatPercent, formatVolumeCl, NBSP, plural } from '../../utils/format';
 import { getMarginZone, useMarginThresholds } from '../../utils/marginThresholds';
+import { doseLabel, soldWhole } from '../../utils/servings';
 import { afterProductDeleted, goToProduct, goToProductList, openProductForm } from '../../navigation/routes';
 import { useOfflineQuery } from '../../hooks/useOfflineQuery';
 import * as productService from '../../services/product.service';
@@ -59,7 +60,7 @@ import {
   ServiceRow,
 } from './list/DetailParts';
 import { persistableProduct, pruneDetailCaches, useLeanOfflineQuery } from './list/detailCache';
-import { PriceEditSheet, PriceEditTarget } from './list/PriceEditSheet';
+import { DOSE_KEY, fixTarget, PriceEditSheet, PriceEditTarget } from './list/PriceEditSheet';
 import { apiStatus, loadErrorMessage, useProductActions } from './list/productActions';
 
 type Props = NativeStackScreenProps<any, 'ProductDetail'>;
@@ -99,10 +100,13 @@ function servicesOf(product: ProductWithMargin): ServiceFigures[] {
   });
   if (out.length) return out;
   const c = product.computed;
+  // Same name as the card and the quick sheet: « À l’unité » for a can or a bottle sold whole.
+  const whole = soldWhole(product.containerVolumeCl, product.doseVolumeCl);
   return [
     {
       key: 'dose',
-      label: `Dose${NBSP}${formatVolumeCl(product.doseVolumeCl)}`,
+      label: doseLabel(product.containerVolumeCl, product.doseVolumeCl),
+      meta: whole ? `1${NBSP}${containerNoun(product.containerVolumeCl)} de ${formatVolumeCl(product.containerVolumeCl)}` : undefined,
       icon: categoryIcon(product.category?.slug),
       priceTTC: c.sellingPriceTTC,
       priceHT: c.sellingPriceHT,
@@ -251,6 +255,21 @@ export function ProductDetailScreen({ route, navigation: nav }: Props) {
     toast.clear();
     setActionsOpen(true);
   }, []);
+  const openPrice = useCallback((target: PriceEditTarget) => {
+    toast.clear();
+    setPriceTarget(target);
+  }, []);
+
+  // « Corriger » (dashboard « À revoir », links): `?prix=conseille` opens the
+  // quick price sheet on the primary price, already set to the suggested price.
+  // The param is cleared once used, so « Retour » or a reload never reopens it.
+  const priceParam = (route.params as { prix?: string } | undefined)?.prix;
+  useEffect(() => {
+    if (!priceParam || !product || deleted) return;
+    const target = priceParam === 'conseille' ? fixTarget(product, t) : { key: undefined };
+    navigation.setParams({ prix: undefined });
+    if (target) openPrice(target);
+  }, [priceParam, product, deleted, t, navigation, openPrice]);
 
   const services = useMemo(() => (product ? servicesOf(product) : []), [product]);
   const hasRealServings = !!product?.servings?.length;
@@ -415,16 +434,8 @@ export function ProductDetailScreen({ route, navigation: nav }: Props) {
               containerNoun={noun}
               contentWidth={contentWidth}
               last={i === services.length - 1}
-              onPress={
-                hasRealServings
-                  ? () => {
-                      const ps = sortedServings(product).find((x) => x.servingTypeId === s.key);
-                      if (!ps?.servingType) return;
-                      toast.clear();
-                      setPriceTarget({ servingType: ps.servingType, label: s.label, price: ps.sellingPriceTTC });
-                    }
-                  : edit
-              }
+              // Always the quick sheet, products sold à l’unité included (lot 1 n° 5).
+              onPress={deleted ? undefined : () => openPrice({ key: hasRealServings ? s.key : DOSE_KEY })}
             />
           ))}
         </Card>
@@ -463,6 +474,7 @@ export function ProductDetailScreen({ route, navigation: nav }: Props) {
       <ProductActionsSheet
         product={actionsOpen ? product : null}
         onClose={() => setActionsOpen(false)}
+        onChangePrice={() => openPrice({})}
         onEdit={edit}
         onDuplicate={duplicate}
         onDelete={remove}

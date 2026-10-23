@@ -7,7 +7,7 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "start:prod": "node scripts/baseline.cjs && prisma migrate deploy && tsx prisma/seed.ts && node dist/index.js",
-    "test": "tsx test/scan-extract.test.ts",
+    "test": "tsx test/scan-extract.test.ts && tsx test/invoice-match.test.ts",
     "db:migrate": "prisma migrate dev",
     "db:seed": "tsx prisma/seed.ts",
     "db:push": "prisma db push"

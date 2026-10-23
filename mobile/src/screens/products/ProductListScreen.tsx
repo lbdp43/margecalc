@@ -2,9 +2,15 @@
  * « Mes produits » (D1 §3, FOUNDATION §8 list recipe).
  *
  *   LargeTitleHeader « Mes produits » · « 14 produits · marge moy. 69,0 % » + FAB
- *   search (scan shortcut) · MarginLegend with counts · category ChipRow · sort
+ *   search (scan shortcut) · MarginLegend with counts (each item filters by zone)
+ *   · active zone filter chip « À revoir · 1 sur 14 ✕ » · category ChipRow · sort
  *   ScreenList of kit ProductCards (40 ms stagger, memoised rows, stable keys)
- *   long press → ProductActionsSheet (Modifier · Dupliquer · Supprimer)
+ *   long press → ProductActionsSheet (Changer le prix · Modifier · Dupliquer · Supprimer)
+ *
+ * Filters can be opened from the dashboard (counters, « Marge par catégorie »,
+ * « Tout voir »): route params `zone` (good | medium | bad), `category` and
+ * `sort` (see list/listModel). They are applied once, then cleared from the
+ * route, so the list then behaves as if the user had picked them.
  *
  * States: skeleton (after 150 ms, never over cached data; the header placeholders
  * mirror the legend, chips and sort row so nothing shifts), fresh account, no
@@ -36,11 +42,13 @@ import {
   EmptyState,
   FAB,
   FadeIn,
+  Icon,
   IconButton,
   LargeTitleHeader,
   MarginLegend,
   ProductActionsSheet,
   ProductCard,
+  PressableScale,
   Screen,
   ScreenList,
   Skeleton,
@@ -53,12 +61,24 @@ import {
   useReduceMotion,
 } from '../../components/ui';
 import { fontFamily, layout, marginColors, motion, palette, radius, type } from '../../theme';
-import { formatPercent, plural } from '../../utils/format';
-import { getMarginZone, useMarginThresholds } from '../../utils/marginThresholds';
+import { formatPercent, NBSP, plural } from '../../utils/format';
+import { getMarginZone, MarginZone, useMarginThresholds } from '../../utils/marginThresholds';
 import { goToProduct, openInvoiceScan, openProductForm } from '../../navigation/routes';
 import { useOfflineQuery } from '../../hooks/useOfflineQuery';
 import * as productService from '../../services/product.service';
-import { ALL_KEY, SortKey, averageMargin, categoryChips, matchesQuery, sortProducts } from './list/listModel';
+import {
+  ALL_KEY,
+  SortKey,
+  ZONE_FILTER_LABEL,
+  averageMargin,
+  categoryChips,
+  inZone,
+  matchesQuery,
+  sortFromParam,
+  sortProducts,
+  zoneFromParam,
+} from './list/listModel';
+import { PriceEditSheet, PriceEditTarget } from './list/PriceEditSheet';
 import { SortSheet, SortTrigger } from './list/SortSheet';
 import { loadErrorMessage, useProductActions } from './list/productActions';
 import { pruneDetailCaches } from './list/detailCache';
@@ -220,7 +240,7 @@ function usePages(total: number, resetKey: string) {
 }
 
 // ─── Screen ────────────────────────────────────────────────────────────────
-export function ProductListScreen({ navigation: nav }: Props) {
+export function ProductListScreen({ navigation: nav, route }: Props) {
   const navigation = nav as any;
   const thresholds = useMarginThresholds();
   const actions = useProductActions();
@@ -230,7 +250,9 @@ export function ProductListScreen({ navigation: nav }: Props) {
   const [query, setQuery] = useState('');
   const deferredQuery = useDeferredValue(query);
   const [category, setCategory] = useState<string>(ALL_KEY);
+  const [zone, setZone] = useState<MarginZone | null>(null);
   const [sort, setSort] = useState<SortKey>('recent');
+  const [priceFor, setPriceFor] = useState<{ product: ProductWithMargin; target: PriceEditTarget } | null>(null);
   const [sortOpen, setSortOpen] = useState(false);
   const [actionsFor, setActionsFor] = useState<ProductWithMargin | null>(null);
   const [pulling, setPulling] = useState(false);
@@ -249,13 +271,26 @@ export function ProductListScreen({ navigation: nav }: Props) {
     pruneDetailCaches();
   }, []);
 
+  // A filter opened from the dashboard wins over the remembered sort.
+  const sortFromRoute = useRef(false);
+  // The user's own sort (remembered on this device): what comes back once a
+  // sort forced by a dashboard link no longer applies.
+  const userSort = useRef<SortKey>('recent');
   // Remember the sort choice on this device (a convenience, never required).
   useEffect(() => {
     AsyncStorage.getItem(SORT_KEY)
       .then((v) => {
-        if (v && (SORT_KEYS as string[]).includes(v)) setSort(v as SortKey);
+        if (!v || !(SORT_KEYS as string[]).includes(v)) return;
+        userSort.current = v as SortKey;
+        if (!sortFromRoute.current) setSort(v as SortKey);
       })
       .catch(() => {});
+  }, []);
+  /** Back to the user's own sort, when the one in force came from a dashboard link. */
+  const restoreUserSort = useCallback(() => {
+    if (!sortFromRoute.current) return;
+    sortFromRoute.current = false;
+    setSort(userSort.current);
   }, []);
 
   // Stagger the rows that mount right after the first data and after each filter / sort change.
@@ -269,6 +304,29 @@ export function ProductListScreen({ navigation: nav }: Props) {
     setEpoch((e) => e + 1);
   }, []);
 
+  // ── filters opened from the dashboard (route params, applied once) ──
+  // `reset` (« Produits · 14 suivis », « Détails »): the whole list, user's sort.
+  const params = (route.params ?? {}) as { zone?: string; category?: string; sort?: string; reset?: string };
+  const paramZone = zoneFromParam(params.zone);
+  const paramSort = sortFromParam(params.sort);
+  const paramCategory = typeof params.category === 'string' && params.category ? params.category : null;
+  const paramReset = params.reset === '1';
+  const hasIntent = !!(paramZone || paramSort || paramCategory || paramReset);
+  useEffect(() => {
+    if (!hasIntent) return;
+    setQuery('');
+    setZone(paramZone);
+    setCategory(paramCategory ?? ALL_KEY);
+    // A sort from the link is not remembered: the user's own sort comes back
+    // with the next link without one (or once its filter is removed).
+    sortFromRoute.current = !!paramSort;
+    setSort(paramSort ?? userSort.current);
+    restagger();
+    scroller.scrollTo(0);
+    navigation.setParams({ zone: undefined, category: undefined, sort: undefined, reset: undefined });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasIntent, paramZone, paramSort, paramCategory, paramReset]);
+
   // ── derived data ──
   const chips = useMemo(() => categoryChips(products), [products]);
   // The selected category lost its last product (deleted): back to « Tous ».
@@ -279,11 +337,11 @@ export function ProductListScreen({ navigation: nav }: Props) {
   const avg = useMemo(() => averageMargin(products), [products]);
   const visible = useMemo(() => {
     const inCategory = category === ALL_KEY ? products : products.filter((p) => p.categoryId === category);
-    return sortProducts(inCategory.filter((p) => matchesQuery(p, deferredQuery)), sort);
-  }, [products, category, deferredQuery, sort]);
-  const filtering = category !== ALL_KEY || deferredQuery.trim().length > 0;
+    return sortProducts(inCategory.filter((p) => inZone(p, zone, thresholds) && matchesQuery(p, deferredQuery)), sort);
+  }, [products, category, zone, thresholds, deferredQuery, sort]);
+  const filtering = category !== ALL_KEY || deferredQuery.trim().length > 0 || !!zone;
 
-  const pages = usePages(visible.length, `${category}|${deferredQuery.trim()}|${sort}`);
+  const pages = usePages(visible.length, `${category}|${zone ?? ''}|${deferredQuery.trim()}|${sort}`);
   const rows = useMemo(() => (pages.limit >= visible.length ? visible : visible.slice(0, pages.limit)), [visible, pages.limit]);
 
   // ── navigation ──
@@ -302,15 +360,35 @@ export function ProductListScreen({ navigation: nav }: Props) {
     (key: string) => {
       if (key === category) return;
       setCategory(key);
+      // Back to every product: a sort forced by a dashboard link gives way to the user's.
+      if (key === ALL_KEY && !zone) restoreUserSort();
       restagger();
     },
-    [category, restagger],
+    [category, zone, restoreUserSort, restagger],
   );
+  // Legend dots filter by zone; tapping the active one (or the chip's ✕) clears it.
+  const onZone = useCallback(
+    (z: MarginZone) => {
+      const off = zone === z;
+      setZone(off ? null : z);
+      if (off && category === ALL_KEY) restoreUserSort();
+      restagger();
+    },
+    [zone, category, restoreUserSort, restagger],
+  );
+  const clearZone = useCallback(() => {
+    setZone(null);
+    if (category === ALL_KEY) restoreUserSort();
+    restagger();
+  }, [category, restoreUserSort, restagger]);
   const onSort = useCallback(
     (key: SortKey) => {
+      // The user's own choice from now on (and remembered on this device).
+      sortFromRoute.current = false;
+      userSort.current = key;
+      AsyncStorage.setItem(SORT_KEY, key).catch(() => {});
       if (key === sort) return;
       setSort(key);
-      AsyncStorage.setItem(SORT_KEY, key).catch(() => {});
       restagger();
     },
     [sort, restagger],
@@ -323,8 +401,10 @@ export function ProductListScreen({ navigation: nav }: Props) {
   const showAll = useCallback(() => {
     setQuery('');
     setCategory(ALL_KEY);
+    setZone(null);
+    restoreUserSort();
     restagger();
-  }, [restagger]);
+  }, [restoreUserSort, restagger]);
 
   const onRefresh = useCallback(async () => {
     setPulling(true);
@@ -405,14 +485,14 @@ export function ProductListScreen({ navigation: nav }: Props) {
   const offlineEmpty = useDelayedLoading(!hasData && !!isOffline, 400);
   const freshAccount = hasData && products.length === 0;
 
-  const zone = avg !== null ? getMarginZone(avg, thresholds) : 'green';
+  const avgZone = avg !== null ? getMarginZone(avg, thresholds) : 'green';
   const subline = hasData ? (
     products.length ? (
       <>
         {plural(products.length, 'produit')}
         {avg !== null ? ' · marge moy. ' : ''}
         {avg !== null ? (
-          <AnimatedNumber value={avg} format={(n) => formatPercent(n)} style={[styles.avg, { color: marginColors[zone].fg }]} />
+          <AnimatedNumber value={avg} format={(n) => formatPercent(n)} style={[styles.avg, { color: marginColors[avgZone].fg }]} />
         ) : null}
       </>
     ) : (
@@ -457,14 +537,16 @@ export function ProductListScreen({ navigation: nav }: Props) {
           />
           {products.length ? (
             <>
-              <MarginLegend counts={zoneCounts} thresholds={thresholds} style={styles.legend} />
+              <MarginLegend counts={zoneCounts} thresholds={thresholds} selected={zone} onSelect={onZone} style={styles.legend} />
+              {zone ? <ZoneFilterChip zone={zone} shown={visible.length} total={products.length} onClear={clearZone} /> : null}
               <ChipRow items={chips} selectedKey={category} onSelect={onCategory} style={styles.chips} accessibilityLabel="Catégories" />
               <View style={styles.toolbar}>
                 <SortTrigger
                   value={sort}
                   onPress={openSort}
                   right={
-                    filtering ? (
+                    // With a zone filter, its chip already says « 1 sur 14 ».
+                    filtering && !zone ? (
                       <Text style={styles.count} accessibilityLiveRegion="polite">
                         {visible.length ? `${visible.length} sur ${products.length}` : 'Aucun résultat'}
                       </Text>
@@ -520,6 +602,19 @@ export function ProductListScreen({ navigation: nav }: Props) {
         primary={{ label: 'Effacer la recherche', icon: 'close', onPress: clearSearch }}
         secondary={category !== ALL_KEY ? { label: 'Voir tous les produits', onPress: showAll } : undefined}
       />
+    ) : zone ? (
+      <EmptyState
+        icon={zone === 'red' ? 'checkmark-circle-outline' : 'file-tray-outline'}
+        title={`Aucun produit ${zone === 'green' ? 'rentable' : ZONE_FILTER_LABEL[zone].toLowerCase()}${category !== ALL_KEY ? ' dans cette catégorie' : ''}`}
+        text={
+          zone === 'red'
+            ? `Toutes ces marges sont au-dessus de ${formatPercent(thresholds.medium, 0)}.`
+            : zone === 'orange'
+              ? `Aucune marge entre ${formatPercent(thresholds.medium, 0)} et ${formatPercent(thresholds.good, 0)}.`
+              : `Aucune marge n’atteint encore ${formatPercent(thresholds.good, 0)}.`
+        }
+        primary={{ label: 'Voir tous les produits', onPress: showAll }}
+      />
     ) : (
       <EmptyState
         icon="file-tray-outline"
@@ -560,12 +655,45 @@ export function ProductListScreen({ navigation: nav }: Props) {
       <ProductActionsSheet
         product={actionsFor}
         onClose={() => setActionsFor(null)}
+        onChangePrice={() => actionsFor && setPriceFor({ product: actionsFor, target: {} })}
         onEdit={() => actionsFor && openProductForm(navigation, { productId: actionsFor.id })}
         onDuplicate={() => actionsFor && onDuplicate(actionsFor)}
         onDelete={() => actionsFor && onDelete(actionsFor)}
       />
       <SortSheet visible={sortOpen} value={sort} onSelect={onSort} onClose={() => setSortOpen(false)} />
+      <PriceEditSheet
+        // The latest list copy: a refetch while the sheet opens never shows stale prices.
+        product={priceFor ? products.find((p) => p.id === priceFor.product.id) ?? priceFor.product : null}
+        target={priceFor?.target ?? null}
+        onClose={() => setPriceFor(null)}
+      />
     </Screen>
+  );
+}
+
+/** « ● À revoir · 1 sur 14 ✕ »: the zone filter in force; a tap anywhere removes it. */
+function ZoneFilterChip({ zone, shown, total, onClear }: { zone: MarginZone; shown: number; total: number; onClear: () => void }) {
+  const c = marginColors[zone];
+  const label = `${ZONE_FILTER_LABEL[zone]}${NBSP}· ${shown}${NBSP}sur${NBSP}${total}`;
+  return (
+    <View style={styles.zoneRow}>
+      <PressableScale
+        onPress={onClear}
+        scaleTo="chip"
+        haptic="select"
+        hitSlop={{ top: 4, bottom: 4 }}
+        accessibilityRole="button"
+        accessibilityLabel={`Filtre : ${c.label}, ${shown} produit${shown > 1 ? 's' : ''} sur ${total}. Retirer le filtre`}
+        style={[styles.zoneChip, { backgroundColor: c.bg }]}
+        testID="products-zone-chip"
+      >
+        <View style={[styles.zoneDot, { backgroundColor: c.solid }]} />
+        <Text style={[styles.zoneText, { color: c.fg }]} accessibilityLiveRegion="polite">
+          {label}
+        </Text>
+        <Icon name="close" size={16} color={c.fg} />
+      </PressableScale>
+    </View>
   );
 }
 
@@ -598,6 +726,10 @@ const styles = StyleSheet.create({
   chips: { marginTop: 14 },
   chipsSkel: { flexDirection: 'row', gap: 8, height: 44, overflow: 'hidden' },
   toolbar: { marginTop: 6, marginBottom: 4 },
+  zoneRow: { flexDirection: 'row', marginTop: 10 },
+  zoneChip: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 36, paddingLeft: 12, paddingRight: 10, borderRadius: radius.full },
+  zoneDot: { width: 8, height: 8, borderRadius: 4 },
+  zoneText: { ...type.footnoteStrong },
   sortSkel: { height: 44, justifyContent: 'center' },
   count: { ...type.footnote, color: palette.text3 },
   // Fresh account / offline / error: centred in the space left under the title.

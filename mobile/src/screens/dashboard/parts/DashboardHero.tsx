@@ -11,6 +11,9 @@
  *   bouteille », instead of an empty KPI.
  * - error / offline: « Marge moyenne – % » only; the card below the hero
  *   carries the message.
+ *
+ * The three counters (« 10 rentables · 3 à surveiller · 1 à revoir ») are
+ * buttons: each opens Mes produits filtered on its zone (`onZone`).
  */
 import React from 'react';
 import { StyleSheet, Text, useWindowDimensions, View } from 'react-native';
@@ -31,7 +34,7 @@ import {
 } from '../../../components/ui';
 import { fontFamily, palette, type } from '../../../theme';
 import { formatNumber, formatPercent, formatPoints, NBSP, plural } from '../../../utils/format';
-import type { MarginThresholds } from '../../../utils/marginThresholds';
+import type { MarginThresholds, MarginZone } from '../../../utils/marginThresholds';
 import { spoken } from './dashboardData';
 
 export interface HeroKpi {
@@ -49,6 +52,8 @@ export interface DashboardHeroProps {
   onFeedback: () => void;
   /** First run: the welcome block's « Scanner une bouteille ». */
   onScan?: () => void;
+  /** A counter was tapped: open the products of that zone. */
+  onZone?: (zone: MarginZone) => void;
   /** Bottom padding (the content below overlaps the hero by 28). */
   paddingBottom?: number;
 }
@@ -72,9 +77,11 @@ export const DashboardHero = React.memo(function DashboardHero({
   state,
   onFeedback,
   onScan,
+  onZone,
   paddingBottom = 48,
 }: DashboardHeroProps) {
   const { width } = useWindowDimensions();
+  const narrowPills = width < 375;
   const gap = kpi ? kpi.avg - thresholds.good : 0;
   const ranges = zoneRangeLabels(thresholds);
   const objective = formatPercent(thresholds.good, 0);
@@ -177,14 +184,17 @@ export const DashboardHero = React.memo(function DashboardHero({
                   ]}
                 />
               </View>
-              <View
-                style={styles.legend}
-                accessible
-                accessibilityLabel={`Répartition : ${plural(kpi.counts.green, 'produit rentable', 'produits rentables')} (${spoken(ranges.green)}), ${kpi.counts.orange} à surveiller (${spoken(ranges.orange)}), ${kpi.counts.red} à revoir (${spoken(ranges.red)})`}
-              >
-                <LegendItem color={ZONE_ON_EMERALD.green} count={kpi.counts.green} label={kpi.counts.green > 1 ? 'rentables' : 'rentable'} />
-                <LegendItem color={ZONE_ON_EMERALD.orange} count={kpi.counts.orange} label="à surveiller" />
-                <LegendItem color={ZONE_ON_EMERALD.red} count={kpi.counts.red} label="à revoir" />
+              <View style={[styles.legend, onZone ? styles.legendPressable : null]} accessibilityLabel="Répartition des marges">
+                <LegendItem
+                  zone="green"
+                  count={kpi.counts.green}
+                  label={kpi.counts.green > 1 ? 'rentables' : 'rentable'}
+                  range={ranges.green}
+                  onPress={onZone}
+                  narrow={narrowPills}
+                />
+                <LegendItem zone="orange" count={kpi.counts.orange} label="à surveiller" range={ranges.orange} onPress={onZone} narrow={narrowPills} />
+                <LegendItem zone="red" count={kpi.counts.red} label="à revoir" range={ranges.red} onPress={onZone} narrow={narrowPills} />
               </View>
             </>
           ) : state === 'loading' ? (
@@ -192,7 +202,8 @@ export const DashboardHero = React.memo(function DashboardHero({
               <View style={styles.dist}>
                 <View style={styles.track} />
               </View>
-              <View style={styles.legend}>
+              {/* Same height as the counter pills, so nothing moves when they arrive. */}
+              <View style={[styles.legend, onZone ? styles.legendPressable : null, styles.legendLoading]}>
                 <OnEmeraldSkeleton width={220} height={12} />
               </View>
             </>
@@ -212,15 +223,53 @@ function OnEmeraldSkeleton({ width, height, radius = 6 }: { width: number; heigh
   );
 }
 
-function LegendItem({ color, count, label }: { color: string; count: number; label: string }) {
-  return (
-    <View style={styles.legendItem}>
-      <View style={[styles.dot, { backgroundColor: color }]} />
+function LegendItem({
+  zone,
+  count,
+  label,
+  range,
+  onPress,
+  narrow,
+}: {
+  zone: MarginZone;
+  count: number;
+  label: string;
+  range: string;
+  onPress?: (zone: MarginZone) => void;
+  /** Under 375 px: 9 px side padding, so the three pills stay on one row at 360 px. */
+  narrow?: boolean;
+}) {
+  const body = (
+    <>
+      <View style={[styles.dot, { backgroundColor: ZONE_ON_EMERALD[zone] }]} />
       <Text style={styles.legendText}>
         <Text style={styles.legendCount}>{formatNumber(count)}</Text>
         {`${NBSP}${label}`}
       </Text>
-    </View>
+    </>
+  );
+  const a11y = `${formatNumber(count)} ${label} (${spoken(range)})`;
+  // Nothing to open for an empty zone: the counter stays plain text.
+  if (!onPress || count === 0) {
+    return (
+      <View style={[styles.legendItem, onPress ? styles.legendItemPressable : null, onPress && narrow ? styles.legendItemNarrow : null]} accessible accessibilityLabel={a11y}>
+        {body}
+      </View>
+    );
+  }
+  return (
+    <PressableScale
+      onPress={() => onPress(zone)}
+      scaleTo="chip"
+      haptic="select"
+      hitSlop={{ top: 6, bottom: 6, left: 2, right: 2 }}
+      accessibilityRole="button"
+      accessibilityLabel={`${a11y}. Voir ces produits`}
+      style={[styles.legendItem, styles.legendItemPressable, narrow ? styles.legendItemNarrow : null, styles.legendItemButton]}
+      testID={`hero-zone-${zone}`}
+    >
+      {body}
+    </PressableScale>
   );
 }
 
@@ -249,6 +298,13 @@ const styles = StyleSheet.create({
   track: { height: 8, borderRadius: 4, backgroundColor: palette.onEmerald, opacity: 0.16 },
   legend: { flexDirection: 'row', flexWrap: 'wrap', columnGap: 14, rowGap: 6, marginTop: 10, minHeight: 18 },
   legendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  // Counters as buttons: a faint pill on emerald, 32 tall (44 with the hit slop).
+  // A 4 px gap (hit slops meet, never overlap) keeps « 1 à revoir » on the row at 360 px.
+  legendPressable: { columnGap: 4, rowGap: 6, marginTop: 8, minHeight: 32 },
+  legendLoading: { alignItems: 'center' },
+  legendItemPressable: { minHeight: 32, paddingHorizontal: 10, borderRadius: 16 },
+  legendItemNarrow: { paddingHorizontal: 9 },
+  legendItemButton: { backgroundColor: palette.onEmeraldWash },
   dot: { width: 8, height: 8, borderRadius: 4 },
   legendText: { ...type.footnote, color: palette.onEmerald2 },
   legendCount: { fontFamily: fontFamily.bold, color: palette.onEmerald },

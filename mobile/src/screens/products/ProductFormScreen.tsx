@@ -38,6 +38,7 @@ import { fontFamily, marginColors, palette, type } from '../../theme';
 import { haptics } from '../../theme/haptics';
 import { NBSP, formatCoeff, plural } from '../../utils/format';
 import { getMarginZone, useMarginThresholds } from '../../utils/marginThresholds';
+import { usePriceRounding } from '../../utils/priceRounding';
 import { afterProductDeleted, afterProductSaved } from '../../navigation/routes';
 import { useOfflineQuery } from '../../hooks/useOfflineQuery';
 import { useAuthStore } from '../../store/auth.store';
@@ -162,6 +163,7 @@ export function ProductFormScreen({ route, navigation }: Props) {
   const queryClient = useQueryClient();
   const { width: winW } = useWindowDimensions();
   const thresholds = useMarginThresholds();
+  const rounding = usePriceRounding();
   const rates = useRatesStore((s) => s.rates);
   const seuilSS = useSystemParamsStore((s) => {
     const p = s.params.find((x) => x.key === 'seuil_cotisation_ss');
@@ -354,7 +356,7 @@ export function ProductFormScreen({ route, navigation }: Props) {
   const d = useMemo(() => derive(values, servingTypes, rates, seuilSS), [values, servingTypes, rates, seuilSS]);
 
   // Suggested prices follow the purchase price; Marge / Coeff services keep their value.
-  const costKey = `${d.costKnown}|${d.purchaseHT}|${d.containerCl}|${values.tvaRate}|${values.customDoseCl}|${servingTypes.length}|${thresholds.good}`;
+  const costKey = `${d.costKnown}|${d.purchaseHT}|${d.containerCl}|${values.tvaRate}|${values.customDoseCl}|${servingTypes.length}|${thresholds.good}|${rounding}`;
   useEffect(() => {
     if (!hydrated) return;
     setValues((v) => {
@@ -363,7 +365,7 @@ export function ProductFormScreen({ route, navigation }: Props) {
       for (const [k, s] of Object.entries(v.services)) {
         const cost = d.costOf(k);
         let price = s.price;
-        if (!s.touched) price = suggestedPrice(cost, v.tvaRate, thresholds.good);
+        if (!s.touched) price = suggestedPrice(cost, v.tvaRate, thresholds.good, rounding);
         else if (s.mode !== 'price' && s.modeValue !== null && cost > 0) price = round2(priceFromMode(s.mode, s.modeValue, cost, v.tvaRate));
         if (price > 0 && Math.abs(price - s.price) > 0.001) {
           services[k] = { ...s, price };

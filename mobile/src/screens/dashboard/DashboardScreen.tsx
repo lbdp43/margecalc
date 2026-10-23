@@ -3,11 +3,16 @@
  *
  *   HeroHeader  avatar · « Bonjour, » / « Bonsoir, » + établissement · Aide & retours
  *               « Marge moyenne » count-up · gap to the objective · distribution bar
- *   StatTiles   Produits · Meilleur produit (overlap the hero by 28)
+ *               · the three counters, each opening Mes produits on its zone
+ *   Tiles       Produits · « À revoir » (count, worst product, « Corriger » → the
+ *               quick price sheet at the suggested price, here on the dashboard)
+ *               or « Tout au-dessus de 50 % » + the best product (overlap the hero by 28)
  *   Install     « Installer MargeBar Pro » (web only, while installable; InstallAppCardSlot)
  *   Card        « Calculer les droits d’alcool » → Calculateur (Tableau de bord stack)
- *   Meters      « Marge par catégorie » with objective ticks + legend
- *   Top & flop  SegmentedControl (split at the objective), rows open the product
+ *   Meters      « Marge par catégorie » with objective ticks + legend; a row opens
+ *               Mes produits on that category, weakest first
+ *   Top & flop  SegmentedControl (split at the objective), rows open the product;
+ *               « Tout voir » opens Mes produits sorted like the side on screen
  *
  * States:
  * - loading: skeleton tiles with the real tiles' height, then the real duty
@@ -50,13 +55,15 @@ import { useAuthStore } from '../../store/auth.store';
 import { useRatesStore } from '../../store/rates.store';
 import { useSystemParamsStore } from '../../store/systemParams.store';
 import { formatDegree, formatEuro, formatVolumeCl, NBSP } from '../../utils/format';
-import { useMarginThresholds } from '../../utils/marginThresholds';
+import { getMarginZone, MarginZone, useMarginThresholds } from '../../utils/marginThresholds';
 import { goToProduct, goToProductList, openDutyCalculator, openInvoiceScan, openProductForm } from '../../navigation/routes';
+import { fixTarget, PriceEditSheet, PriceEditTarget } from '../products/list/PriceEditSheet';
+import { zoneParam } from '../products/list/listModel';
 import { DashboardHero, HeroKpi } from './parts/DashboardHero';
 import { KpiTiles, kpiTileLayout } from './parts/KpiTiles';
 import { DutyActionCard } from './parts/DutyActionCard';
 import { CategoryMeters } from './parts/CategoryMeters';
-import { TopFlopCard } from './parts/TopFlopCard';
+import { Mode as TopFlopMode, TopFlopCard } from './parts/TopFlopCard';
 import { averageMargin, byMargin, categoryStats, errorMessage, greeting as greetingFor, topFlop, withMargin } from './parts/dashboardData';
 import { calcPrefill, loadSavedCalcs } from './parts/savedCalcs';
 import type { SavedCalc } from '../products/form/SavedCalcsSheet';
@@ -74,6 +81,8 @@ export function DashboardScreen() {
   const rateCount = rates.length || 13;
   const year = useSystemParamsStore((s) => s.params.find((p) => p.key === 'tarif_annee')?.value || '2026');
   const [feedbackOpen, setFeedbackOpen] = useState(false);
+  // « Corriger »: the quick price sheet, opened right here.
+  const [fix, setFix] = useState<{ id: string; target: PriceEditTarget } | null>(null);
   // The calculation made before signing up (« Gardez ce calcul »), newest first.
   const [savedCalc, setSavedCalc] = useState<SavedCalc | null>(null);
   useFocusEffect(
@@ -102,13 +111,18 @@ export function DashboardScreen() {
     const avg = averageMargin(list);
     const counts = countByZone(list, thresholds);
     const { top, flop } = topFlop(list, thresholds.good, 5);
+    const sorted = byMargin(list);
+    const lowest = sorted[sorted.length - 1] ?? null;
     return {
       list,
       kpi: avg !== null ? ({ avg, total: list.length, counts } as HeroKpi) : null,
       stats: categoryStats(list),
       top,
       flop,
-      best: byMargin(list)[0] ?? null,
+      best: sorted[0] ?? null,
+      // The most urgent product: the lowest margin, when it is under the alert threshold.
+      worst: lowest && getMarginZone(lowest.computed.marginPercent, thresholds) === 'red' ? lowest : null,
+      toReview: counts.red,
     };
   }, [hasData, products, thresholds]);
 
@@ -124,7 +138,26 @@ export function DashboardScreen() {
 
   // Navigation callbacks (stable, rows are memoised)
   const openProduct = useCallback((id: string) => goToProduct(navigation, id), [navigation]);
-  const openList = useCallback(() => goToProductList(navigation), [navigation]);
+  // « Produits · 14 suivis » and « Détails »: every product, whatever filter an
+  // earlier counter or category row left on the list (with the user's own sort).
+  const openList = useCallback(() => goToProductList(navigation, { reset: '1' }), [navigation]);
+  // The counters, the category rows and « Tout voir » open the list filtered and sorted (lot 1 n° 2).
+  const openZone = useCallback(
+    (zone: MarginZone) => goToProductList(navigation, { zone: zoneParam(zone), sort: zone === 'green' ? 'marginDesc' : 'marginAsc' }),
+    [navigation],
+  );
+  const openCategory = useCallback((key: string) => goToProductList(navigation, { category: key, sort: 'marginAsc' }), [navigation]);
+  const seeAll = useCallback(
+    (mode: TopFlopMode) => goToProductList(navigation, { sort: mode === 'flop' ? 'marginAsc' : 'marginDesc' }),
+    [navigation],
+  );
+  const openFix = useCallback(
+    (p: ProductWithMargin) => {
+      const target = fixTarget(p, thresholds);
+      if (target) setFix({ id: p.id, target });
+    },
+    [thresholds],
+  );
   const openCalculator = useCallback(() => openDutyCalculator(navigation), [navigation]);
   const openFeedback = useCallback(() => setFeedbackOpen(true), []);
   const scanBottle = useCallback(() => openProductForm(navigation, {}), [navigation]);
@@ -147,7 +180,17 @@ export function DashboardScreen() {
   // What overlaps the hero, above the duty card (null: the duty card does).
   const lead =
     state === 'ready' ? (
-      <KpiTiles count={view.list.length} categories={view.stats.length} best={view.best} onProducts={openList} onBest={openProduct} />
+      <KpiTiles
+        count={view.list.length}
+        categories={view.stats.length}
+        best={view.best}
+        worst={view.worst}
+        toReview={view.toReview}
+        thresholds={thresholds}
+        onProducts={openList}
+        onBest={openProduct}
+        onFix={openFix}
+      />
     ) : state === 'loading' ? (
       <View style={{ height: tiles.height }}>{showSkeleton ? <SkeletonTiles height={tiles.height} flexBest={tiles.flexBest} /> : null}</View>
     ) : state === 'empty' ? (
@@ -191,6 +234,7 @@ export function DashboardScreen() {
         state={state === 'offline' ? 'error' : state}
         onFeedback={openFeedback}
         onScan={scanBottle}
+        onZone={openZone}
         paddingBottom={OVERLAP + 20}
       />
 
@@ -208,12 +252,12 @@ export function DashboardScreen() {
           <>
             <ErrorBoundary fallbackMessage="La marge par catégorie n’a pas pu s’afficher.">
               <FadeIn delay={240} style={styles.section}>
-                <CategoryMeters stats={view.stats} thresholds={thresholds} delay={300} onDetails={openList} />
+                <CategoryMeters stats={view.stats} thresholds={thresholds} delay={300} onDetails={openList} onOpen={openCategory} />
               </FadeIn>
             </ErrorBoundary>
             <ErrorBoundary fallbackMessage="Le classement n’a pas pu s’afficher.">
               <FadeIn delay={300} style={styles.section}>
-                <TopFlopCard top={view.top} flop={view.flop} thresholds={thresholds} onOpen={openProduct} onSeeAll={openList} />
+                <TopFlopCard top={view.top} flop={view.flop} thresholds={thresholds} onOpen={openProduct} onSeeAll={seeAll} />
               </FadeIn>
             </ErrorBoundary>
           </>
@@ -242,6 +286,12 @@ export function DashboardScreen() {
       </View>
 
       <FeedbackModal visible={feedbackOpen} onClose={() => setFeedbackOpen(false)} screenName="Tableau de bord" />
+      <PriceEditSheet
+        // The latest copy from the list: after a save the tile moves on to the next product.
+        product={fix ? view.list.find((p) => p.id === fix.id) ?? null : null}
+        target={fix?.target ?? null}
+        onClose={() => setFix(null)}
+      />
     </Screen>
   );
 }

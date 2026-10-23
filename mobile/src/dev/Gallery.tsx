@@ -49,6 +49,7 @@ import {
   Slider,
   StatTile,
   StickyActionBar,
+  SuggestedPriceChips,
   SwapFade,
   TextField,
   toast,
@@ -128,6 +129,7 @@ function Section({ title, children, meta }: { title: string; children: React.Rea
 
 export function Gallery() {
   const [mode, setMode] = useState<'price' | 'margin' | 'coeff'>('price');
+  const [legendZone, setLegendZone] = useState<'green' | 'orange' | 'red' | null>(null);
   const [price, setPrice] = useState(9);
   const [degree, setDegree] = useState(40);
   const [dragging, setDragging] = useState(false);
@@ -363,9 +365,7 @@ export function Gallery() {
             zones={[{ to: (PURCHASE_HT / DOSES / 0.5) * 1.2, color: 'bad' }, { to: objectivePrice, color: 'warn' }, { color: 'good' }]}
             accessibilityLabel="Prix de vente TTC"
           />
-          <Text style={[type.footnote, { color: palette.text2, marginTop: 10 }]}>
-            Dès {formatEuro(objectivePrice)} TTC, ce verre dépasse 65 % de marge.
-          </Text>
+          <SuggestedPriceChips costHT={PURCHASE_HT / DOSES} tva={0.2} price={price} onSelect={setPrice} style={{ marginTop: 18 }} testID="gallery-suggestions" />
         </Card>
         <ResultGrid>
           <ResultTile label="Prix TTC" value={formatEuro(price)} caption="5 cl" />
@@ -508,6 +508,7 @@ export function Gallery() {
 
       <Section title="Produits" meta="appui long = actions">
         <MarginLegend counts={countByZone(DEMO_PRODUCTS)} />
+        <MarginLegend counts={countByZone(DEMO_PRODUCTS)} selected={legendZone} onSelect={(z) => setLegendZone((cur) => (cur === z ? null : z))} />
         {DEMO_PRODUCTS.map((p) => (
           <ProductCard key={p.id} product={p} onPress={() => toast.info(p.name)} onLongPress={() => setActionsFor(p)} testID={`card-${p.id}`} />
         ))}

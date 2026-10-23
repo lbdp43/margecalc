@@ -66,6 +66,14 @@ export function assertServingsFit(servings: { name: string; volumeCl: number; se
     { details: over.map((s) => ({ field, label: s.name, message: `Le service « ${s.name} » (${fmtCl(s.volumeCl)}) dépasse la contenance (${fmtCl(containerVolumeCl)}).`, code: 'too_big', ...(s.servingTypeId ? { servingTypeId: s.servingTypeId } : {}) })) });
 }
 
+/** A serving type as `checkServings` needs it. */
+export interface ServingTypeRow {
+  id: string;
+  name: string;
+  volumeCl: number;
+  sortOrder: number;
+}
+
 /**
  * Check a full set of servings before writing anything:
  * - every serving type must belong to the user,
@@ -80,13 +88,26 @@ export async function validateServings(
   opts: { containerVolumeCl?: number } = {},
   db: Tx | typeof prisma = prisma,
 ): Promise<ValidatedServing[]> {
+  const ids = [...new Set(servings.map((s) => s.servingTypeId))];
+  if (!ids.length) return [];
+  const types = await db.servingType.findMany({ where: { userId, id: { in: ids } } });
+  return checkServings(servings, new Map(types.map((t) => [t.id, t])), opts);
+}
+
+/**
+ * Same checks as `validateServings`, against serving types already loaded (`typeById` holds the
+ * user's types; a type missing from it is « introuvable »). Throws an HttpError 400.
+ */
+export function checkServings(
+  servings: ServingInput[],
+  typeById: Map<string, ServingTypeRow>,
+  opts: { containerVolumeCl?: number } = {},
+): ValidatedServing[] {
   const byId = new Map<string, ServingInput>();
   for (const s of servings) byId.set(s.servingTypeId, s);
   const ids = [...byId.keys()];
   if (!ids.length) return [];
 
-  const types = await db.servingType.findMany({ where: { userId, id: { in: ids } } });
-  const typeById = new Map(types.map((t) => [t.id, t]));
   const unknown = ids.filter((id) => !typeById.has(id));
   if (unknown.length) {
     throw new HttpError(400, unknown.length > 1
@@ -98,8 +119,8 @@ export async function validateServings(
   if (zero.length) {
     const names = zero.map((id) => typeById.get(id)!.name);
     throw new HttpError(400, names.length > 1
-      ? `Indiquez un prix de vente supérieur à 0 € pour les services : ${names.join(', ')}.`
-      : `Indiquez un prix de vente supérieur à 0 € pour le service « ${names[0]} ».`,
+      ? `Indiquez un prix de vente supérieur à 0 € pour les services : ${names.join(', ')}.`
+      : `Indiquez un prix de vente supérieur à 0 € pour le service « ${names[0]} ».`,
       { details: zero.map((id) => ({ field: 'servings', label: typeById.get(id)!.name, message: `Prix de vente manquant pour « ${typeById.get(id)!.name} ».`, code: 'too_small', servingTypeId: id })) });
   }
 
@@ -124,7 +145,8 @@ export async function validateServings(
  * Replace the product's servings with exactly `servings` (inside `tx`) and keep the product's
  * headline price in sync with the primary serving (lowest sortOrder):
  * sellingPriceTTC, doseVolumeCl and marginMode = fix_selling_price.
- * An empty list removes every serving and leaves the product price unchanged.
+ * A non-empty set is a selling price set by the owner: it also clears `priceToReview`.
+ * An empty list removes every serving and leaves the product price (and the flag) unchanged.
  */
 export async function replaceServings(tx: Tx, productId: string, servings: ValidatedServing[]): Promise<void> {
   await lockProduct(tx, productId);
@@ -142,7 +164,7 @@ export async function replaceServings(tx: Tx, productId: string, servings: Valid
   if (primary) {
     await tx.product.update({
       where: { id: productId },
-      data: { sellingPriceTTC: primary.sellingPriceTTC, doseVolumeCl: primary.volumeCl, marginMode: 'fix_selling_price' },
+      data: { sellingPriceTTC: primary.sellingPriceTTC, doseVolumeCl: primary.volumeCl, marginMode: 'fix_selling_price', priceToReview: false },
     });
   }
 }

@@ -8,7 +8,8 @@ import { StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Button, Card, FadeIn, NavBar, Screen, StickyActionBar } from '../../components/ui';
 import { palette, type } from '../../theme';
-import { plural } from '../../utils/format';
+import { formatNumber, plural } from '../../utils/format';
+import { QUOTA_SHOWN_BELOW } from '../../services/scan.service';
 import { InvoiceFrame } from './InvoiceFrame';
 import type { PickSource } from './photo';
 
@@ -84,10 +85,11 @@ export function CaptureStep({ quota, busy, onPick, onManual }: CaptureStepProps)
         <View style={styles.quota}>
           <Ionicons name={exhausted ? 'time-outline' : 'shield-checkmark-outline'} size={16} color={palette.text3} />
           <Text style={styles.quotaText}>
-            {quota
+            {/* The count only matters near the limit: « 99 999 restantes » read like a technical value. */}
+            {quota && quota.remaining < QUOTA_SHOWN_BELOW
               ? quota.remaining > 0
                 ? `${plural(quota.remaining, 'lecture gratuite restante', 'lectures gratuites restantes')} aujourd’hui`
-                : `Les ${quota.limit} lectures gratuites du jour sont utilisées · de nouveau possible demain`
+                : `Les ${formatNumber(quota.limit)} lectures gratuites du jour sont utilisées · de nouveau possible demain`
               : 'Lecture gratuite · la photo n’est pas conservée'}
           </Text>
         </View>

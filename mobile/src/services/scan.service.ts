@@ -23,6 +23,9 @@ export function isScanCancelled(err: any): boolean {
   return !!err && (err.name === 'CanceledError' || err.code === 'ERR_CANCELED' || err.name === 'AbortError');
 }
 
+/** Below this many reads left today, the scan screens say how many remain (above: just « Lecture gratuite »). */
+export const QUOTA_SHOWN_BELOW = 10;
+
 export interface ScanQuota {
   limit: number;
   used: number;

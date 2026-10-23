@@ -1,8 +1,9 @@
 import { Router, Request, Response } from 'express';
 import { z, ZodError } from 'zod';
 import { authenticate } from '../middleware/auth';
-import { userWriteLimiter } from '../middleware/userRateLimit';
+import { invoicePreviewLimiter, userWriteLimiter } from '../middleware/userRateLimit';
 import * as productService from '../services/product.service';
+import { applyPriceBatch, BATCH_MAX_UPDATES } from '../services/priceBatch.service';
 import { CreateProductInput, PRODUCT_IMAGE_MAX_CHARS, PRODUCT_THUMBNAIL_MAX_CHARS } from '@margebar/shared';
 import { formatZodError, sendKnownError, validationErrorBody } from '../utils/validation';
 
@@ -111,6 +112,8 @@ const num = (v: unknown) => {
 };
 const lineNumber = (schema: z.ZodNumber) => z.preprocess(num, schema.nullable().optional());
 
+const PRODUCT_TO_UPDATE_UNKNOWN = 'Le produit à mettre à jour est introuvable. Rechargez puis réessayez.';
+
 const importLineSchema = z.object({
   name: z.string({ required_error: 'Le nom du produit est obligatoire.' }).trim().min(1, 'Le nom du produit est obligatoire.').max(200, 'Le nom du produit est trop long (200 caractères maximum).'),
   categoryId: z.string().uuid('Catégorie inconnue.').nullable().optional(),
@@ -123,30 +126,60 @@ const importLineSchema = z.object({
   alcoholDegree: lineNumber(z.number().min(0).max(100)),
   supplier: z.string().trim().max(200).nullable().optional(),
   quantity: lineNumber(z.number().min(0).max(1_000_000)),
+  /** Lot 2: update THIS product (must belong to the user) instead of matching. */
+  productId: z.string({ invalid_type_error: PRODUCT_TO_UPDATE_UNKNOWN }).uuid(PRODUCT_TO_UPDATE_UNKNOWN).nullable().optional(),
+  /** Lot 2: create a new product even if a match exists. */
+  createNew: z.boolean().nullable().optional(),
+}, { invalid_type_error: 'Ligne illisible : chaque ligne doit décrire un produit (nom, prix…).' }).refine((l) => !(l.productId && l.createNew), {
+  message: 'Choisissez entre mettre à jour un produit existant et créer un nouveau produit.',
+  path: ['createNew'],
 });
 
 const importSchema = z.object({
   supplier: z.string().trim().max(200).nullable().optional(),
-  lines: z.array(z.unknown(), { required_error: 'Aucune ligne à importer.' })
+  lines: z.array(z.unknown(), { required_error: 'Aucune ligne à importer.', invalid_type_error: 'Aucune ligne à importer.' })
     .min(1, 'Aucune ligne à importer.')
     .max(200, 'Trop de lignes à importer en une fois (200 maximum).'),
+  /** POST /import only: also link lines to a 'fuzzy' look-alike without asking (default false). */
+  autoLinkFuzzy: z.boolean().optional(),
+}, { invalid_type_error: 'Requête illisible : envoyez les lignes de la facture.', required_error: 'Requête illisible : envoyez les lignes de la facture.' });
+
+function parseImportLines(lines: unknown[]): productService.ParsedImportLine[] {
+  return lines.map((raw, index) => {
+    const rawName = typeof (raw as any)?.name === 'string' ? String((raw as any).name).slice(0, 200) : '';
+    const parsed = importLineSchema.safeParse(raw);
+    if (!parsed.success) return { index, line: null, error: formatZodError(parsed.error), rawName };
+    return { index, line: parsed.data, rawName };
+  });
+}
+
+/**
+ * POST /api/products/import/preview  { supplier?, lines: ImportProductLine[] } → 200 ImportPreviewResult.
+ * Writes nothing: for each line, the product POST /import would update (exact, alias or fuzzy
+ * match), up to 3 look-alike candidates and the matched product's current price and margin.
+ * CPU work: 60 previews per 15 min per user; past 5 s, 503 { code: 'busy', retryable: true }.
+ */
+router.post('/import/preview', invoicePreviewLimiter, async (req: Request, res: Response) => {
+  try {
+    const body = importSchema.parse(req.body);
+    res.json(await productService.previewImport(req.user!.userId, body.supplier, parseImportLines(body.lines)));
+  } catch (err) {
+    handleError(res, err, 'Erreur serveur lors de l’analyse de la facture');
+  }
 });
 
 /**
- * POST /api/products/import  { supplier?, lines: ImportProductLine[] }
+ * POST /api/products/import  { supplier?, lines: ImportProductLine[], autoLinkFuzzy? }
+ * A 'fuzzy' look-alike is only linked when the user confirmed it (line.productId) or the client
+ * passes autoLinkFuzzy: true; otherwise such a line creates a new product, as the review showed it.
  * → 200 ImportProductsResult (at least one line imported) | 422 { error, ...ImportProductsResult } (none).
  * Each line is validated and written on its own: errors are reported per line.
  */
 router.post('/import', userWriteLimiter, async (req: Request, res: Response) => {
   try {
     const body = importSchema.parse(req.body);
-    const lines = body.lines.map((raw, index) => {
-      const rawName = typeof (raw as any)?.name === 'string' ? String((raw as any).name).slice(0, 200) : '';
-      const parsed = importLineSchema.safeParse(raw);
-      if (!parsed.success) return { index, line: null, error: formatZodError(parsed.error), rawName };
-      return { index, line: parsed.data, rawName };
-    });
-    const result = await productService.importProducts(req.user!.userId, body.supplier, lines);
+    const lines = parseImportLines(body.lines);
+    const result = await productService.importProducts(req.user!.userId, body.supplier, lines, { autoLinkFuzzy: body.autoLinkFuzzy === true });
     if (result.createdCount + result.updatedCount === 0) {
       const firstError = result.results.find((r) => !r.ok);
       const detail = firstError && !firstError.ok ? ` Ligne ${firstError.index + 1}${firstError.name ? ` (${firstError.name})` : ''} : ${firstError.error}` : '';
@@ -156,6 +189,28 @@ router.post('/import', userWriteLimiter, async (req: Request, res: Response) => 
     res.json(result);
   } catch (err) {
     handleError(res, err, 'Erreur serveur lors de l’import');
+  }
+});
+
+// --- Batch price update -------------------------------------------------------
+
+const batchSchema = z.object({
+  updates: z.array(z.unknown(), { required_error: 'Aucun prix à modifier.', invalid_type_error: 'Aucun prix à modifier.' })
+    .min(1, 'Aucun prix à modifier.')
+    .max(BATCH_MAX_UPDATES, `Trop de produits en une fois (${BATCH_MAX_UPDATES} maximum).`),
+}, { invalid_type_error: 'Requête illisible : envoyez la liste des prix à modifier.', required_error: 'Requête illisible : envoyez la liste des prix à modifier.' });
+
+/**
+ * POST /api/products/prices/batch  { updates: BatchPriceUpdate[] } → 200 BatchPricesResult
+ * One transaction: every update is applied, or none (400 naming the products to fix).
+ * Post `{ updates: previous }` back to undo.
+ */
+router.post('/prices/batch', userWriteLimiter, async (req: Request, res: Response) => {
+  try {
+    const { updates } = batchSchema.parse(req.body);
+    res.json(await applyPriceBatch(req.user!.userId, updates));
+  } catch (err) {
+    handleError(res, err, 'Erreur serveur : aucun prix n’a été modifié.');
   }
 });
 

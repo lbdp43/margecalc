@@ -11,6 +11,9 @@ import type { SliderZone } from '../../../components/ui';
 import type { MarginThresholds } from '../../../utils/marginThresholds';
 import { NBSP, clamp, formatCoeff, formatEuro, formatNumber, formatPercent, formatVolumeCl } from '../../../utils/format';
 import type { PriceMode } from '../../../services/draft.service';
+import { suggestedPrice as suggestedPriceFor } from '../../../utils/pricing';
+import { soldWhole } from '../../../utils/servings';
+import { getPriceRounding } from '../../../utils/priceRounding';
 
 export type { PriceMode };
 
@@ -124,15 +127,14 @@ export function priceForMargin(costHT: number, tva: number, marginPct: number): 
 
 /**
  * Suggested price when a service is switched on (RC2: never 0): the objective
- * price (the one the hint names) rounded up to a bar-friendly step, 0,10 €
- * under 5 € and 0,50 € above, so « Dès 7,96 € TTC… » suggests 8,00 €.
- * Without a purchase price: 5,00 €. Never above the input's maximum.
+ * price rounded UP to the user's « Arrondi des prix » step (utils/pricing), the
+ * very price the first « Prix conseillés » chip offers. Without a purchase
+ * price: 5,00 €. Never above the input's maximum.
  */
-export function suggestedPrice(costHT: number, tva: number, goodPct: number): number {
+export function suggestedPrice(costHT: number, tva: number, goodPct: number, rounding: number = getPriceRounding()): number {
   if (!(costHT > 0)) return 5;
-  const p = priceForMargin(costHT, tva, goodPct);
-  const step = p < 5 ? 0.1 : 0.5;
-  return round2(clamp(Math.ceil(p / step - 1e-9) * step, 0.1, PRICE_MAX));
+  const p = suggestedPriceFor(costHT, tva, goodPct, rounding);
+  return round2(clamp(p ?? 5, 0.1, PRICE_MAX));
 }
 
 /** Margin result of one service (null when it cannot be computed). */
@@ -280,8 +282,8 @@ export function containerNoun(cl: number): string {
   return 'bouteille';
 }
 
-/** True when one dose is the whole container (a can, a bottle sold as is). */
-export const soldWhole = (containerCl: number, doseCl: number) => containerCl > 0 && doseCl > 0 && doseCl >= containerCl;
+/** True when one dose is the whole container (a can, a bottle sold as is). Lives in utils/servings (the kit uses it too). */
+export { soldWhole };
 
 /** « 14 verres par bouteille », « ≈ 23 shots par bouteille », « Vendu à l’unité ». */
 export function dosesSentence(containerCl: number, doseCl: number, noun: ServiceNoun): string | null {

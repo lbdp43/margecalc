@@ -12,11 +12,16 @@
  *      distinguishable from the original) + margin Badge, top-aligned
  *   2. meta « Catégorie · 70 cl · 40° » (only the category shortens) + gain per dose « +5,18 €/dose »
  *      in the margin colour
- *   3. PriceTag of the primary service (lowest sortOrder, whose figures are
- *      `product.computed`) + « +1 » chip for the other services, and the
- *      purchase price « Achat 18,50 € HT » on the right. The service
- *      name is never truncated (the row wraps if it ever must). Margin colours use the user's
- * thresholds (or `thresholds`). Mirrors SkeletonProductCard.
+ *   3. a PriceTag for EVERY service, primary first (« Verre de vin 12 cl · 7,00 € »
+ *      alone; « Demi · 4,50 € » « Pinte · 8,00 € » side by side when there are
+ *      several, see `allPrices`: « c’est combien la pinte ? » reads off the
+ *      list), then the purchase price « Achat 18,50 € HT », right-aligned. The
+ *      row wraps (pills first, the purchase price on its own line when it no
+ *      longer fits); a service name is never truncated. Margin colours use the user's
+ * thresholds (or `thresholds`). Mirrors SkeletonProductCard (one service).
+ *
+ * Names keep « 33 cl », « 30 L », « 40° » on one line (`keepUnits`), so
+ * « Chimay Bleue 33 cl » never wraps between « 33 » and « cl ».
  */
 import React from 'react';
 import { Image, StyleProp, StyleSheet, Text, View, ViewStyle } from 'react-native';
@@ -25,6 +30,7 @@ import { fontFamily, marginColors, palette, radius, type } from '../../theme';
 import { haptics } from '../../theme/haptics';
 import { formatEuro, formatNumber, formatPercent, formatVolumeCl, NBSP } from '../../utils/format';
 import { getMarginZone, MarginThresholds, useMarginThresholds } from '../../utils/marginThresholds';
+import { doseLabel } from '../../utils/servings';
 import { Badge } from './Badge';
 import { BottomSheet } from './BottomSheet';
 import { Card } from './Card';
@@ -63,6 +69,37 @@ function compactDegree(deg: number): string {
   return `${formatNumber(deg, Number.isInteger(deg) ? 0 : 1)}°`;
 }
 
+/**
+ * Names with their units glued (NBSP): « Chimay Bleue 33 cl », « fût 30 L »,
+ * « 1 L » never break between the number and the unit.
+ */
+export function keepUnits(name: string): string {
+  return name.replace(/(\d)\s+(cl|ml|l|L|°|%)(?=$|[\s),.;:])/g, `$1${NBSP}$2`);
+}
+
+/**
+ * Every price of a product, primary first: each service, or the product dose.
+ * `label` is the full « Demi 25 cl »; `short` is what a card prints: the full
+ * label for a single price, the service name alone when there are several
+ * (« Demi · 4,50 € » « Pinte · 8,00 € »: shorter pills, so two of them share a
+ * line on most phones; with the tighter multi-price pills of ProductCard they
+ * do down to 360 px), unless two services share a name (then the volume tells
+ * them apart).
+ */
+export function allPrices(product: ProductWithMargin): { key: string; label: string; short: string; price: number }[] {
+  const list = sortedServings(product).filter((s) => s.servingType);
+  if (!list.length) {
+    const { label, price } = primaryPrice(product);
+    return [{ key: 'dose', label, short: label, price }];
+  }
+  const names = list.map((s) => s.servingType!.name.replace(/\s*\([^)]*\)\s*$/, '').trim() || s.servingType!.name);
+  const unique = new Set(names.map((n) => n.toLowerCase())).size === names.length;
+  return list.map((s, i) => {
+    const label = servingLabel(s.servingType!.name, s.servingType!.volumeCl);
+    return { key: s.servingTypeId, label, short: list.length > 1 && unique ? names[i] : label, price: s.sellingPriceTTC };
+  });
+}
+
 /** Label + price of what the card shows: the primary service, or the product dose. */
 export function primaryPrice(product: ProductWithMargin): { label: string; price: number; extra: number } {
   const servings = sortedServings(product);
@@ -70,7 +107,8 @@ export function primaryPrice(product: ProductWithMargin): { label: string; price
   if (first?.servingType) {
     return { label: servingLabel(first.servingType.name, first.servingType.volumeCl), price: first.sellingPriceTTC, extra: servings.length - 1 };
   }
-  return { label: `Dose${NBSP}${formatVolumeCl(product.doseVolumeCl)}`, price: product.computed?.sellingPriceTTC ?? product.sellingPriceTTC ?? 0, extra: 0 };
+  // « À l’unité » for a can or a bottle sold whole (same name as the quick sheet and the detail).
+  return { label: doseLabel(product.containerVolumeCl, product.doseVolumeCl), price: product.computed?.sellingPriceTTC ?? product.sellingPriceTTC ?? 0, extra: 0 };
 }
 
 // ─── PriceTag ──────────────────────────────────────────────────────────────
@@ -79,13 +117,15 @@ export interface PriceTagProps {
   label: string;
   /** TTC price. */
   price: number;
+  /** Default « label : price ». */
+  accessibilityLabel?: string;
   style?: StyleProp<ViewStyle>;
 }
 
 /** Pill « Verre 12 cl · 7,00 € »: the label is never truncated. */
-export function PriceTag({ label, price, style }: PriceTagProps) {
+export function PriceTag({ label, price, accessibilityLabel, style }: PriceTagProps) {
   return (
-    <View style={[styles.tag, style]} accessible accessibilityLabel={`${label} : ${formatEuro(price)}`}>
+    <View style={[styles.tag, style]} accessible accessibilityLabel={accessibilityLabel ?? `${label} : ${formatEuro(price)}`}>
       <Text style={styles.tagLabel} maxFontSizeMultiplier={1.3}>
         {label}
         <Text style={styles.tagSep}>{`${NBSP}·${NBSP}`}</Text>
@@ -113,10 +153,12 @@ export const ProductCard = React.memo(function ProductCard({ product, thresholds
   const margin = product.computed?.marginPercent ?? 0;
   const zone = getMarginZone(margin, t);
   const gain = product.computed?.marginPerDoseHT ?? 0;
-  const { label, price, extra } = primaryPrice(product);
+  const prices = allPrices(product);
+  // Several services: tighter pills, so « Demi · 4,50 € » « Pinte · 8,00 € » share a line at 360 px.
+  const several = prices.length > 1;
   const category = product.category?.name;
 
-  // Only the category name may be shortened: the volume and degree always stay visible.
+  // Nothing is shortened: the volume and degree stay together, the line wraps after « · ».
   const specs = [formatVolumeCl(product.containerVolumeCl), product.alcoholDegree > 0 ? compactDegree(product.alcoholDegree) : null]
     .filter(Boolean)
     .join(' · ');
@@ -124,7 +166,7 @@ export const ProductCard = React.memo(function ProductCard({ product, thresholds
   const a11y = [
     product.name,
     category,
-    `${formatEuro(price)} ${label}${extra > 0 ? `, et ${extra} autre${extra > 1 ? 's' : ''} service${extra > 1 ? 's' : ''}` : ''}`,
+    prices.map((x) => `${x.label} ${formatEuro(x.price)}`).join(', '),
     `marge ${formatPercent(margin)}, ${marginColors[zone].label}`,
     `achat ${formatEuro(product.purchasePriceHT)} hors taxes`,
   ]
@@ -159,35 +201,30 @@ export const ProductCard = React.memo(function ProductCard({ product, thresholds
         <View style={styles.body}>
           <View style={styles.top}>
             <Text style={styles.name} numberOfLines={2}>
-              {product.name}
+              {keepUnits(product.name)}
             </Text>
             <Badge value={margin} thresholds={t} style={styles.badge} />
           </View>
           <View style={styles.middle}>
-            <View style={styles.metaRow}>
-              {category ? (
-                <Text style={[styles.meta, styles.metaCategory]} numberOfLines={1}>
-                  {category}
-                </Text>
-              ) : null}
-              {specs ? (
-                <Text style={[styles.meta, styles.metaSpecs]} numberOfLines={1}>
-                  {category ? `${NBSP}·${NBSP}${specs}` : specs}
-                </Text>
-              ) : null}
-            </View>
+            {/* Never truncated: a long category (« Ingrédients cocktails ») wraps to a second line. */}
+            <Text style={[styles.meta, styles.metaRow]} numberOfLines={2}>
+              {[category, specs.replace(/ /g, NBSP)].filter(Boolean).join(`${NBSP}· `)}
+            </Text>
             <Text style={[styles.gain, { color: marginColors[zone].fg }]} maxFontSizeMultiplier={1.3}>
               {formatEuro(gain, { sign: true })}
               <Text style={styles.gainUnit}>/dose</Text>
             </Text>
           </View>
-          <View style={styles.bottom}>
-            <PriceTag label={label} price={price} />
-            {extra > 0 ? (
-              <View style={styles.extra} accessibilityLabel={`${extra} autre${extra > 1 ? 's' : ''} service${extra > 1 ? 's' : ''}`}>
-                <Text style={styles.extraText}>+{extra}</Text>
-              </View>
-            ) : null}
+          <View style={[styles.bottom, several ? styles.bottomSeveral : null]}>
+            {prices.map((x) => (
+              <PriceTag
+                key={x.key}
+                label={x.short}
+                price={x.price}
+                accessibilityLabel={`${x.label} : ${formatEuro(x.price)}`}
+                style={several ? styles.tagSeveral : undefined}
+              />
+            ))}
             <Text style={styles.cost} numberOfLines={1} maxFontSizeMultiplier={1.3}>
               Achat <Text style={styles.costValue}>{formatEuro(product.purchasePriceHT)}</Text> HT
             </Text>
@@ -200,18 +237,27 @@ export const ProductCard = React.memo(function ProductCard({ product, thresholds
 
 // ─── ProductActionsSheet ───────────────────────────────────────────────────
 export interface ProductActionsSheetProps {
-  /** The product whose actions are shown; null/undefined = closed. */
-  product?: Pick<ProductWithMargin, 'name'> | null;
+  /**
+   * The product whose actions are shown; null/undefined = closed. With its
+   * purchase price and margin, « Changer le prix » says « Prix conseillé en un
+   * toucher » only when the quick sheet will offer one (a cost, under the objective).
+   */
+  product?: (Pick<ProductWithMargin, 'name'> & Partial<Pick<ProductWithMargin, 'purchasePriceHT' | 'computed'>>) | null;
   onClose: () => void;
+  /** « Changer le prix » (first row): open the quick price sheet. */
+  onChangePrice?: () => void;
   onEdit?: () => void;
   onDuplicate?: () => void;
   /** Ask with dialog.confirm({ destructive: true }) before deleting. */
   onDelete?: () => void;
 }
 
-/** Long-press actions of a product card (Modifier, Dupliquer, Supprimer). */
-export function ProductActionsSheet({ product, onClose, onEdit, onDuplicate, onDelete }: ProductActionsSheetProps) {
+/** Long-press actions of a product card (Changer le prix, Modifier, Dupliquer, Supprimer). */
+export function ProductActionsSheet({ product, onClose, onChangePrice, onEdit, onDuplicate, onDelete }: ProductActionsSheetProps) {
+  const t = useMarginThresholds();
   const [shown, setShown] = React.useState(product ?? null);
+  const margin = shown?.computed?.marginPercent;
+  const suggests = (shown?.purchasePriceHT ?? 0) > 0 && typeof margin === 'number' && margin < t.good;
   React.useEffect(() => {
     if (product) setShown(product);
   }, [product]);
@@ -222,6 +268,16 @@ export function ProductActionsSheet({ product, onClose, onEdit, onDuplicate, onD
   };
   return (
     <BottomSheet visible={!!product} onClose={onClose} title={shown?.name ?? ''} subline="Actions" contentPadding={8}>
+      {onChangePrice ? (
+        <ListRow
+          icon="pricetag-outline"
+          title="Changer le prix"
+          subtitle={suggests ? 'Prix conseillé en un toucher' : undefined}
+          onPress={run(onChangePrice)}
+          right="none"
+          testID="action-price"
+        />
+      ) : null}
       {onEdit ? <ListRow icon="create-outline" title="Modifier" onPress={run(onEdit)} right="none" /> : null}
       {onDuplicate ? <ListRow icon="copy-outline" title="Dupliquer" onPress={run(onDuplicate)} right="none" /> : null}
       {onDelete ? <ListRow icon="trash-outline" title="Supprimer" destructive onPress={run(onDelete)} right="none" /> : null}
@@ -247,11 +303,10 @@ const styles = StyleSheet.create({
   name: { ...type.headline, color: palette.ink, flex: 1, minWidth: 0, marginTop: 2 },
   badge: { flexShrink: 0 },
   middle: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  metaRow: { flex: 1, minWidth: 0, flexDirection: 'row' },
+  metaRow: { flex: 1, minWidth: 0 },
   meta: { ...type.footnote, color: palette.text3, fontVariant: ['tabular-nums'] },
-  metaCategory: { flexShrink: 1, minWidth: 0 },
-  metaSpecs: { flexShrink: 0 },
   bottom: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6, marginTop: 3 },
+  bottomSeveral: { gap: 4 },
   tag: {
     minHeight: 28,
     paddingHorizontal: 10,
@@ -260,19 +315,10 @@ const styles = StyleSheet.create({
     backgroundColor: palette.surface2,
     justifyContent: 'center',
   },
+  tagSeveral: { paddingHorizontal: 8 },
   tagLabel: { ...type.footnote, color: palette.text2, fontVariant: ['tabular-nums'] },
   tagSep: { color: palette.text4 },
   tagPrice: { fontFamily: fontFamily.bold, fontSize: 15, letterSpacing: -0.2, color: palette.ink, fontVariant: ['tabular-nums'] },
-  extra: {
-    height: 24,
-    minWidth: 30,
-    paddingHorizontal: 7,
-    borderRadius: 12,
-    backgroundColor: palette.em50,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  extraText: { ...type.footnoteStrong, color: palette.em700, fontVariant: ['tabular-nums'] },
   // Purchase price, right-aligned on the price row (moves under it when the row is full).
   cost: { ...type.footnote, color: palette.text3, fontVariant: ['tabular-nums'], marginLeft: 'auto' },
   costValue: { ...type.footnoteStrong, color: palette.text2 },

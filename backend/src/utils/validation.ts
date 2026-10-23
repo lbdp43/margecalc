@@ -30,6 +30,9 @@ const FIELD_LABELS: Record<string, string> = {
   thumbnailUrl: 'Miniature de la photo',
   quantity: 'Quantité',
   lines: 'Lignes',
+  createNew: 'Nouveau produit',
+  updates: 'Prix à modifier',
+  priceToReview: 'À vérifier',
   // servings
   servings: 'Services',
   servingTypeId: 'Service',
@@ -77,7 +80,12 @@ export function fieldLabel(path: (string | number)[]): string {
   return last === undefined ? 'Données' : String(last);
 }
 
-const fmtNum = (n: number | bigint) => String(n).replace('.', ',');
+/** 100000 → « 100 000 », 0.5 → « 0,5 » (NBSP groups, like the app's format.ts). */
+const fmtNum = (n: number | bigint) => {
+  const [int, dec] = String(n).split('.');
+  const grouped = int.replace(/\B(?=(\d{3})+(?!\d))/g, '\u00a0');
+  return dec ? `${grouped},${dec}` : grouped;
+};
 
 function typeName(t: string): string {
   switch (t) {

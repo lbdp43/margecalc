@@ -14,3 +14,17 @@ export const userWriteLimiter = rateLimit({
   keyGenerator: (req: Request) => (req.user?.userId ? `user:${req.user.userId}` : `ip:${ipKeyGenerator(req.ip || '0.0.0.0')}`),
   message: { error: 'Trop de modifications, réessayez dans quelques minutes.' },
 });
+
+/**
+ * Invoice preview (POST /api/products/import/preview): matching an invoice against the catalogue is
+ * CPU work on the only Node process, so it gets its own budget per user. A scan → review → re-check
+ * session needs a handful; 60 per 15 min leaves room for many invoices.
+ */
+export const invoicePreviewLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req: Request) => (req.user?.userId ? `user:${req.user.userId}` : `ip:${ipKeyGenerator(req.ip || '0.0.0.0')}`),
+  message: { error: 'Trop d’analyses de factures, réessayez dans quelques minutes.' },
+});

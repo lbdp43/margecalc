@@ -7,10 +7,11 @@
  * ticks line up. Rows are 48 tall; a long category name (« Ingrédients
  * cocktails ») wraps to a second line instead of being cut, and a long %
  * shrinks to its column. Below 360 px the meter moves under the name, full width.
+ * Each row opens Mes produits on that category, weakest margin first (`onOpen`).
  */
 import React from 'react';
 import { StyleSheet, Text, useWindowDimensions, View } from 'react-native';
-import { Card, MarginLegend, Meter, SectionHeader } from '../../../components/ui';
+import { Card, Icon, MarginLegend, Meter, PressableScale, SectionHeader } from '../../../components/ui';
 import { marginColors, palette, type } from '../../../theme';
 import { formatPercent } from '../../../utils/format';
 import { getMarginZone, MarginThresholds } from '../../../utils/marginThresholds';
@@ -23,6 +24,8 @@ export interface CategoryMetersProps {
   /** Base delay of the meters (dashboard entrance order). */
   delay?: number;
   onDetails?: () => void;
+  /** A row was tapped: open the products of this category. */
+  onOpen?: (categoryKey: string) => void;
 }
 
 const NAME_W = 118;
@@ -37,6 +40,7 @@ const MeterRow = React.memo(function MeterRow({
   last,
   delay,
   stacked,
+  onOpen,
 }: {
   stat: CategoryStat;
   thresholds: MarginThresholds;
@@ -44,6 +48,7 @@ const MeterRow = React.memo(function MeterRow({
   last: boolean;
   delay: number;
   stacked: boolean;
+  onOpen?: (key: string) => void;
 }) {
   const zone = getMarginZone(stat.avg, thresholds);
   const c = marginColors[zone];
@@ -64,32 +69,53 @@ const MeterRow = React.memo(function MeterRow({
       {pct}
     </Text>
   );
+  const chevron = onOpen ? (
+    <View style={styles.chevron}>
+      <Icon name="chevron-forward" size={14} color={palette.text4} />
+    </View>
+  ) : null;
+  const a11y = `${stat.name}, ${stat.count} produit${stat.count > 1 ? 's' : ''}, marge moyenne ${spoken(pct)}, ${c.label}`;
+  const content = stacked ? (
+    <>
+      <View style={styles.stackTop}>
+        {name}
+        {percent}
+        {chevron}
+      </View>
+      {meter}
+    </>
+  ) : (
+    <>
+      {name}
+      {meter}
+      {percent}
+      {chevron}
+    </>
+  );
+  if (onOpen) {
+    return (
+      <View style={!last && styles.divider}>
+        <PressableScale
+          onPress={() => onOpen(stat.key)}
+          scaleTo="card"
+          accessibilityRole="button"
+          accessibilityLabel={`${a11y}. Voir ces produits`}
+          style={[stacked ? styles.rowStacked : styles.row, styles.rowPressable]}
+          testID={`category-row-${index}`}
+        >
+          {content}
+        </PressableScale>
+      </View>
+    );
+  }
   return (
-    <View
-      style={[stacked ? styles.rowStacked : styles.row, !last && styles.divider]}
-      accessible
-      accessibilityLabel={`${stat.name}, ${stat.count} produit${stat.count > 1 ? 's' : ''}, marge moyenne ${spoken(pct)}, ${c.label}`}
-    >
-      {stacked ? (
-        <>
-          <View style={styles.stackTop}>
-            {name}
-            {percent}
-          </View>
-          {meter}
-        </>
-      ) : (
-        <>
-          {name}
-          {meter}
-          {percent}
-        </>
-      )}
+    <View style={[stacked ? styles.rowStacked : styles.row, !last && styles.divider]} accessible accessibilityLabel={a11y}>
+      {content}
     </View>
   );
 });
 
-export const CategoryMeters = React.memo(function CategoryMeters({ stats, thresholds, delay = 240, onDetails }: CategoryMetersProps) {
+export const CategoryMeters = React.memo(function CategoryMeters({ stats, thresholds, delay = 240, onDetails, onOpen }: CategoryMetersProps) {
   const { width } = useWindowDimensions();
   const stacked = width < STACK_BELOW;
   return (
@@ -98,7 +124,7 @@ export const CategoryMeters = React.memo(function CategoryMeters({ stats, thresh
       <Card padding={0}>
         <View style={styles.rows}>
           {stats.map((s, i) => (
-            <MeterRow key={s.key} stat={s} thresholds={thresholds} index={i} last={i === stats.length - 1} delay={delay} stacked={stacked} />
+            <MeterRow key={s.key} stat={s} thresholds={thresholds} index={i} last={i === stats.length - 1} delay={delay} stacked={stacked} onOpen={onOpen} />
           ))}
         </View>
         <View style={styles.footer}>
@@ -123,6 +149,9 @@ const styles = StyleSheet.create({
   rowStacked: { paddingVertical: 10, gap: 6 },
   stackTop: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   divider: { borderBottomWidth: 1, borderBottomColor: palette.line },
+  // The pressed row scales inside the card: give it the card's inner radius.
+  rowPressable: { borderRadius: 12, marginHorizontal: -8, paddingHorizontal: 8 },
+  chevron: { width: 14, marginLeft: -6, alignItems: 'flex-end' },
   nameCol: { width: NAME_W, flexDirection: 'row' },
   nameColStacked: { width: undefined, flex: 1, minWidth: 0 },
   name: { ...type.headline, color: palette.ink, flexShrink: 1 },

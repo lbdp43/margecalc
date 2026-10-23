@@ -1,9 +1,11 @@
 /**
- * « Services & prix » (spec §4.4 + grafts 1–3, 12, 13):
+ * « Services & prix » (spec §4.4 + grafts 1–3, 12, 13; lot 1 n° 1):
  * service chips (« déjà tarifé » check), the live result tiles ABOVE the
  * control (eyes up, thumb down), then Prix € / Marge % / Coeff ×, the large
  * stepper, the zone-tinted slider with the objective detent and the
- * « Dès 7,96 € TTC, ce verre dépasse 65 % de marge. » hint.
+ * « Prix conseillés » chips (objective price rounded up to the user's
+ * « Arrondi des prix », then round prices; one tap sets the price) with
+ * « Objectif atteint (+6,6 pts) » once the price reaches the objective.
  */
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { StyleSheet, Text, View, useWindowDimensions } from 'react-native';
@@ -20,6 +22,7 @@ import {
   SegmentedControl,
   Skeleton,
   Slider,
+  SuggestedPriceChips,
   SwapFade,
   dialog,
   toast,
@@ -355,6 +358,8 @@ function ServicePricing({ serviceKey: key, values, setValues, servingTypes, d, t
     [s.mode, cost, tva, update],
   );
 
+  // With a cost, the « Prix conseillés » chips say it all (lot 1 n° 1); the sentence stays for what is missing.
+  const chips = !d.needsDegree && cost > 0 && t.good < 100;
   const hint = d.needsDegree
     ? 'Indiquez le degré pour calculer les droits, puis la marge.'
     : cost > 0
@@ -362,6 +367,7 @@ function ServicePricing({ serviceKey: key, values, setValues, servingTypes, d, t
       : needsCost
         ? 'Indiquez le prix d’achat pour calculer en marge ou en coefficient.'
         : 'Indiquez le prix d’achat pour voir la marge.';
+  const pickSuggested = useCallback((price: number) => update({ price, touched: true, modeValue: null }), [update]);
 
   const tiles = {
     priceTTC: <ResultTile key="ttc" label="Prix TTC" value={s.price > 0 ? tileEuro(s.price) : '–'} caption={tvaLabel(tva)} style={tileStyle} />,
@@ -484,14 +490,14 @@ function ServicePricing({ serviceKey: key, values, setValues, servingTypes, d, t
           />
         </SwapFade>
 
-        <View style={styles.hint}>
-          <Ionicons
-            name={d.needsDegree ? 'information-circle-outline' : cost > 0 ? (result && result.marginPercent >= t.good ? 'checkmark-circle' : 'flag-outline') : 'information-circle-outline'}
-            size={18}
-            color={!d.needsDegree && cost > 0 && result && result.marginPercent >= t.good ? palette.good : palette.text3}
-          />
-          <Text style={styles.hintText}>{hint}</Text>
-        </View>
+        {chips ? (
+          <SuggestedPriceChips costHT={cost} tva={tva} price={s.price} onSelect={pickSuggested} thresholds={t} style={styles.suggestions} testID="pricing-suggestions" />
+        ) : (
+          <View style={styles.hint}>
+            <Ionicons name="information-circle-outline" size={18} color={palette.text3} />
+            <Text style={styles.hintText}>{hint}</Text>
+          </View>
+        )}
 
         {below ? (
           <ResultGrid style={styles.tilesBelow} columns={columns}>
@@ -532,6 +538,7 @@ const styles = StyleSheet.create({
   valueMeta: { ...type.footnote, color: palette.text3 },
   inputError: { borderRadius: radius.lg + 2, borderWidth: 2, borderColor: palette.bad, margin: -2 },
   slider: { marginTop: 18 },
+  suggestions: { marginTop: 18 },
   hint: {
     flexDirection: 'row',
     alignItems: 'flex-start',

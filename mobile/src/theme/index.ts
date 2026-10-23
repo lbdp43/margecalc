@@ -52,6 +52,8 @@ export const palette = {
   onEmerald: '#FFFFFF',
   onEmerald2: 'rgba(255,255,255,0.74)',
   onEmerald3: 'rgba(255,255,255,0.56)',
+  /** Faint white wash on emerald: tappable counters on the dashboard hero. */
+  onEmeraldWash: 'rgba(255,255,255,0.10)',
 
   // Semantic — margin health
   good: '#087553',

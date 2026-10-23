@@ -21,8 +21,8 @@ import {
   ValueRow,
 } from '../../../components/ui';
 import { palette, radius, type } from '../../../theme';
-import { formatDegree, formatEuro, formatNumber, formatVolumeCl, NBSP } from '../../../utils/format';
-import type { ScanQuota } from '../../../services/scan.service';
+import { formatDegree, formatEuro, formatNumber, formatVolumeCl, NBSP, plural } from '../../../utils/format';
+import { QUOTA_SHOWN_BELOW, type ScanQuota } from '../../../services/scan.service';
 import { ScanFrame } from './ScanFrame';
 import type { PickSource } from './photo';
 
@@ -210,9 +210,10 @@ function Intro(props: ScanStepProps & { frameHeight: number }) {
         <View style={styles.quota}>
           <Ionicons name="shield-checkmark-outline" size={16} color={palette.text3} />
           <Text style={styles.quotaText}>
-            {quota
+            {/* The count only matters near the limit: « 99 999 restantes » read like a technical value. */}
+            {quota && quota.remaining < QUOTA_SHOWN_BELOW
               ? quota.remaining > 0
-                ? `Lecture gratuite · ${formatNumber(quota.remaining)}${NBSP}sur${NBSP}${formatNumber(quota.limit)} restantes aujourd’hui`
+                ? `Lecture gratuite · ${plural(quota.remaining, 'lecture restante', 'lectures restantes')} aujourd’hui`
                 : 'Limite de lectures du jour atteinte · la photo reste utilisable'
               : 'Lecture gratuite · la photo reste sur votre fiche'}
           </Text>

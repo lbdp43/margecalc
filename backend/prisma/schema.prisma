@@ -32,6 +32,7 @@ model User {
   tickets                  Ticket[]
   monthlyLogins            UserMonthlyLogin[]
   categories               Category[]
+  invoiceAliases           InvoiceAlias[]
 }
 
 model UserMonthlyLogin {
@@ -143,14 +144,37 @@ model Product {
   imageUrl            String?
   /// Small photo as a data URI (~160 px, <= 40 000 chars). Sent in product lists.
   thumbnailUrl        String?
+  /// True when the selling price was derived by an invoice import (purchase ×4) and the owner
+  /// has not set a selling price since. Cleared by any selling/serving price write
+  /// (PUT /products/:id, PUT /products/:id/servings, POST /products/prices/batch).
+  priceToReview       Boolean            @default(false)
   createdAt           DateTime           @default(now())
   updatedAt           DateTime           @updatedAt
   priceHistory        PriceHistory[]
   servings            ProductServing[]
   recipeIngredients   RecipeIngredient[]
+  invoiceAliases      InvoiceAlias[]
 
   @@index([userId])
   @@index([categoryId])
+}
+
+/// Invoice label remembered for a supplier: the next invoice line from the same supplier with the
+/// same normalised name and container matches this product ('alias', see invoiceMatch.service.ts).
+/// supplierKey = normaliseSupplier(supplier); nameKey = "<normalised name>|<container cl>".
+model InvoiceAlias {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  supplierKey String
+  nameKey     String
+  productId   String
+  product     Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([userId, supplierKey, nameKey])
+  @@index([productId])
 }
 
 model ServingType {

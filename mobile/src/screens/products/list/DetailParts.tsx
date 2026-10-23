@@ -19,6 +19,7 @@ import {
   Card,
   Icon,
   IconName,
+  keepUnits,
   PressableScale,
   Skeleton,
   SkeletonStatTile,
@@ -111,7 +112,7 @@ export function DetailIdentity({
   const titles = (
     <>
       <Text style={[styles.name, long ? styles.nameLong : null]} accessibilityRole="header">
-        {name}
+        {keepUnits(name)}
       </Text>
       <View style={styles.metaRow}>
         {categoryName ? <Badge variant="brand" icon={icon} label={categoryName} size="sm" /> : null}
@@ -242,6 +243,8 @@ export interface ServiceFigures {
   perContainer: number;
   margin: number;
   primary: boolean;
+  /** Replaces « 14 doses par bouteille » (a product sold whole: « 1 bouteille de 33 cl »). */
+  meta?: string;
 }
 
 export function ServiceRow({
@@ -270,7 +273,7 @@ export function ServiceRow({
   // (a 1 250 € cognac) would clip in three columns on a narrow phone, so they stack.
   const figWidth = (contentWidth - 2 - 28 - 2) / 3 - 20;
   const stacked = figures.some((f) => textWidth(f.value, 16, -0.2) > figWidth || textWidth(f.caption, 13) > figWidth);
-  const doses = `${dosesLabel(s.perContainer)} par ${containerNoun}`;
+  const doses = s.meta ?? `${dosesLabel(s.perContainer)} par ${containerNoun}`;
   const a11y = `${s.label}${s.primary ? ', service principal' : ''}. Prix ${formatEuro(s.priceTTC)} TTC, ${formatEuro(s.priceHT)} hors taxes. Coût ${formatEuro(s.cost)}. Gain ${formatEuro(s.gain)} par dose, ${formatEuro(s.gainPerContainer)} par ${containerNoun}. Marge ${formatPercent(s.margin)}, ${c.label}.`;
   const body = (
     <>

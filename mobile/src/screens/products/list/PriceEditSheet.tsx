@@ -1,29 +1,110 @@
 /**
- * Quick price change for one service, from the product detail.
- * Results lead (graft 1: Marge · Gain/dose · Coeff), the big stepper follows
- * (decimal keypad, RC13), then « Enregistrer le prix ».
+ * « Changer le prix »: the one quick price sheet (lot 1 n° 1, 5; mockup 1),
+ * opened from the product detail, the long press on a product card and the
+ * dashboard « À revoir » tile (« Corriger »).
  *
- * Saves through PUT /api/products/:id/servings, which replaces the whole set:
- * every other service is sent unchanged.
+ *   Prix · Verre 5 cl                                   ×
+ *   Whisky Nikka From the Barrel
+ *   [service chips when the product has several]
+ *   Marge 65,2 % · Gain/dose +7,12 € (+1,75 € HT) · Coeff ×2,87
+ *   Prix de vente TTC                         avant 11,00 €
+ *   [ − 13,10 € + ]
+ *   Prix conseillés                         Arrondi 0,10 € ⌄
+ *   [13,10 € objectif 65 %] [13,50 €] [14,00 €]
+ *   ✓ Objectif atteint (+0,2 pts)
+ *   [ Enregistrer 13,10 € ]
+ *
+ * Works for every product: with services (PUT /api/products/:id/servings,
+ * which replaces the whole set: every service is sent, changed or not) and
+ * sold à l’unité / without service types (PUT /api/products/:id with the
+ * selling price). Several services can be changed before one save.
  */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { StyleSheet, Text, useWindowDimensions } from 'react-native';
+import { StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { useQueryClient } from '@tanstack/react-query';
-import { calculateServingMargin, ProductWithMargin, ServingType } from '@margebar/shared';
-import { BottomSheet, Button, NumberInput, ResultGrid, ResultTile, sortedServings } from '../../../components/ui';
+import { calculateServingMargin, MarginMode, ProductWithMargin, ServingType } from '@margebar/shared';
+import {
+  BottomSheet,
+  Button,
+  ChipRow,
+  NumberInput,
+  ResultGrid,
+  ResultTile,
+  SuggestedPriceChips,
+  servingLabel,
+  sortedServings,
+} from '../../../components/ui';
 import { palette, type } from '../../../theme';
 import { haptics } from '../../../theme/haptics';
-import { formatCoeff, formatEuro, formatNumber, formatPercent } from '../../../utils/format';
-import { getMarginZone, useMarginThresholds } from '../../../utils/marginThresholds';
+import { formatCoeff, formatEuro, formatNumber, formatPercent, NBSP, plural } from '../../../utils/format';
+import { getMarginZone, MarginThresholds, useMarginThresholds } from '../../../utils/marginThresholds';
+import { doseCost, samePrice, suggestedPrice } from '../../../utils/pricing';
+import { getPriceRounding } from '../../../utils/priceRounding';
 import { isOnline } from '../../../services/offline';
+import * as productService from '../../../services/product.service';
 import * as servingService from '../../../services/serving.service';
-import { costPerDoseHT, priceForMargin, serviceNoun } from '../form/pricing';
+import { serviceNoun } from '../form/pricing';
+import { doseLabel, soldWhole } from '../../../utils/servings';
 import { freshToast, writeErrorMessage } from './productActions';
 
+/** Key of the product's own dose (a product sold without service types). */
+export const DOSE_KEY = '__dose';
+
 export interface PriceEditTarget {
-  servingType: ServingType;
+  /** Service type id, or DOSE_KEY. Default: the primary service. */
+  key?: string;
+  /** Price the sheet starts on (« Corriger »: the suggested price). Default: the current price. */
+  price?: number;
+}
+
+/** One price of a product: a service, or the product's own dose. */
+export interface PriceLine {
+  key: string;
+  /** « Verre 5 cl », « À l’unité », « Dose 25 cl ». */
   label: string;
+  volumeCl: number;
+  servingType?: ServingType;
+  /** Current TTC price. */
   price: number;
+}
+
+/** Every price of a product, primary first. A product without services has one line: its dose. */
+export function priceLines(product: ProductWithMargin): PriceLine[] {
+  const lines: PriceLine[] = [];
+  for (const s of sortedServings(product)) {
+    if (!s.servingType) continue;
+    lines.push({
+      key: s.servingTypeId,
+      label: servingLabel(s.servingType.name, s.servingType.volumeCl),
+      volumeCl: s.servingType.volumeCl,
+      servingType: s.servingType,
+      price: s.sellingPriceTTC,
+    });
+  }
+  if (lines.length) return lines;
+  const dose = product.doseVolumeCl;
+  return [
+    {
+      key: DOSE_KEY,
+      label: doseLabel(product.containerVolumeCl, dose),
+      volumeCl: dose,
+      price: product.computed?.sellingPriceTTC ?? product.sellingPriceTTC ?? 0,
+    },
+  ];
+}
+
+/**
+ * « Corriger »: the primary price set to the suggested price (objective,
+ * rounded up to the user's « Arrondi des prix »). It only ever raises a price:
+ * a price that already reaches the objective opens unchanged, as does a
+ * product without a purchase price (nothing to suggest).
+ */
+export function fixTarget(product: ProductWithMargin, thresholds: MarginThresholds, rounding: number = getPriceRounding()): PriceEditTarget | null {
+  const line = priceLines(product)[0];
+  if (!line) return null;
+  const cost = doseCost(product.purchasePriceHT, product.containerVolumeCl, line.volumeCl);
+  const price = suggestedPrice(cost, product.tvaRate, thresholds.good, rounding);
+  return price === null || price <= line.price + 0.004 ? { key: line.key } : { key: line.key, price };
 }
 
 /**
@@ -31,12 +112,24 @@ export interface PriceEditTarget {
  * to 0,01 like the backend's `computed.coefficient`: the sheet and the detail
  * always print the same « ×3,59 ». NaN when the dose costs nothing.
  */
-export function servingCoefficient(product: ProductWithMargin, servingType: ServingType, priceTTC: number): number {
+export function servingCoefficient(product: ProductWithMargin, volumeCl: number, priceTTC: number): number {
   const ht = priceTTC / (1 + product.tvaRate);
-  const cost = product.containerVolumeCl > 0 ? (product.purchasePriceHT * servingType.volumeCl) / product.containerVolumeCl : 0;
+  const cost = doseCost(product.purchasePriceHT, product.containerVolumeCl, volumeCl);
   if (!(cost > 0) || !isFinite(ht)) return NaN;
   return Math.round((ht / cost) * 100) / 100;
 }
+
+function lineResult(product: ProductWithMargin, line: PriceLine, price: number) {
+  if (!(price > 0) || !(line.volumeCl > 0) || !(product.containerVolumeCl > 0)) return null;
+  try {
+    const st: ServingType = line.servingType ?? { id: '', userId: '', name: '', volumeCl: line.volumeCl, icon: '', sortOrder: 0 };
+    return calculateServingMargin(product.purchasePriceHT, product.containerVolumeCl, product.tvaRate, st, price);
+  } catch {
+    return null;
+  }
+}
+
+const round2 = (n: number) => Math.round(n * 100) / 100;
 
 export function PriceEditSheet({ product, target, onClose }: { product: ProductWithMargin | null; target: PriceEditTarget | null; onClose: () => void }) {
   const queryClient = useQueryClient();
@@ -44,64 +137,71 @@ export function PriceEditSheet({ product, target, onClose }: { product: ProductW
   // Narrow phones: three tiles of ~100 px, the captions must stay short.
   const { width } = useWindowDimensions();
   const roomy = width >= 380;
-  const [shown, setShown] = useState<PriceEditTarget | null>(target);
-  const [price, setPrice] = useState<number>(target?.price ?? 0);
+  /** What the sheet edits, frozen while it is open (and while it closes). */
+  const [shown, setShown] = useState<{ product: ProductWithMargin; lines: PriceLine[] } | null>(null);
+  const [active, setActive] = useState<string>('');
+  const [drafts, setDrafts] = useState<Record<string, number>>({});
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    if (target) {
-      setShown(target);
-      setPrice(target.price);
-      setSaved(false);
-      setSaving(false);
-      setError(null);
-    }
+    if (!target || !product) return;
+    const lines = priceLines(product);
+    const first = lines.find((l) => l.key === target.key) ?? lines[0];
+    const next: Record<string, number> = {};
+    for (const l of lines) next[l.key] = l.price;
+    if (first && typeof target.price === 'number' && target.price > 0) next[first.key] = round2(target.price);
+    setShown({ product, lines });
+    setActive(first?.key ?? '');
+    setDrafts(next);
+    setSaved(false);
+    setSaving(false);
+    setError(null);
+    // Opened for a target: later refetches of the product must not reset what is being typed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [target]);
   useEffect(() => () => {
     if (closeTimer.current) clearTimeout(closeTimer.current);
   }, []);
 
-  const result = useMemo(() => {
-    if (!product || !shown || !(price > 0)) return null;
-    try {
-      return calculateServingMargin(product.purchasePriceHT, product.containerVolumeCl, product.tvaRate, shown.servingType, price);
-    } catch {
-      return null;
-    }
-  }, [product, shown, price]);
+  const p = shown?.product ?? null;
+  const lines = shown?.lines ?? [];
+  const line = lines.find((l) => l.key === active) ?? lines[0] ?? null;
+  const price = line ? drafts[line.key] ?? line.price : 0;
+  const changed = lines.filter((l) => !samePrice(drafts[l.key] ?? l.price, l.price));
+  const lineChanged = !!line && !samePrice(price, line.price);
 
-  // Lowest TTC price that reaches the objective margin: the very threshold the
-  // product form names (same unrounded dose cost, same cent rounding), so the
-  // two screens never disagree. The 0,10 € step is the stepper's only.
-  const objectivePrice = useMemo(() => {
-    if (!product || !shown || t.good >= 100) return null;
-    const cost = costPerDoseHT(product.purchasePriceHT, product.containerVolumeCl, shown.servingType.volumeCl);
-    if (!(cost > 0)) return null;
-    return priceForMargin(cost, product.tvaRate, t.good);
-  }, [product, shown, t.good]);
+  const result = useMemo(() => (p && line ? lineResult(p, line, price) : null), [p, line, price]);
+  const before = useMemo(() => (p && line ? lineResult(p, line, line.price) : null), [p, line]);
+  const cost = p && line ? doseCost(p.purchasePriceHT, p.containerVolumeCl, line.volumeCl) : 0;
+
   // « 65 % », « 67,5 % »: written as in the form.
   const objectiveText = formatPercent(t.good, Number.isInteger(t.good) ? 0 : 1);
-  const noun = serviceNoun(shown?.servingType.name);
-  // Judged on the price itself, so the sentence never contradicts the price it names.
-  const objectiveMet = objectivePrice !== null && price >= objectivePrice - 0.005;
-
   const zone = result ? getMarginZone(result.marginPercent, t) : 'red';
-  const coeff = product && shown && result ? servingCoefficient(product, shown.servingType, price) : NaN;
+  const coeff = p && line && result ? servingCoefficient(p, line.volumeCl, price) : NaN;
   const coeffKnown = isFinite(coeff);
-  const unchanged = !!shown && Math.abs(price - shown.price) < 0.005;
+  const gainDelta = result && before && lineChanged ? result.marginPerServingHT - before.marginPerServingHT : 0;
+  const noun = serviceNoun(line?.servingType?.name ?? (line?.key === DOSE_KEY && p && soldWhole(p.containerVolumeCl, line.volumeCl) ? 'bouteille' : 'dose'));
+
+  const setPrice = (v: number) => {
+    if (!line) return;
+    setDrafts((d) => ({ ...d, [line.key]: v }));
+    if (error) setError(null);
+  };
 
   const save = async () => {
-    if (!product || !shown || saving) return;
-    if (!(price > 0)) {
-      setError('Indiquez un prix de vente supérieur à 0 €.');
+    if (!p || !line || saving) return;
+    const invalid = lines.find((l) => !((drafts[l.key] ?? l.price) > 0));
+    if (invalid) {
+      setActive(invalid.key);
+      setError(`Indiquez un prix de vente supérieur à 0${NBSP}€.`);
       haptics.warning();
       return;
     }
     if (!isOnline()) {
-      setError('Pas de connexion : le prix n’a pas été enregistré. Réessayez une fois connecté.');
+      setError(`Pas de connexion : le prix n’a pas été enregistré. Réessayez une fois connecté.`);
       haptics.warning();
       return;
     }
@@ -109,20 +209,28 @@ export function PriceEditSheet({ product, target, onClose }: { product: ProductW
     setSaving(true);
     const started = Date.now();
     try {
-      const servings = sortedServings(product).map((s) => ({
-        servingTypeId: s.servingTypeId,
-        sellingPriceTTC: s.servingTypeId === shown.servingType.id ? Math.round(price * 100) / 100 : s.sellingPriceTTC,
-      }));
-      await servingService.upsertProductServings(product.id, servings);
-      await new Promise((r) => setTimeout(r, Math.max(0, 400 - (Date.now() - started))));
-      queryClient.invalidateQueries({ queryKey: ['product', product.id] });
-      queryClient.invalidateQueries({ queryKey: ['productServings', product.id] });
-      queryClient.invalidateQueries({ queryKey: ['products'] });
+      if (line.key === DOSE_KEY) {
+        const savedProduct = await productService.updateProduct(p.id, { marginMode: MarginMode.FIX_SELLING_PRICE, sellingPriceTTC: round2(price) });
+        await new Promise((r) => setTimeout(r, Math.max(0, 400 - (Date.now() - started))));
+        productService.refreshProductCaches(queryClient, savedProduct);
+      } else {
+        const servings = lines.map((l) => ({ servingTypeId: l.key, sellingPriceTTC: round2(drafts[l.key] ?? l.price) }));
+        await servingService.upsertProductServings(p.id, servings);
+        await new Promise((r) => setTimeout(r, Math.max(0, 400 - (Date.now() - started))));
+        queryClient.invalidateQueries({ queryKey: ['product', p.id] });
+        queryClient.invalidateQueries({ queryKey: ['productServings', p.id] });
+        queryClient.invalidateQueries({ queryKey: ['products'] });
+      }
       setSaving(false);
       setSaved(true);
       haptics.success();
       // Shown as soon as the sheet closes, never behind an older toast.
-      freshToast('success', `Nouveau prix enregistré : ${shown.label}, ${formatEuro(price)}`);
+      freshToast(
+        'success',
+        changed.length > 1
+          ? `${plural(changed.length, 'nouveau prix', 'nouveaux prix')} enregistrés · ${p.name}`
+          : `Nouveau prix enregistré : ${(changed[0] ?? line).label}, ${formatEuro(drafts[(changed[0] ?? line).key] ?? price)}`,
+      );
       closeTimer.current = setTimeout(onClose, 650);
     } catch (err) {
       setSaving(false);
@@ -131,25 +239,50 @@ export function PriceEditSheet({ product, target, onClose }: { product: ProductW
     }
   };
 
+  const saveTitle = !changed.length
+    ? 'Prix inchangé'
+    : changed.length > 1
+      ? `Enregistrer ${changed.length}${NBSP}prix`
+      : `Enregistrer ${formatEuro(drafts[changed[0].key])}`;
+
   return (
     <BottomSheet
       visible={!!target}
       onClose={onClose}
-      title={shown ? `Prix · ${shown.label}` : 'Prix'}
-      subline={product?.name}
+      title={line ? `Prix · ${line.label}` : 'Prix'}
+      subline={p?.name}
       footer={
         <Button
-          title={unchanged ? 'Prix inchangé' : 'Enregistrer le prix'}
+          title={saveTitle}
           icon="checkmark-circle"
           onPress={save}
           loading={saving}
           success={saved}
-          disabled={unchanged && !saved}
+          disabled={!changed.length && !saved}
           fullWidth
           testID="price-save"
         />
       }
+      testID="price-sheet"
     >
+      {lines.length > 1 ? (
+        <ChipRow
+          items={lines.map((l) => ({
+            key: l.key,
+            label: l.label,
+            done: !samePrice(drafts[l.key] ?? l.price, l.price),
+            accessibilityLabel: `${l.label}, ${formatEuro(drafts[l.key] ?? l.price)}${samePrice(drafts[l.key] ?? l.price, l.price) ? '' : ', modifié'}`,
+          }))}
+          selectedKey={line?.key}
+          onSelect={(k) => {
+            setActive(k);
+            setError(null);
+          }}
+          fade="surface"
+          style={styles.services}
+          accessibilityLabel="Services"
+        />
+      ) : null}
       <ResultGrid>
         <ResultTile
           label="Marge"
@@ -163,7 +296,12 @@ export function PriceEditSheet({ product, target, onClose }: { product: ProductW
           label="Gain/dose"
           value={result ? formatEuro(result.marginPerServingHT, { sign: true }) : '–'}
           valueColor={result ? undefined : palette.text3}
-          caption="HT"
+          caption={gainDelta && Math.abs(gainDelta) >= 0.005 ? `${formatEuro(gainDelta, { sign: true })} HT` : 'HT'}
+          accessibilityLabel={
+            result
+              ? `Gain par dose ${formatEuro(result.marginPerServingHT)} hors taxes${gainDelta ? `, ${gainDelta > 0 ? 'plus' : 'moins'} ${formatEuro(Math.abs(gainDelta))} par rapport à avant` : ''}`
+              : 'Gain non calculé'
+          }
         />
         <ResultTile
           label="Coeff"
@@ -172,33 +310,38 @@ export function PriceEditSheet({ product, target, onClose }: { product: ProductW
           accessibilityLabel={result && coeffKnown ? `Coefficient ${formatNumber(coeff, 2)}, prix hors taxes divisé par le coût` : 'Coefficient non calculable'}
         />
       </ResultGrid>
+      <View style={styles.labelRow}>
+        <Text style={styles.label}>Prix de vente TTC</Text>
+        {lineChanged && line ? (
+          <Text style={styles.before} testID="price-before">
+            avant {formatEuro(line.price)}
+          </Text>
+        ) : null}
+      </View>
       <NumberInput
+        key={line?.key}
         size="large"
-        label="Prix de vente TTC"
         value={price}
-        onChange={(v) => {
-          setPrice(v);
-          if (error) setError(null);
-        }}
+        onChange={setPrice}
         step={0.1}
         min={0.1}
         max={9999}
         decimals={2}
         format={(n) => formatEuro(n)}
         suffix="€"
-        accessibilityLabel="Prix de vente TTC"
-        style={styles.input}
+        accessibilityLabel={`Prix de vente TTC${line ? `, ${line.label}` : ''}`}
         testID="price-input"
       />
       {error ? (
         <Text style={styles.error} accessibilityLiveRegion="polite">
           {error}
         </Text>
-      ) : objectivePrice !== null ? (
-        <Text style={styles.hint} testID="price-objective">
-          {objectiveMet
-            ? `Objectif atteint : au-dessus de ${objectiveText} de marge dès ${formatEuro(objectivePrice)} TTC.`
-            : `Dès ${formatEuro(objectivePrice)} TTC, ${noun.this} dépasse ${objectiveText} de marge.`}
+      ) : null}
+      {cost > 0 && p ? (
+        <SuggestedPriceChips costHT={cost} tva={p.tvaRate} price={price} onSelect={setPrice} thresholds={t} style={styles.chips} testID="price-suggestions" />
+      ) : line && p && result ? (
+        <Text style={styles.hint}>
+          Sans prix d’achat, {noun.this} est entièrement en marge : indiquez le prix d’achat dans la fiche pour un prix conseillé.
         </Text>
       ) : null}
     </BottomSheet>
@@ -206,7 +349,11 @@ export function PriceEditSheet({ product, target, onClose }: { product: ProductW
 }
 
 const styles = StyleSheet.create({
-  input: { marginTop: 16 },
+  services: { marginBottom: 14 },
+  labelRow: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: 8, marginTop: 18, marginBottom: 8 },
+  label: { ...type.calloutStrong, color: palette.ink },
+  before: { ...type.footnote, color: palette.text3 },
+  chips: { marginTop: 18 },
   hint: { ...type.footnote, color: palette.text2, marginTop: 12 },
   error: { ...type.footnote, color: palette.bad, marginTop: 12 },
 });

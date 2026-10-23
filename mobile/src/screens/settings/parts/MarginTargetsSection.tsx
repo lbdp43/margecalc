@@ -1,6 +1,8 @@
 /**
  * « Objectifs de marge » — the user's thresholds (objective = good margin,
- * alert = medium), in whole percents. Saved on this device for the signed-in
+ * alert = medium), in whole percents, and « Arrondi des prix » (0,05 · 0,10 ·
+ * 0,50 €, default 0,10 €): the step the suggested prices are rounded UP to
+ * (lot 1 n° 1), stored the same way (`savePriceRounding`). Saved on this device for the signed-in
  * account by `saveMarginObjectives` (store/systemParams.store), which
  * notifies every Badge, legend and tile and keeps the account's own copy:
  * they survive a sign-out and come back at the account's next sign-in, while
@@ -12,9 +14,11 @@ import { DEFAULT_MARGIN_THRESHOLDS } from '@margebar/shared';
 import { Button, CompositionBar, Divider, ListGroup, ListRow, MarginLegend, NumberInput, toast } from '../../../components/ui';
 import { marginColors, palette, radius } from '../../../theme';
 import { haptics } from '../../../theme/haptics';
-import { formatNumber } from '../../../utils/format';
-import { saveMarginObjectives } from '../../../store/systemParams.store';
+import { formatEuro, formatNumber, NBSP } from '../../../utils/format';
+import { saveMarginObjectives, savePriceRounding } from '../../../store/systemParams.store';
 import { MarginThresholds, useMarginThresholds } from '../../../utils/marginThresholds';
+import { DEFAULT_PRICE_ROUNDING, PRICE_ROUNDINGS, PriceRounding, usePriceRounding } from '../../../utils/priceRounding';
+import { roundUpToStep } from '../../../utils/pricing';
 import { formatThreshold } from './helpers';
 import { ErrorLine, SettingsSection, Sheet } from './ui';
 
@@ -39,7 +43,9 @@ function ZoneScale({ thresholds }: { thresholds: MarginThresholds }) {
 
 export function MarginTargetsSection({ index }: { index: number }) {
   const thresholds = useMarginThresholds();
+  const rounding = usePriceRounding();
   const [open, setOpen] = useState(false);
+  const [roundingOpen, setRoundingOpen] = useState(false);
 
   // Thresholds are whole percents. A value saved with a decimal by an earlier
   // version (55,5) is rounded once, so the rows, the legend and the colours agree.
@@ -52,7 +58,12 @@ export function MarginTargetsSection({ index }: { index: number }) {
   }, [thresholds.good, thresholds.medium]);
 
   return (
-    <SettingsSection title="Objectifs de marge" index={index} footer="Enregistrés pour votre compte sur cet appareil. Ils colorent toutes les marges de l’app." testID="settings-margins">
+    <SettingsSection
+      title="Objectifs de marge"
+      index={index}
+      footer="Enregistrés pour votre compte sur cet appareil. Les objectifs colorent toutes les marges de l’app ; l’arrondi s’applique aux prix conseillés."
+      testID="settings-margins"
+    >
       <ListGroup>
         <View style={styles.scaleBlock} accessible accessibilityLabel={`Bonne marge dès ${formatThreshold(thresholds.good)}, à revoir sous ${formatThreshold(thresholds.medium)}`}>
           <ZoneScale thresholds={thresholds} />
@@ -76,13 +87,65 @@ export function MarginTargetsSection({ index }: { index: number }) {
           accessibilityLabel={`Seuil d’alerte : marge à revoir sous ${formatThreshold(thresholds.medium)}. Modifier`}
           testID="settings-threshold-medium"
         />
+        <ListRow
+          icon="pricetags-outline"
+          iconTone="neutral"
+          title="Arrondi des prix"
+          subtitle="Pour les prix conseillés"
+          value={formatEuro(rounding)}
+          onPress={() => setRoundingOpen(true)}
+          accessibilityLabel={`Arrondi des prix conseillés : ${formatEuro(rounding).replace('€', 'euros')}. Modifier`}
+          testID="settings-rounding"
+        />
       </ListGroup>
       <ThresholdsSheet visible={open} onClose={() => setOpen(false)} current={thresholds} />
+      <RoundingSheet visible={roundingOpen} onClose={() => setRoundingOpen(false)} current={rounding} />
     </SettingsSection>
   );
 }
 
 const fmt = (n: number) => formatNumber(n, 0);
+
+/** The example price of the rounding sheet (« 13,03 € » is the objective price of the audit's Nikka). */
+const EXAMPLE_PRICE = 13.03;
+const ROUNDING_HINT: Record<PriceRounding, string> = {
+  0.05: 'Au plus près',
+  0.1: 'Par défaut',
+  0.5: 'Prix ronds',
+};
+
+function RoundingSheet({ visible, onClose, current }: { visible: boolean; onClose: () => void; current: PriceRounding }) {
+  const pick = (r: PriceRounding) => {
+    if (r !== current) {
+      savePriceRounding(r);
+      toast.success(`Arrondi des prix : ${formatEuro(r)}`);
+    }
+    setTimeout(onClose, 120);
+  };
+  return (
+    <Sheet
+      visible={visible}
+      onClose={onClose}
+      title="Arrondi des prix"
+      subline="Toujours vers le haut : jamais sous l’objectif."
+      contentPadding={8}
+      testID="sheet-rounding"
+    >
+      {PRICE_ROUNDINGS.map((r) => (
+        <ListRow
+          key={r}
+          title={formatEuro(r)}
+          subtitle={`${ROUNDING_HINT[r]} · ${formatEuro(EXAMPLE_PRICE)}${NBSP}→${NBSP}${formatEuro(roundUpToStep(EXAMPLE_PRICE, r))}`}
+          right="radio"
+          selected={r === current}
+          onPress={() => pick(r)}
+          accessibilityLabel={`${formatEuro(r).replace('€', 'euros')}${r === DEFAULT_PRICE_ROUNDING ? ', par défaut' : ''}. ${ROUNDING_HINT[r]}`}
+          testID={`rounding-${r}`}
+        />
+      ))}
+    </Sheet>
+  );
+}
 
 function ThresholdsSheet({ visible, onClose, current }: { visible: boolean; onClose: () => void; current: MarginThresholds }) {
   const [good, setGood] = useState(current.good);

@@ -249,7 +249,9 @@ L'adresse e-mail est enregistrée en minuscules et comparée sans tenir compte d
 | GET / POST / PATCH / DELETE | `/api/recipes`      | CRUD recettes cocktails                       |
 | POST       | `/api/scan/product` · `/api/scan/invoice` | Scan OCR d'une bouteille / d'une facture ([détails](#scan-ocr)) |
 | GET        | `/api/scan/quota`                 | Scans réussis du jour (`limit`, `used`, `remaining`) |
-| POST       | `/api/products/import`            | Import des lignes d'une facture (erreurs ligne par ligne) |
+| POST       | `/api/products/import`            | Import des lignes d'une facture (erreurs ligne par ligne, [rapprochement des noms](#factures--rapprochement-des-produits)) |
+| POST       | `/api/products/import/preview`    | Ce que l'import ferait de chaque ligne (produit retrouvé, produits ressemblants), sans rien écrire |
+| POST       | `/api/products/prices/batch`      | Plusieurs changements de prix en une seule transaction, avec l'état d'avant pour « Annuler » |
 | GET / POST | `/api/categories`                 | Catégories intégrées + catégories personnelles du compte (un admin crée des catégories pour tous) |
 | GET / POST | `/api/servings`                   | Types de service personnalisés                |
 | GET / POST | `/api/containers`                 | Contenants personnalisés                      |
@@ -268,6 +270,16 @@ La lecture des photos se fait **sur le serveur avec [Tesseract.js](https://tesse
 - Échec de lecture → **422** `{ error: 'Lecture impossible…', code, retryable }` (`empty`, `bad_image`, `busy`, `timeout`, `engine`). L'application passe alors à la fiche à remplir en gardant la photo.
 - Seuls les scans **réussis et reçus** comptent dans le quota quotidien (`SCAN_DAILY_LIMIT`, 50 par défaut) : un scan abandonné en cours de lecture (retour arrière, onglet fermé) s'arrête et n'est pas compté. Limites d'équité : 10 scans par minute, un scan à la fois par compte, pause de quelques minutes après 3 photos illisibles d'affilée.
 - L'application réduit la photo à 1 600 px avant l'envoi ; le serveur refuse les images de plus de 2 400 px (bouteille) / 3 500 px (facture) de côté.
+
+### Factures : rapprochement des produits
+
+Une ligne de facture met à jour le prix d'achat d'un produit existant au lieu d'en créer un doublon quand elle le reconnaît, dans cet ordre :
+
+1. **même nom** (sans tenir compte des accents, des majuscules et des espaces) et même contenance (± 1 cl) ;
+2. **libellé déjà lié** pour ce fournisseur : chaque ligne liée à un produit (automatiquement ou à la main avec `productId`) est retenue dans la table `InvoiceAlias`, et la facture suivante du même fournisseur la retrouve ;
+3. **nom ressemblant** et même contenance (± 1 cl) : score de similarité ≥ 0,8 après normalisation (millésimes, contenances, degrés, conditionnements, « bouteille », « btl », « fût »… retirés ; fautes de frappe et abréviations « Rge », « Blc » tolérées ; des nombres différents, « 12 ans » / « 18 ans », ne se confondent jamais). « Côtes du Rhône Rouge 2022 » 75 cl met donc à jour « Côtes du Rhône rouge » 75 cl.
+
+`createNew: true` force la création. Un produit créé avec un prix de vente calculé (achat ×4) porte `priceToReview: true` (« À vérifier ») jusqu'à ce qu'un prix de vente soit saisi. Le détail est dans `backend/src/services/invoiceMatch.service.ts` et ses tests (`backend/test/invoice-match.test.ts`).
 
 ### Photos produit
 

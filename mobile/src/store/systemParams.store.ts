@@ -9,6 +9,14 @@ import {
   getMarginThresholds,
   setMarginThresholds,
 } from '../utils/marginThresholds';
+import {
+  DEFAULT_PRICE_ROUNDING,
+  PRICE_ROUNDING_KEY,
+  PriceRounding,
+  getPriceRounding,
+  parsePriceRounding,
+  setPriceRounding,
+} from '../utils/priceRounding';
 
 const CACHE_KEY = 'margebar_system_params';
 const CACHE_TTL = 6 * 60 * 60 * 1000; // 6 hours
@@ -112,8 +120,9 @@ export const useSystemParamsStore = create<SystemParamsState>((set, get) => ({
 // ─── Margin objectives, kept per account on this device ────────────────────
 //
 // Réglages → « Objectifs de marge » lives on the device (AsyncStorage
-// `margebar_margin_thresholds`, read by utils/marginThresholds), but it
-// belongs to the account that set it:
+// `margebar_margin_thresholds`, read by utils/marginThresholds; and
+// « Arrondi des prix », `margebar_price_rounding`, read by utils/priceRounding),
+// but it belongs to the account that set it (both settings follow the same rules):
 //   - each account keeps its own copy under `margebar_margin_thresholds:<userId>`;
 //   - on every sign-out (Réglages, or forced by the API on a 401) that copy is
 //     brought up to date, then the device falls back to the defaults, so the
@@ -129,6 +138,8 @@ const THRESHOLDS_OWNER_KEY = 'margebar_margin_thresholds_owner';
 
 /** AsyncStorage key of one account's margin objectives on this device. */
 export const accountThresholdsKey = (userId: string) => `${MARGIN_THRESHOLDS_KEY}:${userId}`;
+/** AsyncStorage key of one account's « Arrondi des prix » on this device. */
+export const accountRoundingKey = (userId: string) => `${PRICE_ROUNDING_KEY}:${userId}`;
 
 function parseThresholds(raw: string | null): MarginThresholds | null {
   if (!raw) return null;
@@ -150,10 +161,12 @@ const removeItem = (key: string) => AsyncStorage.removeItem(key).catch(() => {})
 let boundUserId: string | null = null;
 
 async function restoreAccountThresholds(userId: string) {
-  const [owner, device, saved] = await Promise.all([
+  const [owner, device, saved, deviceRounding, savedRounding] = await Promise.all([
     getItem(THRESHOLDS_OWNER_KEY),
     getItem(MARGIN_THRESHOLDS_KEY),
     getItem(accountThresholdsKey(userId)),
+    getItem(PRICE_ROUNDING_KEY),
+    getItem(accountRoundingKey(userId)),
   ]);
   const deviceValue = parseThresholds(device);
   const savedValue = parseThresholds(saved);
@@ -162,23 +175,32 @@ async function restoreAccountThresholds(userId: string) {
   // account that has no copy of its own yet (the one that was signed in).
   const useDevice = !!deviceValue && (owner === userId || (!owner && !savedValue));
   const next = (useDevice ? deviceValue : savedValue) ?? { ...DEFAULT_MARGIN_THRESHOLDS };
+  // The rounding is newer than per-account storage: a device copy is only ever this account's.
+  const roundingDevice = parsePriceRounding(deviceRounding);
+  const nextRounding = (owner === userId && roundingDevice ? roundingDevice : parsePriceRounding(savedRounding)) ?? DEFAULT_PRICE_ROUNDING;
   boundUserId = userId;
   await setMarginThresholds(next);
+  await setPriceRounding(nextRounding);
   await Promise.all([
     setItem(THRESHOLDS_OWNER_KEY, userId),
     setItem(accountThresholdsKey(userId), JSON.stringify(getMarginThresholds())),
+    setItem(accountRoundingKey(userId), String(getPriceRounding())),
   ]);
 }
 
 async function releaseAccountThresholds(userId: string) {
   // Keep this account's objectives for its next sign-in…
   if (boundUserId === userId) {
-    await setItem(accountThresholdsKey(userId), JSON.stringify(getMarginThresholds()));
+    await Promise.all([
+      setItem(accountThresholdsKey(userId), JSON.stringify(getMarginThresholds())),
+      setItem(accountRoundingKey(userId), String(getPriceRounding())),
+    ]);
   }
   boundUserId = null;
   // …and give whoever signs in next on this device the defaults.
   await setMarginThresholds({ ...DEFAULT_MARGIN_THRESHOLDS });
-  await Promise.all([removeItem(MARGIN_THRESHOLDS_KEY), removeItem(THRESHOLDS_OWNER_KEY)]);
+  await setPriceRounding(DEFAULT_PRICE_ROUNDING);
+  await Promise.all([removeItem(MARGIN_THRESHOLDS_KEY), removeItem(PRICE_ROUNDING_KEY), removeItem(THRESHOLDS_OWNER_KEY)]);
 }
 
 /**
@@ -189,6 +211,16 @@ export async function saveMarginObjectives(next: MarginThresholds): Promise<void
   await setMarginThresholds(next);
   const userId = boundUserId ?? useAuthStore.getState().user?.id ?? null;
   if (userId) await setItem(accountThresholdsKey(userId), JSON.stringify(getMarginThresholds()));
+}
+
+/**
+ * Saves « Arrondi des prix » (Réglages, or the « Arrondi » link next to the
+ * suggested prices) on the device and in the signed-in account's own copy.
+ */
+export async function savePriceRounding(next: PriceRounding): Promise<void> {
+  await setPriceRounding(next);
+  const userId = boundUserId ?? useAuthStore.getState().user?.id ?? null;
+  if (userId) await setItem(accountRoundingKey(userId), String(getPriceRounding()));
 }
 
 // Account changes are handled one at a time, in order (a sign-out then a

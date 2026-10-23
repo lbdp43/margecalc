@@ -4,6 +4,7 @@
  */
 import type { ProductWithMargin } from '@margebar/shared';
 import type { ChipItem } from '../../../components/ui';
+import { getMarginZone, MarginThresholds, MarginZone } from '../../../utils/marginThresholds';
 
 export type SortKey = 'recent' | 'marginDesc' | 'marginAsc' | 'name';
 
@@ -80,4 +81,46 @@ export function averageMargin(products: ProductWithMargin[]): number | null {
   const values = products.map((p) => p.computed?.marginPercent).filter((v): v is number => typeof v === 'number' && isFinite(v));
   if (!values.length) return null;
   return values.reduce((s, v) => s + v, 0) / values.length;
+}
+
+// ─── Filters opened from the dashboard (lot 1 n° 2) ─────────────────────────
+// Route params of ProductList (also readable in a URL: /produits?zone=bad&sort=marginAsc):
+//   zone      good | medium | bad      (≥ objective · between · under the alert threshold)
+//   category  a category id
+//   sort      recent | marginAsc | marginDesc | name
+
+export type ZoneParam = 'good' | 'medium' | 'bad';
+
+export interface ListFilterParams {
+  zone?: ZoneParam;
+  category?: string;
+  sort?: SortKey;
+}
+
+const ZONE_OF_PARAM: Record<ZoneParam, MarginZone> = { good: 'green', medium: 'orange', bad: 'red' };
+const PARAM_OF_ZONE: Record<MarginZone, ZoneParam> = { green: 'good', orange: 'medium', red: 'bad' };
+
+export function zoneFromParam(v: unknown): MarginZone | null {
+  return typeof v === 'string' && v in ZONE_OF_PARAM ? ZONE_OF_PARAM[v as ZoneParam] : null;
+}
+
+export function zoneParam(zone: MarginZone): ZoneParam {
+  return PARAM_OF_ZONE[zone];
+}
+
+export function sortFromParam(v: unknown): SortKey | null {
+  return typeof v === 'string' && SORT_OPTIONS.some((o) => o.key === v) ? (v as SortKey) : null;
+}
+
+/** « Rentables », « À surveiller », « À revoir »: the words of the dashboard counters. */
+export const ZONE_FILTER_LABEL: Record<MarginZone, string> = {
+  green: 'Rentables',
+  orange: 'À surveiller',
+  red: 'À revoir',
+};
+
+export function inZone(p: ProductWithMargin, zone: MarginZone | null, thresholds: MarginThresholds): boolean {
+  if (!zone) return true;
+  const m = p.computed?.marginPercent;
+  return typeof m === 'number' && isFinite(m) && getMarginZone(m, thresholds) === zone;
 }

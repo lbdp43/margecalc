@@ -5,19 +5,21 @@
  * hint shows its own length, and an empty side shows a calm sentence instead
  * of an empty card. Each row opens the product (rank · thumb · name + service
  * price · margin badge). The list cross-fades when the segment changes.
+ * « Tout voir » opens Mes produits sorted like the side on screen: Flop from
+ * the weakest margin up, Top from the strongest down.
  */
 import React, { useCallback, useState } from 'react';
 import { StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import type { ProductWithMargin } from '@margebar/shared';
-import { Badge, Card, PressableScale, SectionHeader, SegmentedControl, SwapFade, primaryPrice } from '../../../components/ui';
+import { Badge, Card, PressableScale, SectionHeader, SegmentedControl, SwapFade, allPrices, keepUnits } from '../../../components/ui';
 import { marginColors, palette, radius, type } from '../../../theme';
 import { formatEuro, formatPercent, NBSP } from '../../../utils/format';
 import { getMarginZone, MarginThresholds } from '../../../utils/marginThresholds';
 import { ProductThumb } from './ProductThumb';
 import { spoken } from './dashboardData';
 
-type Mode = 'top' | 'flop';
+export type Mode = 'top' | 'flop';
 
 export interface TopFlopCardProps {
   /** At or above the objective, best first. */
@@ -26,7 +28,8 @@ export interface TopFlopCardProps {
   flop: ProductWithMargin[];
   thresholds: MarginThresholds;
   onOpen: (id: string) => void;
-  onSeeAll: () => void;
+  /** « Tout voir », with the side on screen. */
+  onSeeAll: (mode: Mode) => void;
 }
 
 const THUMB = 40;
@@ -51,19 +54,20 @@ const Row = React.memo(function Row({
   onOpen: (id: string) => void;
   thumb: boolean;
 }) {
-  const price = primaryPrice(product);
+  const prices = allPrices(product);
   const margin = product.computed.marginPercent;
   const zone = getMarginZone(margin, thresholds);
-  // The service label never breaks; on narrow rows the price goes to line 2.
-  const meta = `${price.label.replace(/ /g, NBSP)}${NBSP}· ${formatEuro(price.price)}`;
-  const extra = price.extra > 0 ? `, et ${price.extra} autre${price.extra > 1 ? 's' : ''} service${price.extra > 1 ? 's' : ''}` : '';
+  // Every service (lot 1 n° 4): « Demi 25 cl 4,50 € · Pinte 50 cl 8,00 € ». A service and
+  // its price never break apart; the line breaks between services.
+  const one = prices.length === 1;
+  const metaText = prices.map((x) => `${x.short.replace(/ /g, NBSP)}${one ? `${NBSP}·` : ''}${NBSP}${formatEuro(x.price)}`).join(' · ');
   return (
     <View>
       <PressableScale
         onPress={() => onOpen(product.id)}
         scaleTo="card"
         accessibilityRole="button"
-        accessibilityLabel={`${rank}. ${product.name}, ${product.category?.name ?? 'produit'}, ${spoken(meta)}${extra}, marge ${spoken(formatPercent(margin))}, ${marginColors[zone].label}`}
+        accessibilityLabel={`${rank}. ${product.name}, ${product.category?.name ?? 'produit'}, ${spoken(prices.map((x) => `${x.label} ${formatEuro(x.price)}`).join(', '))}, marge ${spoken(formatPercent(margin))}, ${marginColors[zone].label}`}
         style={styles.row}
         testID={`topflop-row-${rank}`}
       >
@@ -71,11 +75,10 @@ const Row = React.memo(function Row({
         {thumb ? <ProductThumb product={product} size={THUMB} radius={12} /> : null}
         <View style={styles.texts}>
           <Text style={styles.name} numberOfLines={2}>
-            {product.name}
+            {keepUnits(product.name)}
           </Text>
           <Text style={styles.meta} numberOfLines={2}>
-            {meta}
-            {price.extra > 0 ? <Text style={styles.extra}>{`${NBSP}${NBSP}+${price.extra}`}</Text> : null}
+            {metaText}
           </Text>
         </View>
         <Badge value={margin} thresholds={thresholds} size="sm" style={styles.badge} />
@@ -113,7 +116,7 @@ export const TopFlopCard = React.memo(function TopFlopCard({ top, flop, threshol
 
   return (
     <View>
-      <SectionHeader title="Top & flop" action="Tout voir" onAction={onSeeAll} />
+      <SectionHeader title="Top & flop" action="Tout voir" onAction={() => onSeeAll(mode)} />
       <Card padding={0}>
         <View style={styles.toggle}>
           <SegmentedControl<Mode>
@@ -166,7 +169,6 @@ const styles = StyleSheet.create({
   texts: { flex: 1, minWidth: 0, gap: 2 },
   name: { ...type.headline, color: palette.ink },
   meta: { ...type.footnote, color: palette.text3 },
-  extra: { ...type.footnoteStrong, color: palette.em700 },
   badge: { alignSelf: 'center' },
   divider: { height: 1, backgroundColor: palette.line, marginRight: ROW_PAD },
   none: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 64, paddingHorizontal: ROW_PAD, paddingVertical: 12 },

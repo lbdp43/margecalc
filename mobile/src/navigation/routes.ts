@@ -86,7 +86,35 @@ export function goToProduct(navigation: Nav, productId: string) {
   navigateInTab(navigation, ROUTES.productsTab, ROUTES.productDetail, { productId });
 }
 
-export function goToProductList(navigation: Nav) {
+/**
+ * Filters « Mes produits » can be opened with (dashboard counters, « Marge par
+ * catégorie », « Tout voir »): zone good | medium | bad, a category id, a sort.
+ * Readable in the URL too: /produits?zone=bad&sort=marginAsc.
+ */
+export interface ProductListFilter {
+  zone?: 'good' | 'medium' | 'bad';
+  category?: string;
+  sort?: 'recent' | 'marginAsc' | 'marginDesc' | 'name';
+  /**
+   * '1': open the whole list (no zone, all categories, no search) with the
+   * user's own sort, whatever filter an earlier link left on the list
+   * (« Produits · 14 suivis », « Détails »). Applied once, like the others.
+   */
+  reset?: '1';
+}
+
+/**
+ * « Mes produits ». With a filter, the list opens filtered and sorted (applied
+ * once: the user can then change or clear it), ProductList kept as the root of
+ * the Produits stack (`initial: false`), even from another tab. `{ reset: '1' }`
+ * opens it unfiltered with the user's sort. Without a filter the list keeps
+ * the state it was left in (the Produits tab, after a delete).
+ */
+export function goToProductList(navigation: Nav, filter?: ProductListFilter) {
+  if (filter && (filter.zone || filter.category || filter.sort || filter.reset)) {
+    navigateInTab(navigation, ROUTES.productsTab, ROUTES.productList, filter);
+    return;
+  }
   navigation.navigate(ROUTES.tabs, { screen: ROUTES.productsTab, params: { screen: ROUTES.productList } });
 }
 
