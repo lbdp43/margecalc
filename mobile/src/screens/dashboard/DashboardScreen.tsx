@@ -10,6 +10,8 @@
  *               quick price sheet at the suggested price, here on the dashboard;
  *               « Tout voir » → « Sous l’objectif »)
  *               or « Tout au-dessus de 50 % » + the best product (overlap the hero by 28)
+ *   Review      « 3 prix à vérifier [Vérifier] » while invoice prices (×4) wait for a
+ *               check → Mes produits on them (polish n° 2; ./parts/PriceReviewCard)
  *   Install     « Installer MargeBar Pro » (web only, while installable; InstallAppCardSlot)
  *   Card        « Calculer les droits d’alcool » → Calculateur (Tableau de bord stack)
  *   Meters      « Marge par catégorie » with objective ticks + legend; a row opens
@@ -67,6 +69,7 @@ import { zoneParam } from '../products/list/listModel';
 import { DashboardHero, HeroKpi } from './parts/DashboardHero';
 import { KpiTiles, kpiTileLayout } from './parts/KpiTiles';
 import { DutyActionCard } from './parts/DutyActionCard';
+import { PriceReviewCard } from './parts/PriceReviewCard';
 import { CategoryMeters } from './parts/CategoryMeters';
 import { Mode as TopFlopMode, TopFlopCard } from './parts/TopFlopCard';
 import { averageMargin, byMargin, categoryStats, errorMessage, greeting as greetingFor, topFlop, withMargin } from './parts/dashboardData';
@@ -128,6 +131,8 @@ export function DashboardScreen() {
       // The most urgent product: the lowest margin, when it is under the alert threshold.
       worst: lowest && getMarginZone(lowest.computed.marginPercent, thresholds) === 'red' ? lowest : null,
       toReview: counts.red,
+      // Selling prices an invoice computed (×4), not confirmed yet.
+      pricesToReview: hasData ? (products as ProductWithMargin[]).filter((p) => p.priceToReview === true).length : 0,
     };
   }, [hasData, products, thresholds]);
 
@@ -166,6 +171,7 @@ export function DashboardScreen() {
   );
   const seeAllToFix = useCallback(() => openUnderTarget(navigation, { from: 'dashboard' }), [navigation]);
   const openCategory = useCallback((key: string) => goToProductList(navigation, { category: key, sort: 'marginAsc' }), [navigation]);
+  const openReview = useCallback(() => goToProductList(navigation, { review: true }), [navigation]);
   const seeAll = useCallback(
     (mode: TopFlopMode) => goToProductList(navigation, { sort: mode === 'flop' ? 'marginAsc' : 'marginDesc' }),
     [navigation],
@@ -260,6 +266,11 @@ export function DashboardScreen() {
 
       <View style={styles.body}>
         {lead}
+        {state === 'ready' && view.pricesToReview > 0 ? (
+          <FadeIn delay={150} style={styles.gap12}>
+            <PriceReviewCard count={view.pricesToReview} onReview={openReview} />
+          </FadeIn>
+        ) : null}
         {/* « Installer MargeBar Pro » (web, installable, not snoozed): between the
             tiles and the duty card. It appears only with the screen's entrance or
             at the next visit (never pushes content in use), and collapses with its own gap. */}

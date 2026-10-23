@@ -8,7 +8,7 @@
  *   ┌ ↘ 1 produit sous l’objectif            [Ajuster] ┐  amber: user thresholds
  *   │   Jameson Irish Whiskey · Verre 5 cl 4,00 → 4,40 € │  → « Sous l’objectif » (these products)
  *   └─────────────────────────────────────────────────┘
- *   ┌ ▦ 3 prix à vérifier                    [Vérifier] ┐  prices derived ×4
+ *   ┌ ▦ 3 prix à vérifier                    [Vérifier] ┐  prices derived ×4 → Mes produits « Prix à vérifier (facture) »
  *   Détail de l’import
  *   ↻ Jameson Irish Whiskey                    ● 61,6 %
  *     Achat 16,20 → 17,90 € (+10,5 %)
@@ -49,7 +49,10 @@ export interface ResultsStepProps {
   onOpenProduct: (productId: string) => void;
   /** « Ajuster »: « Sous l’objectif » restricted to these products. */
   onAdjust: (productIds: string[]) => void;
-  /** « Vérifier »: the products created with a price calculated ×4. */
+  /**
+   * « Vérifier »: Mes produits on the prices this import computed ×4
+   * (`goToProductList(nav, { review: true, reviewIds })`: « Prix à vérifier (facture) · 6 »).
+   */
   onReview: (productIds: string[]) => void;
   onFix: () => void;
   onSeeProducts: () => void;
@@ -313,7 +316,7 @@ export function ResultsStep({ summary, catalog, onOpenProduct, onAdjust, onRevie
               </View>
               <View style={styles.flex}>
                 <Text style={styles.reviewTitle}>{plural(toReview.length, 'prix à vérifier', 'prix à vérifier')}</Text>
-                <Text style={styles.reviewText}>Calculés ×4, à confirmer</Text>
+                <Text style={styles.reviewText}>{`Achat ×4, à\u00A0confirmer`}</Text>
               </View>
               <Button
                 title="Vérifier"

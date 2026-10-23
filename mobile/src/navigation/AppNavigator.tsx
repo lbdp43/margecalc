@@ -4,10 +4,12 @@
  *   Root stack
  *   ├─ Tabs (floating TabBar)
  *   │   ├─ Réglages        → SettingsMain, AdminProducts
- *   │   ├─ Produits        → ProductList, ProductDetail, UnderTarget (« Sous l’objectif »)
+ *   │   ├─ Produits        → ProductList, ProductDetail
  *   │   └─ Tableau de bord → DashboardMain, DutyCalculator, DashboardProductDetail
  *   │                        (the same detail screen, for products opened from the dashboard)
  *   ├─ ProductForm   (create / edit — full screen, no tab bar)
+ *   ├─ UnderTarget   (« Sous l’objectif » — full screen, no tab bar; a root screen so
+ *   │                 « Retour » really closes it and no tab keeps it stacked)
  *   └─ InvoiceScan   (full screen, no tab bar)
  *
  * Form flows live in the root stack so the floating tab bar and the sticky
@@ -56,7 +58,6 @@ function ProductsNavigator() {
     <ProductStack.Navigator screenOptions={stackScreenOptions} initialRouteName={ROUTES.productList}>
       <ProductStack.Screen name={ROUTES.productList} component={ProductListScreen} options={{ title: 'Mes produits · MargeBar Pro' }} />
       <ProductStack.Screen name={ROUTES.productDetail} component={ProductDetailScreen} options={{ title: 'Produit · MargeBar Pro' }} />
-      <ProductStack.Screen name={ROUTES.underTarget} component={UnderTargetScreen} options={{ title: 'Sous l’objectif · MargeBar Pro' }} />
     </ProductStack.Navigator>
   );
 }
@@ -133,6 +134,7 @@ export function AppNavigator() {
       <RootStack.Screen name={ROUTES.tabs} component={MainTabs} options={{ title: 'MargeBar Pro' }} />
       <RootStack.Screen name={ROUTES.productForm} component={ProductFormScreen} options={{ title: 'Produit · MargeBar Pro' }} />
       <RootStack.Screen name={ROUTES.invoiceScan} component={InvoiceScanScreen} options={{ title: 'Scanner une facture · MargeBar Pro' }} />
+      <RootStack.Screen name={ROUTES.underTarget} component={UnderTargetScreen} options={{ title: 'Sous l’objectif · MargeBar Pro' }} />
     </RootStack.Navigator>
   );
 }

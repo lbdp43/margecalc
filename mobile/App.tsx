@@ -133,7 +133,7 @@ const getAppPathFromState: typeof getPathFromState = (state, options) => {
   return `/produits/${idPair.slice('productId='.length)}/modifier${rest.length ? `?${rest.join('&')}` : ''}`;
 };
 
-const appLinking: LinkingOptions<{ Tabs: undefined; ProductForm: undefined; InvoiceScan: undefined }> = {
+const appLinking: LinkingOptions<{ Tabs: undefined; ProductForm: undefined; InvoiceScan: undefined; UnderTarget: undefined }> = {
   prefixes: PREFIXES,
   getPathFromState: getAppPathFromState,
   getStateFromPath: getAppStateFromPath,
@@ -151,8 +151,6 @@ const appLinking: LinkingOptions<{ Tabs: undefined; ProductForm: undefined; Invo
           }),
           [ROUTES.productsTab]: stackPaths(ROUTES.productList, {
             [ROUTES.productList]: 'produits',
-            // Static segment: React Navigation ranks it above produits/:productId.
-            [ROUTES.underTarget]: 'produits/sous-objectif',
             [ROUTES.productDetail]: 'produits/:productId',
           }),
           [ROUTES.settingsTab]: stackPaths(ROUTES.settingsMain, { [ROUTES.settingsMain]: 'reglages', [ROUTES.adminProducts]: 'reglages/produits' }),
@@ -161,6 +159,8 @@ const appLinking: LinkingOptions<{ Tabs: undefined; ProductForm: undefined; Invo
       // Create: /produits/nouveau · edit: /produits/:productId/modifier (see getAppPathFromState).
       [ROUTES.productForm]: 'produits/nouveau',
       [ROUTES.invoiceScan]: 'facture',
+      // Root screen over the tabs; the static segment ranks above produits/:productId.
+      [ROUTES.underTarget]: 'produits/sous-objectif',
     },
   },
 };

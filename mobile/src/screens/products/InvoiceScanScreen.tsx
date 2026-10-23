@@ -981,7 +981,8 @@ export function InvoiceScanScreen({ navigation }: Props) {
         catalog={catalog}
         onOpenProduct={(id) => leaveThen(() => goToProduct(nav, id))}
         onAdjust={(productIds) => leaveThen(() => openUnderTarget(nav, { productIds, from: 'invoice' }))}
-        onReview={(productIds) => leaveThen(() => (productIds.length === 1 ? goToProduct(nav, productIds[0]) : goToProductList(nav, { sort: 'recent' })))}
+        // Mes produits on this import's prices to review: « Prix à vérifier (facture) · 3 ✕ » (polish n° 2).
+        onReview={(reviewIds) => leaveThen(() => goToProductList(nav, { review: true, reviewIds }))}
         onFix={fixFailed}
         onSeeProducts={() => leaveThen(() => goToProductList(nav))}
         onNewInvoice={resetAll}

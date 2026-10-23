@@ -8,7 +8,6 @@
  *   ├─ Tabs (bottom tabs, floating TabBar, back → Tableau de bord)
  *   │   ├─ Réglages        → SettingsMain [/reglages], AdminProducts [/reglages/produits]
  *   │   ├─ Produits        → ProductList [/produits], ProductDetail [/produits/:productId],
- *   │   │                    UnderTarget [/produits/sous-objectif] (« Sous l’objectif »)
  *   │   └─ Tableau de bord → DashboardMain [/], DutyCalculator [/calculateur],
  *   │                        DashboardProductDetail [/tableau-de-bord/produits/:productId]
  *   │                        (a product opened from the dashboard stays in its tab:
@@ -95,13 +94,26 @@ export function goToProduct(navigation: Nav, productId: string) {
 
 /**
  * Filters « Mes produits » can be opened with (dashboard counters, « Marge par
- * catégorie », « Tout voir »): zone good | medium | bad, a category id, a sort.
- * Readable in the URL too: /produits?zone=bad&sort=marginAsc.
+ * catégorie », « Tout voir », « Vérifier »): zone good | medium | bad, a
+ * category id, a sort, the prices to review. Readable in the URL too:
+ * /produits?zone=bad&sort=marginAsc, /produits?review=1.
  */
 export interface ProductListFilter {
   zone?: 'good' | 'medium' | 'bad';
   category?: string;
   sort?: 'recent' | 'marginAsc' | 'marginDesc' | 'name';
+  /**
+   * Only the products whose selling price waits for a check (`priceToReview`:
+   * an invoice computed it ×4): the chip « Prix à vérifier · 3 ✕ ». `true` and
+   * '1' are the same (the URL reads ?review=1). Applied once, like the others.
+   */
+  review?: true | '1';
+  /**
+   * With `review`: only these products (the ones an invoice just priced ×4),
+   * chip « Prix à vérifier (facture) · 6 ✕ ». Kept in memory, never in the URL
+   * (App.tsx strips array params): a reload shows every price to review.
+   */
+  reviewIds?: string[];
   /**
    * '1': open the whole list (no zone, all categories, no search) with the
    * user's own sort, whatever filter an earlier link left on the list
@@ -114,12 +126,14 @@ export interface ProductListFilter {
  * « Mes produits ». With a filter, the list opens filtered and sorted (applied
  * once: the user can then change or clear it), ProductList kept as the root of
  * the Produits stack (`initial: false`), even from another tab. `{ reset: '1' }`
- * opens it unfiltered with the user's sort. Without a filter the list keeps
+ * opens it unfiltered with the user's sort, `{ review: true }` on the prices to
+ * review (« Vérifier », `reviewIds` for one invoice's). Without a filter the list keeps
  * the state it was left in (the Produits tab, after a delete).
  */
 export function goToProductList(navigation: Nav, filter?: ProductListFilter) {
-  if (filter && (filter.zone || filter.category || filter.sort || filter.reset)) {
-    navigateInTab(navigation, ROUTES.productsTab, ROUTES.productList, filter);
+  if (filter && (filter.zone || filter.category || filter.sort || filter.reset || filter.review)) {
+    // A string in the route (and the URL), never `true`: /produits?review=1.
+    navigateInTab(navigation, ROUTES.productsTab, ROUTES.productList, filter.review ? { ...filter, review: '1' } : filter);
     return;
   }
   navigation.navigate(ROUTES.tabs, { screen: ROUTES.productsTab, params: { screen: ROUTES.productList } });
@@ -136,12 +150,12 @@ export interface UnderTargetParams {
 }
 
 /**
- * « Sous l’objectif » (/produits/sous-objectif), in the Produits stack with
- * « Mes produits » kept underneath (`initial: false`), from any tab or from a
- * root-stack screen (the invoice results).
+ * « Sous l’objectif » (/produits/sous-objectif): a root-stack screen over the
+ * tabs (like the product form), so « Retour » and the browser back really close
+ * it and no tab keeps it stacked. Works from any tab or root-stack screen.
  */
 export function openUnderTarget(navigation: Nav, params: UnderTargetParams = {}) {
-  navigateInTab(navigation, ROUTES.productsTab, ROUTES.underTarget, params);
+  navigation.navigate(ROUTES.underTarget, params);
 }
 
 /** Create (no productId) or edit a product. Full-screen, tab bar hidden. */

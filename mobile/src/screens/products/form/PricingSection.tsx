@@ -33,7 +33,7 @@ import { marginColors, palette, radius, type } from '../../../theme';
 import { getMarginZone, MarginThresholds } from '../../../utils/marginThresholds';
 import { clamp, formatCoeff, formatEuro, formatPercent, formatVolumeCl, roundToStep } from '../../../utils/format';
 import { ControlRow, FieldError } from './FieldBits';
-import { Derived, FormValues, orderedServiceKeys, priceMaxMessage, resultOf, serviceName, shownModeValue } from './model';
+import { Derived, FormValues, orderedServiceKeys, priceMaxMessage, pricePending, resultOf, serviceName, shownModeValue } from './model';
 import {
   CUSTOM_DOSE,
   PRICE_MAX,
@@ -121,28 +121,47 @@ export function PricingSection({
   );
 
   const items: ChipItem[] = useMemo(() => {
+    /**
+     * Three states, seen and spoken alike: off (nothing), on with a price (the
+     * green « tarifé » check: the user's or the suggested one), on with its
+     * price still « à calculer » / « à saisir » (dashed circle: the starting
+     * value is no price, see `pricePending`).
+     */
+    const stateOf = (key: string) => {
+      const on = !!values.services[key];
+      const waiting = on && pricePending(key, values, d);
+      const priced = on && !waiting && values.services[key].price > 0;
+      return {
+        on,
+        done: priced,
+        pending: on && !priced,
+        spoken: !on ? '' : priced ? ', tarifé' : waiting ? `, ajouté, prix ${d.costKnown ? 'à saisir' : 'à calculer'}` : ', ajouté, sans prix',
+      };
+    };
     const list: ChipItem[] = sortedTypes.map((st) => {
-      const on = !!values.services[st.id];
+      const { on, done, pending, spoken } = stateOf(st.id);
       const fits = !(d.containerCl > 0) || st.volumeCl <= d.containerCl;
       return {
         key: st.id,
         label: serviceName(st.id, values, servingTypes),
         icon: servingIconName(st.name, st.volumeCl),
-        done: on && values.services[st.id].price > 0,
+        done,
+        pending,
         disabled: !fits && !on,
-        accessibilityLabel: `${serviceName(st.id, values, servingTypes)}${on ? ', tarifé' : ''}${!fits && !on ? ', plus grand que le contenant' : ''}`,
+        accessibilityLabel: `${serviceName(st.id, values, servingTypes)}${spoken}${!fits && !on ? ', plus grand que le contenant' : ''}`,
       };
     });
-    const customOn = !!values.services[CUSTOM_DOSE];
+    const custom = stateOf(CUSTOM_DOSE);
     list.push({
       key: CUSTOM_DOSE,
-      label: customOn ? serviceName(CUSTOM_DOSE, values, servingTypes) : 'Autre dose',
+      label: custom.on ? serviceName(CUSTOM_DOSE, values, servingTypes) : 'Autre dose',
       icon: 'options-outline',
-      done: customOn && values.services[CUSTOM_DOSE].price > 0,
-      accessibilityLabel: customOn ? `${serviceName(CUSTOM_DOSE, values, servingTypes)}, tarifé` : 'Autre dose (sans type de service)',
+      done: custom.done,
+      pending: custom.pending,
+      accessibilityLabel: custom.on ? `${serviceName(CUSTOM_DOSE, values, servingTypes)}${custom.spoken}` : 'Autre dose (sans type de service)',
     });
     return list;
-  }, [sortedTypes, values, servingTypes, d.containerCl]);
+  }, [sortedTypes, values, servingTypes, d]);
 
   const enable = useCallback(
     (key: string, replace: boolean) => {
@@ -315,7 +334,20 @@ function ServicePricing({ serviceKey: key, values, setValues, servingTypes, d, t
   const st = servingTypes.find((x) => x.id === key);
   const whole = soldWhole(d.containerCl, dose);
   const noun = serviceNoun(key === CUSTOM_DOSE ? (whole ? 'bouteille' : 'dose') : st?.name);
-  const result = resultOf(key, values, d);
+  /**
+   * Polish n° 4: no cost to suggest from (no purchase price, the degree for
+   * the duties, or 0 € « offert ») and the price is not the user's: the price
+   * on file is only a starting value, never shown as a price. The tiles, the
+   * field (empty, « à calculer » / « à saisir »), the slider (track only), the
+   * service chip and the sticky bar (« prix d’achat à compléter ») say the same
+   * thing, and the suggested price (utils/pricing, the user's rounding) fills
+   * them all in as soon as a purchase price is typed. −/+ start from the
+   * starting value; typing a price, or a step, makes it the user's.
+   */
+  const pending = pricePending(key, values, d);
+  /** « à saisir » at 0 € (offered: nothing to calculate), else « à calculer ». */
+  const pendingWord = d.costKnown ? 'à saisir' : 'à calculer';
+  const result = pending ? null : resultOf(key, values, d);
   const zone = result ? getMarginZone(result.marginPercent, t) : undefined;
   const setup = pricingSetup(s.mode, cost, tva, t, anchor.current);
   const needsCost = s.mode !== 'price' && !(cost > 0);
@@ -345,7 +377,7 @@ function ServicePricing({ serviceKey: key, values, setValues, servingTypes, d, t
     else if (s.mode === 'margin') sliderMin = Math.max(-100, Math.floor(low / 5) * 5);
     else sliderMin = Math.max(0, Math.floor(low * 10) / 10);
   }
-  const sliderValue = roundToStep(clamp(isFinite(shown) ? shown : sliderMin, sliderMin, setup.max), setup.step);
+  const sliderValue = roundToStep(clamp(isFinite(shown) && !pending ? shown : sliderMin, sliderMin, setup.max), setup.step);
 
   const update = useCallback(
     (patch: Partial<ServiceState>) =>
@@ -374,12 +406,24 @@ function ServicePricing({ serviceKey: key, values, setValues, servingTypes, d, t
       ? `Dès ${formatEuro(objective)} TTC, ${noun.this} dépasse ${objectiveText} de marge.`
       : needsCost
         ? 'Indiquez le prix d’achat pour calculer en marge ou en coefficient.'
-        : 'Indiquez le prix d’achat pour voir la marge.';
+        : pending
+          ? d.costKnown
+            ? 'Achat offert (0 €) : saisissez votre prix de vente.'
+            : 'Indiquez le prix d’achat : le prix de vente conseillé se calcule tout seul.'
+          : 'Indiquez le prix d’achat pour voir la marge.';
   const pickSuggested = useCallback((price: number) => update({ price, touched: true, modeValue: null }), [update]);
 
   const tiles = {
-    priceTTC: <ResultTile key="ttc" label="Prix TTC" value={s.price > 0 ? tileEuro(s.price) : '–'} caption={tvaLabel(tva)} style={tileStyle} />,
-    priceHT: <ResultTile key="ht" label="Prix HT" value={priceHT !== null ? tileEuro(priceHT) : '–'} caption={`HT · ${formatVolumeCl(dose)}`} style={tileStyle} />,
+    priceTTC: (
+      <ResultTile
+        key="ttc"
+        label="Prix TTC"
+        value={s.price > 0 && !pending ? tileEuro(s.price) : '–'}
+        caption={pending ? pendingWord : tvaLabel(tva)}
+        style={tileStyle}
+      />
+    ),
+    priceHT: <ResultTile key="ht" label="Prix HT" value={priceHT !== null && !pending ? tileEuro(priceHT) : '–'} caption={`HT · ${formatVolumeCl(dose)}`} style={tileStyle} />,
     margin: (
       <ResultTile
         key="margin"
@@ -412,12 +456,13 @@ function ServicePricing({ serviceKey: key, values, setValues, servingTypes, d, t
   const quickTiles = quick
     ? [
         // No cost yet (purchase price, or degree for the duties, still to come): the price on file is only a
-        // placeholder, not a suggestion. « – · à calculer » until there is one; the user's own price stays.
+        // starting value, not a suggestion. « – · à calculer » until there is one (the field says the same);
+        // the user's own price stays.
         <ResultTile
           key="ttc"
           label="Prix TTC"
-          value={s.price > 0 && (s.touched || cost > 0) ? tileEuro(s.price) : '–'}
-          caption={s.touched ? tvaLabel(tva) : cost > 0 ? 'conseillé' : 'à calculer'}
+          value={s.price > 0 && !pending ? tileEuro(s.price) : '–'}
+          caption={pending ? pendingWord : s.touched || !(cost > 0) ? tvaLabel(tva) : 'conseillé'}
           style={tileStyle}
         />,
         tiles.margin,
@@ -485,12 +530,15 @@ function ServicePricing({ serviceKey: key, values, setValues, servingTypes, d, t
           <View style={styles.valueHead}>
             <Text style={styles.valueLabel}>{setup.label}</Text>
             <Text style={styles.valueMeta}>
-              {s.mode === 'price' ? `TTC · ${tvaLabel(tva)}` : s.mode === 'margin' ? `sur le prix HT · ${formatEuro(s.price)} TTC` : `× coût HT · ${formatEuro(s.price)} TTC`}
+              {s.mode === 'price'
+                ? `TTC · ${tvaLabel(tva)}`
+                : `${s.mode === 'margin' ? 'sur le prix HT' : '× coût HT'} · ${pending ? `prix ${pendingWord}` : `${formatEuro(s.price)} TTC`}`}
             </Text>
           </View>
           <NumberInput
             size="large"
-            value={needsCost ? null : roundToStep(isFinite(shown) ? shown : 0, Math.pow(10, -setup.decimals))}
+            value={needsCost || pending ? null : roundToStep(isFinite(shown) ? shown : 0, Math.pow(10, -setup.decimals))}
+            stepFrom={pending && s.mode === 'price' ? s.price : undefined}
             onChange={onValue}
             step={setup.inputStep}
             // Prix: 0 stays 0 (validation names the service) and a typo above the
@@ -501,8 +549,8 @@ function ServicePricing({ serviceKey: key, values, setValues, servingTypes, d, t
             format={setup.format}
             suffix={setup.suffix}
             disabled={needsCost}
-            placeholder="—"
-            accessibilityLabel={`${setup.a11y}, ${serviceName(key, values, servingTypes)}`}
+            placeholder={pending && !needsCost ? pendingWord : '—'}
+            accessibilityLabel={`${setup.a11y}, ${serviceName(key, values, servingTypes)}${pending && !needsCost ? `, ${pendingWord}` : ''}`}
             onEditingChange={onLiveChange}
             style={priceError ? styles.inputError : null}
             testID="pricing-input"
@@ -518,13 +566,16 @@ function ServicePricing({ serviceKey: key, values, setValues, servingTypes, d, t
             marker={needsCost ? undefined : setup.marker}
             zones={needsCost ? undefined : setup.zones}
             formatLabel={setup.formatLabel}
-            disabled={needsCost}
+            // « à calculer »: no knob on a price nobody chose (type it, or step it with −/+).
+            disabled={needsCost || pending}
+            // Only the track: no knob, fill or end labels that would read as a price.
+            empty={pending}
             onSlidingChange={(v) => {
               setDragging(v);
               onLiveChange?.(v);
             }}
             accessibilityLabel={setup.a11y}
-            accessibilityValueText={isFinite(shown) ? setup.format(shown) : undefined}
+            accessibilityValueText={isFinite(shown) && !pending ? setup.format(shown) : pending ? pendingWord : undefined}
             testID="pricing-slider"
           />
         </SwapFade>

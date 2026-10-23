@@ -53,6 +53,12 @@ export interface SliderProps {
   formatLabel?: (v: number) => string;
   showMinMax?: boolean;
   disabled?: boolean;
+  /**
+   * No value yet (a price still « à calculer »): only the track and its zones,
+   * no fill, knob or end labels (their room is kept, so nothing moves when a
+   * value comes). Pair it with `disabled` and an `accessibilityValueText`.
+   */
+  empty?: boolean;
   accessibilityLabel?: string;
   /** Spoken value (default: formatLabel(value)). */
   accessibilityValueText?: string;
@@ -79,6 +85,7 @@ export function Slider({
   formatLabel,
   showMinMax = true,
   disabled = false,
+  empty = false,
   accessibilityLabel,
   accessibilityValueText,
   style,
@@ -269,29 +276,33 @@ export function Slider({
               ))}
             </View>
           ) : null}
-          <Animated.View style={[styles.fill, fillStyle]}>
-            <LinearGradient {...gradients.sliderFill} style={StyleSheet.absoluteFill} />
-          </Animated.View>
+          {empty ? null : (
+            <Animated.View style={[styles.fill, fillStyle]}>
+              <LinearGradient {...gradients.sliderFill} style={StyleSheet.absoluteFill} />
+            </Animated.View>
+          )}
         </View>
         {markerRatio !== null && trackW ? (
           <View pointerEvents="none" style={[styles.markerTick, { left: INSET + markerRatio * trackW - 1 }]} />
         ) : null}
-        <Animated.View pointerEvents="none" style={[styles.knob, focused && styles.knobFocused, knobStyle]}>
-          <Animated.View style={[StyleSheet.absoluteFill, styles.knobGrabShadow, knobShadow]} />
-          <View style={styles.knobCore} />
-        </Animated.View>
+        {empty ? null : (
+          <Animated.View pointerEvents="none" style={[styles.knob, focused && styles.knobFocused, knobStyle]}>
+            <Animated.View style={[StyleSheet.absoluteFill, styles.knobGrabShadow, knobShadow]} />
+            <View style={styles.knobCore} />
+          </Animated.View>
+        )}
       </View>
       {showMinMax || marker?.label ? (
-        <View style={styles.labels} pointerEvents="none">
+        <View style={styles.labels} pointerEvents="none" accessibilityElementsHidden={empty} importantForAccessibility={empty ? 'no-hide-descendants' : 'auto'}>
           {showMinMax ? (
-            <Text style={styles.minmax} onLayout={(e) => setMinW(e.nativeEvent.layout.width)}>
+            <Text style={[styles.minmax, empty && styles.hidden]} onLayout={(e) => setMinW(e.nativeEvent.layout.width)}>
               {label(min)}
             </Text>
           ) : (
             <View />
           )}
           {showMinMax ? (
-            <Text style={styles.minmax} onLayout={(e) => setMaxW(e.nativeEvent.layout.width)}>
+            <Text style={[styles.minmax, empty && styles.hidden]} onLayout={(e) => setMaxW(e.nativeEvent.layout.width)}>
               {label(max)}
             </Text>
           ) : null}
@@ -315,6 +326,7 @@ const styles = StyleSheet.create({
     height: ROW,
     justifyContent: 'center',
   },
+  hidden: { opacity: 0 },
   track: {
     height: 6,
     borderRadius: 3,

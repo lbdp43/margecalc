@@ -286,28 +286,39 @@ export function ProductDetailScreen({ route, navigation: nav }: Props) {
   // ── states without a product ──
   const showSkeleton = useDelayedLoading(!product && (q.isLoading || q.isFetching));
   const offlineEmpty = useDelayedLoading(!product && !!q.isOffline, 400);
-  const notFound = !productId || (!product && apiStatus(q.error) === 404);
+  // Deleted elsewhere (another tab or device, or a page left mid-undo whose
+  // DELETE went through): the server's 404, or a delete still waiting, wins over
+  // a cached copy, which would otherwise keep showing a product that is gone.
+  const deletePending = !!productId && !deleted && productService.isDeletePending(productId);
+  const gone = !!productId && !deleted && (deletePending || apiStatus(q.error) === 404);
+  const notFound = !productId || gone || (!product && apiStatus(q.error) === 404);
   const loadError = !product && !!q.error && !q.isFetching && !notFound;
+  // The device's offline copy of a product the server no longer has: dropped,
+  // so the next visit never shows it again.
+  const goneOnServer = gone && apiStatus(q.error) === 404;
+  useEffect(() => {
+    if (goneOnServer && productId) productService.dropOfflineProduct(productId);
+  }, [goneOnServer, productId]);
 
   const header = (
     <NavBar
       title={titleShown && product ? product.name : ''}
       trailing={
-        product && !deleted ? (
+        product && !deleted && !gone ? (
           <IconButton icon="ellipsis-horizontal" onPress={openActions} accessibilityLabel="Plus d’actions" testID="detail-more" />
         ) : null
       }
     />
   );
 
-  if (!product) {
+  if (!product || gone) {
     let body: React.ReactNode = null;
     if (notFound) {
       body = (
         <EmptyState
-          icon="search"
-          title="Produit introuvable"
-          text="Il a peut-être été supprimé, ou le lien n’est plus valable."
+          icon={deletePending ? 'trash-outline' : 'search'}
+          title={deletePending ? 'Produit supprimé' : 'Produit introuvable'}
+          text={deletePending ? 'Il ne fait plus partie de vos produits.' : 'Il a peut-être été supprimé, ou le lien n’est plus valable.'}
           primary={{ label: 'Voir mes produits', icon: 'grid-outline', onPress: () => goToProductList(navigation) }}
         />
       );

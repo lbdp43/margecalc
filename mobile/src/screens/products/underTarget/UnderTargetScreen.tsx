@@ -51,7 +51,7 @@ import {
   useDelayedLoading,
 } from '../../../components/ui';
 import type { UndoHandle } from '../../../components/ui';
-import { palette, type } from '../../../theme';
+import { marginColors, palette, type } from '../../../theme';
 import { haptics } from '../../../theme/haptics';
 import { formatEuro, formatNumber, formatPercent, NBSP, plural } from '../../../utils/format';
 import { getMarginZone, useMarginThresholds } from '../../../utils/marginThresholds';
@@ -148,19 +148,51 @@ export function UnderTargetScreen({ route, navigation: nav }: Props) {
   }, []);
 
   const live = useMemo(() => underTargetRows(products, t, rounding, onlyIds), [products, t, rounding, onlyIds]);
-  // Applied rows keep their place (their « before » margin), next to the live ones.
+  /**
+   * « Appliquer » never moves the list (polish n° 3). Each row keeps the place
+   * it had when it first showed (its margin then): no re-sort while the screen
+   * is open, applied rows stay where they were. And a row on screen never
+   * leaves for a single render: the list cache and this screen's state land in
+   * separate renders (the query notifies in its own task), so the applied row
+   * used to drop out for one render and come back as a NEW cell, the browser
+   * clamping the scroll to the top meanwhile. So `appliedRef` (updated with
+   * every write, before the cache) is what is read here, and a row whose
+   * product this render's list copy does not hold at its latest write yet
+   * stays as it was.
+   */
+  const rank = useRef(new Map<string, number>());
+  const lastShown = useRef(new Map<string, TargetRow>());
+  /** Each product's `updatedAt` right after this screen's latest write of it (apply or « Annuler »). */
+  const lastWrite = useRef(new Map<string, string>());
+  // Read during render on purpose (see above); `applied` re-renders when it changes.
+  const appliedNow = appliedRef.current;
   const rows = useMemo(() => {
-    const out: TargetRow[] = live.filter((r) => !applied[r.key]);
-    for (const a of Object.values(applied)) out.push(a.row);
-    return out.sort((a, b) => a.margin - b.margin || a.productName.localeCompare(b.productName, 'fr'));
-  }, [live, applied]);
+    const current = appliedRef.current;
+    const byKey = new Map<string, TargetRow>();
+    for (const r of live) if (!current[r.key]) byKey.set(r.key, r);
+    // Applied rows keep their « before » figures (and their place), next to the live ones.
+    for (const a of Object.values(current)) byKey.set(a.row.key, a.row);
+    for (const [key, r] of lastShown.current) {
+      if (byKey.has(key)) continue;
+      const wrote = lastWrite.current.get(r.productId);
+      const listed = products.find((p) => p.id === r.productId);
+      if (wrote && listed && Date.parse(listed.updatedAt) < Date.parse(wrote)) byKey.set(key, r);
+    }
+    const out = Array.from(byKey.values());
+    for (const r of out) if (!rank.current.has(r.key)) rank.current.set(r.key, r.margin);
+    const at = (r: TargetRow) => rank.current.get(r.key) ?? r.margin;
+    out.sort((a, b) => at(a) - at(b) || a.productName.localeCompare(b.productName, 'fr') || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+    lastShown.current = new Map(out.map((r) => [r.key, r]));
+    return out;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [live, applied, products]);
   const counts = useMemo(() => ({ all: rows.length, red: rows.filter((r) => r.zone === 'red').length, orange: rows.filter((r) => r.zone === 'orange').length }), [rows]);
   // A chip that lost its last row falls back to « Tous ».
   useEffect(() => {
     if (zone !== 'all' && hasData && counts[zone] === 0 && counts.all > 0) setZone('all');
   }, [zone, counts, hasData]);
   const visible = useMemo(() => (zone === 'all' ? rows : rows.filter((r) => r.zone === zone)), [rows, zone]);
-  const pending = visible.filter((r) => !applied[r.key]);
+  const pending = visible.filter((r) => !appliedNow[r.key]);
   /** What « Tout appliquer » covers (the bar's summary)… */
   const bulkAll = pending.filter((r) => !r.guard);
   /** …and what it sends: never a row whose product already has a write running. */
@@ -257,6 +289,7 @@ export function UnderTargetScreen({ route, navigation: nav }: Props) {
           }
           const restored = await productService.batchUpdatePricesChunked(updates);
           const written = new Set(restored.products.map((p) => p.id));
+          for (const p of restored.products) lastWrite.current.set(p.id, p.updatedAt);
           for (const p of restored.products) {
             if (exact.has(p.id)) {
               baselines.current.delete(p.id);
@@ -314,13 +347,17 @@ export function UnderTargetScreen({ route, navigation: nav }: Props) {
           const result = await productService.batchUpdatePricesChunked(updates);
           const written = new Set(result.products.map((p) => p.id));
           for (const prev of result.previous) if (!baselines.current.has(prev.productId)) baselines.current.set(prev.productId, prev);
-          for (const p of result.products) stamps.current.set(p.id, p.updatedAt);
-          productService.applyBatchProducts(queryClient, result.products);
+          for (const p of result.products) {
+            stamps.current.set(p.id, p.updatedAt);
+            lastWrite.current.set(p.id, p.updatedAt);
+          }
           const done = todo.filter((e) => written.has(e.row.productId));
           const batch = ++batchSeq.current;
           const next = { ...appliedRef.current };
           for (const e of done) next[e.row.key] = { row: e.row, price: e.price, margin: m2(marginAt(e.row.cost, e.row.tva, e.price)), batch };
+          // Applied first, then the caches: the row is never without one of them.
           commitApplied(next);
+          productService.applyBatchProducts(queryClient, result.products);
           if (result.error) {
             // Some batches went through: their rows keep their own « Annuler ».
             haptics.warning();
@@ -362,18 +399,21 @@ export function UnderTargetScreen({ route, navigation: nav }: Props) {
     if (navigation.canGoBack?.()) navigation.goBack();
     else goToProductList(navigation);
   }, [navigation]);
-  // « Retour » goes where the screen was opened from, as the browser / Android back does.
+  // « Retour » closes the screen (a root-stack screen: the tabs underneath are
+  // exactly as the user left them). With nothing underneath (deep link), go to
+  // where it was opened from.
   const onBack = useCallback(() => {
-    if (params.from === 'dashboard') navigation.navigate(ROUTES.tabs, { screen: ROUTES.dashboardTab, params: { screen: ROUTES.dashboardMain } });
-    else done();
-  }, [navigation, params.from, done]);
+    if (navigation.canGoBack?.()) navigation.goBack();
+    else if (params.from === 'dashboard') navigation.navigate(ROUTES.tabs, { screen: ROUTES.dashboardTab, params: { screen: ROUTES.dashboardMain } });
+    else goToProductList(navigation);
+  }, [navigation, params.from]);
 
   // ── summary: « 3 prix · marge moy. 68,4 → 72,1 % » ──
   const summary = useMemo(() => {
     const prices = new Map(bulkAll.map((r) => [r.key, { row: r, price: r.suggested }]));
     return averageAfter(products, prices);
   }, [products, bulkAll]);
-  const appliedVisible = visible.filter((r) => !!applied[r.key]).length;
+  const appliedVisible = visible.filter((r) => !!appliedNow[r.key]).length;
 
   const objectiveText = formatPercent(t.good, Number.isInteger(t.good) ? 0 : 1);
   const header = <NavBar title="Sous l’objectif" onBack={onBack} trailing={<Badge variant="neutral" icon="flag-outline" label={`Objectif ${objectiveText}`} />} />;
@@ -436,16 +476,25 @@ export function UnderTargetScreen({ route, navigation: nav }: Props) {
         <ChipRow
           items={[
             { key: 'all', label: 'Tous', count: counts.all },
-            { key: 'red', label: `<${NBSP}${formatPercent(t.medium, 0)}`, count: counts.red, accessibilityLabel: `Sous ${formatNumber(t.medium, 0)} pour cent, ${counts.red}` },
+            {
+              key: 'red',
+              label: `<${NBSP}${formatPercent(t.medium, 0)}`,
+              dot: marginColors.red.solid,
+              count: counts.red,
+              accessibilityLabel: `Sous ${formatNumber(t.medium, 0)} pour cent, ${counts.red}`,
+            },
             {
               key: 'orange',
               label: `${formatNumber(t.medium, 0)}–${formatPercent(t.good, 0)}`,
+              dot: marginColors.orange.solid,
               count: counts.orange,
               accessibilityLabel: `Entre ${formatNumber(t.medium, 0)} et ${formatNumber(t.good, 0)} pour cent, ${counts.orange}`,
             },
           ].filter((c) => c.key === 'all' || c.count > 0)}
           selectedKey={zone}
           onSelect={(k) => setZone(k as ZoneKey)}
+          // Phones up to 390 px: the three chips (two with a dot) fit without scrolling.
+          compact={width < 400}
           accessibilityLabel="Zones de marge"
         />
       </View>
@@ -457,7 +506,7 @@ export function UnderTargetScreen({ route, navigation: nav }: Props) {
         <TargetRowCard
           row={item}
           thresholds={t}
-          applied={applied[item.key] ?? null}
+          applied={appliedRef.current[item.key] ?? null}
           busy={busy.has(item.productId)}
           disabled={bulkBusy}
           narrow={narrow}

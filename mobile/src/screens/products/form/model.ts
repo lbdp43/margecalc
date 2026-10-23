@@ -294,6 +294,18 @@ export function derive(values: FormValues, servingTypes: ServingType[], rates: R
   };
 }
 
+/**
+ * The service's price on file is only the starting value (5,00 €), not a
+ * price: nobody chose it, and no cost gives a suggestion yet (no purchase
+ * price, the degree for the duties, or a product offered at 0 €). The tiles,
+ * the field, the slider, the service chip and the sticky bar then say « à
+ * calculer » (« à saisir » at 0 €), and the save asks for a price.
+ */
+export function pricePending(key: string, values: FormValues, d: Derived): boolean {
+  const s = values.services[key];
+  return !!s && !s.touched && !(d.costOf(key) > 0);
+}
+
 /** Margin of one enabled service (null while its price or cost is unknown). */
 export function resultOf(key: string, values: FormValues, d: Derived) {
   const s = values.services[key];
@@ -363,7 +375,8 @@ export function validate(values: FormValues, d: Derived, servingTypes: ServingTy
     fields.services = 'Choisissez au moins un service et son prix de vente.';
   } else {
     const names = (list: string[]) => list.map((k) => `« ${serviceName(k, values, servingTypes)} »`).join(', ');
-    const noPrice = keys.filter((k) => !(values.services[k].price > 0));
+    // A starting value nobody chose is no price (an offered product, 0 €: nothing to suggest from).
+    const noPrice = keys.filter((k) => !(values.services[k].price > 0) || (d.costKnown && pricePending(k, values, d)));
     const tooExpensive = keys.filter((k) => values.services[k].price > PRICE_MAX);
     const tooBig = d.containerCl > 0 ? keys.filter((k) => d.doseOf(k) > d.containerCl) : [];
     const noDose = keys.filter((k) => k === CUSTOM_DOSE && !(d.doseOf(k) > 0));
@@ -508,7 +521,7 @@ export function summaryOf(values: FormValues, d: Derived, servingTypes: ServingT
   const empty: FormSummary = { count: n, margin: null, coeff: null, costKnown: d.costKnown, isMin: n > 1, weakest: null };
   let worst: { key: string; r: NonNullable<ReturnType<typeof resultOf>> } | null = null;
   for (const key of keys) {
-    const r = resultOf(key, values, d);
+    const r = pricePending(key, values, d) ? null : resultOf(key, values, d);
     if (!r) return empty;
     if (!worst || r.marginPercent < worst.r.marginPercent) worst = { key, r };
   }

@@ -88,6 +88,7 @@ export function averageMargin(products: ProductWithMargin[]): number | null {
 //   zone      good | medium | bad      (≥ objective · between · under the alert threshold)
 //   category  a category id
 //   sort      recent | marginAsc | marginDesc | name
+//   review    1                        (only the prices to review: « Vérifier »)
 
 export type ZoneParam = 'good' | 'medium' | 'bad';
 
@@ -123,4 +124,20 @@ export function inZone(p: ProductWithMargin, zone: MarginZone | null, thresholds
   if (!zone) return true;
   const m = p.computed?.marginPercent;
   return typeof m === 'number' && isFinite(m) && getMarginZone(m, thresholds) === zone;
+}
+
+// ─── « Prix à vérifier » (polish n° 2) ───────────────────────────────────────
+// Products whose selling price an invoice computed (×4) and nobody confirmed
+// yet (`priceToReview`). « Vérifier » (invoice results, Tableau de bord) opens
+// the list on them: /produits?review=1, chip « Prix à vérifier · 3 ✕ ».
+
+export const REVIEW_FILTER_LABEL = 'Prix à vérifier';
+
+/** `review` route param: '1' (URL), also `true` / 'true' from older links. */
+export function reviewFromParam(v: unknown): boolean {
+  return v === true || v === '1' || v === 'true';
+}
+
+export function toReview(p: ProductWithMargin): boolean {
+  return p.priceToReview === true;
 }

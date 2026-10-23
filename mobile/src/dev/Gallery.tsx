@@ -59,7 +59,7 @@ import {
   YinYangSpinner,
 } from '../components/ui';
 import { ErrorBoundary } from '../components/ui/ErrorBoundary';
-import { fontFamily, palette, type } from '../theme';
+import { fontFamily, marginColors, palette, type } from '../theme';
 import { haptics } from '../theme/haptics';
 import { alert, confirm } from '../utils/alert';
 import { formatCoeff, formatDegree, formatEuro, formatNumber, formatPercent } from '../utils/format';
@@ -135,6 +135,7 @@ export function Gallery() {
   const [dragging, setDragging] = useState(false);
   const [cat, setCat] = useState('all');
   const [service, setService] = useState('verre5');
+  const [zoneChip, setZoneChip] = useState('red');
   const [sheet, setSheet] = useState(false);
   const [welcome, setWelcome] = useState(false);
   const [actionsFor, setActionsFor] = useState<{ name: string } | null>(null);
@@ -334,6 +335,17 @@ export function Gallery() {
           <Chip label="Désactivé" disabled />
           <Chip label="Sélectionné" selected count={3} />
         </View>
+        {/* Zone chips (« Sous l’objectif »): an optional dot before the label; compact under 400 px. */}
+        <ChipRow
+          compact
+          items={[
+            { key: 'all', label: 'Tous', count: 4 },
+            { key: 'red', label: '< 50 %', dot: marginColors.red.solid, count: 1 },
+            { key: 'orange', label: '50–65 %', dot: marginColors.orange.solid, count: 3 },
+          ]}
+          selectedKey={zoneChip}
+          onSelect={setZoneChip}
+        />
       </Section>
 
       <Section title="Tarification" meta={`${DOSES} verres par bouteille`}>

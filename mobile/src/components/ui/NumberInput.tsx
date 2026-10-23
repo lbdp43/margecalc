@@ -47,6 +47,12 @@ export interface NumberInputProps {
   label?: string;
   accessibilityLabel?: string;
   placeholder?: string;
+  /**
+   * Where −/+ (and ↑/↓) start while `value` is empty (null): e.g. the starting
+   * price of a service whose price is still « à calculer », so + gives 5,10 €,
+   * never 0,10 €. Default: the last value shown, else 0.
+   */
+  stepFrom?: number;
   disabled?: boolean;
   haptic?: boolean;
   /** Called when typing starts / ends (e.g. to make tiles update instantly). */
@@ -75,6 +81,7 @@ export function NumberInput({
   label,
   accessibilityLabel,
   placeholder = '0',
+  stepFrom,
   disabled = false,
   haptic = true,
   onEditingChange,
@@ -99,6 +106,9 @@ export function NumberInput({
 
   const display = (n: number) => (format ? format(n) : `${formatNumber(n, decimals)}${suffix ? ` ${suffix}` : ''}`);
   const hasValue = typeof value === 'number' && isFinite(value);
+  // Read by the step callbacks (stable): an empty field steps from `stepFrom`.
+  const emptyFrom = useRef<number | null>(null);
+  emptyFrom.current = !hasValue && typeof stepFrom === 'number' && isFinite(stepFrom) ? stepFrom : null;
   const shown = editing ? text : hasValue ? display(value as number) : '';
 
   const apply = useCallback(
@@ -113,7 +123,9 @@ export function NumberInput({
   );
 
   const stepBy = useCallback(
-    (dir: 1 | -1) => {
+    (dir: 1 | -1, from?: number) => {
+      if (from !== undefined) valueRef.current = from;
+      else if (emptyFrom.current !== null) valueRef.current = emptyFrom.current;
       const changed = apply(valueRef.current + dir * step);
       if (changed && haptic) haptics.select();
       return changed;
@@ -222,9 +234,8 @@ export function NumberInput({
     if (key !== 'ArrowUp' && key !== 'ArrowDown') return;
     e.preventDefault?.();
     const typed = parseLocaleFloat(text);
-    const base = isFinite(typed) ? typed : valueRef.current;
-    valueRef.current = base;
-    if (stepBy(key === 'ArrowUp' ? 1 : -1)) setText(toInputString(valueRef.current, decimals));
+    const base = isFinite(typed) ? typed : emptyFrom.current ?? valueRef.current;
+    if (stepBy(key === 'ArrowUp' ? 1 : -1, base)) setText(toInputString(valueRef.current, decimals));
   };
 
   const atMin = hasValue && (value as number) <= min;

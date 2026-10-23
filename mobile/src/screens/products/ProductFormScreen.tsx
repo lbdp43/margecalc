@@ -76,6 +76,7 @@ import { FormSkeleton } from './form/FormSkeleton';
 import { FieldError, FieldLabel, FormSection } from './form/FieldBits';
 import { SAVED_CALCS_KEY, SavedCalc, SavedCalcsSheet, parseSavedCalcs } from './form/SavedCalcsSheet';
 import { FieldErrors, FieldKey, describeSaveError } from './form/errors';
+import { deleteWithUndo } from './list/productActions';
 import {
   FormValues,
   NO_PHOTO,
@@ -1199,35 +1200,27 @@ export function ProductFormScreen({ route, navigation }: Props) {
     }
   }, [photoBusy, servingTypes, rates, seuilSS, productId, editing, user?.id, queryClient, navigation, scrollToField, clearUndoToast, captureEntry]);
 
-  const remove = useCallback(async () => {
-    if (!productId || deleting) return;
-    const v = valuesRef.current;
-    const n = Object.keys(v.services).filter((k) => k !== '__dose').length;
-    const name = v.name.trim() || 'Ce produit';
-    const ok = await dialog.confirm({
-      title: 'Supprimer ce produit ?',
-      message:
-        n > 0
-          ? `${name} et ${n > 1 ? `ses ${n} services seront supprimés` : 'son service seront supprimés'}. Cette action est définitive.`
-          : `${name} sera supprimé. Cette action est définitive.`,
-      confirmLabel: 'Supprimer',
-      destructive: true,
-    });
-    if (!ok) return;
+  /**
+   * « Supprimer ce produit »: the same undo as the list and the detail (lot 2
+   * n° 11, polish n° 1), no « définitive » dialog. The product leaves the lists
+   * at once, the form closes (afterProductDeleted) and the toast « Aperol
+   * supprimé · Annuler ⑥ » holds the DELETE until its countdown ends; « Annuler »
+   * puts the product back with no request. Unsaved edits go with it (leaving
+   * without saving, like « Quitter sans enregistrer »).
+   */
+  const remove = useCallback(() => {
+    if (!productId || deleting || saving.current) return;
+    // The name the lists know (an unsaved rename is not the product's name yet).
+    const name = productQ.data?.name?.trim() || valuesRef.current.name.trim() || 'Ce produit';
+    const id = productId;
+    // A form toast (« Photo retirée · Annuler »…) is replaced by the delete's own: the unmount must not clear that one.
+    undoToast.current = false;
+    const ok = deleteWithUndo(queryClient, { id, name }, { onDeleted: () => deleteFormPrefs(id) });
+    if (!ok) return; // offline: refused with its sentence, the form stays
     setDeleting(true);
-    try {
-      await productService.deleteProduct(productId);
-      productService.forgetProduct(queryClient, productId);
-      deleteFormPrefs(productId);
-      allowLeave.current = true;
-      afterProductDeleted(navigation as any);
-      toast.success(`${name} supprimé`);
-    } catch (err) {
-      setDeleting(false);
-      const info = describeSaveError(err, 'delete');
-      dialog.alert({ title: info.title, message: info.message, tone: info.offline ? 'warn' : 'bad', icon: info.offline ? 'cloud-offline-outline' : 'alert-circle-outline' });
-    }
-  }, [productId, deleting, queryClient, navigation]);
+    allowLeave.current = true;
+    afterProductDeleted(navigation as any);
+  }, [productId, deleting, productQ.data?.name, queryClient, navigation]);
 
   // ─── Render: scan step ───────────────────────────────────────────────────
   if (step === 'scan') {
@@ -1514,8 +1507,7 @@ export function ProductFormScreen({ route, navigation }: Props) {
                 variant="destructive"
                 icon="trash-outline"
                 onPress={remove}
-                loading={deleting}
-                disabled={saveState !== 'idle'}
+                disabled={saveState !== 'idle' || deleting}
                 testID="product-delete"
               />
             </View>

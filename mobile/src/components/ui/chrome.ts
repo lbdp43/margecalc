@@ -62,10 +62,15 @@ export function useSafeIsFocused(): boolean {
  * Keyboard height, on every platform.
  * Web: derived from `visualViewport` (iOS Safari does not resize the layout
  * viewport), so sticky bars can ride above the keyboard.
+ * `enabled` false: no listener, 0 (a Screen without a sticky bar).
  */
-export function useKeyboardHeight(): number {
+export function useKeyboardHeight(enabled: boolean = true): number {
   const [height, setHeight] = useState(0);
   useEffect(() => {
+    if (!enabled) {
+      setHeight(0);
+      return;
+    }
     if (Platform.OS === 'web') {
       const g: any = globalThis as any;
       const vv: any = g.window ? g.window.visualViewport : null;
@@ -76,6 +81,7 @@ export function useKeyboardHeight(): number {
       };
       vv.addEventListener('resize', update);
       vv.addEventListener('scroll', update);
+      update(); // a keyboard already open when the screen mounts
       return () => {
         vv.removeEventListener('resize', update);
         vv.removeEventListener('scroll', update);
@@ -89,7 +95,7 @@ export function useKeyboardHeight(): number {
       s.remove();
       h.remove();
     };
-  }, []);
+  }, [enabled]);
   return height;
 }
 

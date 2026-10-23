@@ -25,8 +25,16 @@
  * 68 + barBottom + 24 when the floating tab bar is visible (any screen inside
  * the tab navigator), else safe-area bottom + 24. Content never hides under
  * the bars. Scrolling works on web (bounded flex chain, RN ScrollView).
+ *
+ * With a sticky footer (polish n° 6): the inset is the footer's MEASURED
+ * height + 16, plus the keyboard while it is open on web and on iOS without
+ * the KeyboardAvoidingView (the bar rides above it; Android resizes the
+ * window and iOS's KeyboardAvoidingView shrinks the scroll area). On web the
+ * same amount is the scroll container's `scroll-padding-bottom`, so a field
+ * the browser brings into view (focus, Tab, scrollIntoView) stops above the
+ * bar, and the focused field is brought back above the bar when the keyboard opens.
  */
-import React, { createContext, useCallback, useContext, useMemo, useRef, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
   FlatList,
   FlatListProps,
@@ -49,7 +57,7 @@ import { BottomTabBarHeightContext } from '@react-navigation/bottom-tabs';
 import { StatusBar } from 'expo-status-bar';
 import Animated, { interpolate, SharedValue, useAnimatedStyle, useSharedValue, Extrapolation } from 'react-native-reanimated';
 import { layout, palette, type } from '../../theme';
-import { useSafeIsFocused } from './chrome';
+import { useKeyboardHeight, useSafeIsFocused } from './chrome';
 
 interface ScreenContextValue {
   scrollY: SharedValue<number>;
@@ -60,6 +68,31 @@ interface ScreenContextValue {
   setCompactTitle: (title: string | null) => void;
   refreshing?: boolean;
   onRefresh?: () => void;
+  /** Internal: a ScreenList registers its scroll node (web `scroll-padding-bottom`). */
+  setScrollNode?: (node: any) => void;
+}
+
+/** Web: the DOM node behind a ScrollView / FlatList ref. */
+function domNodeOf(ref: any): any {
+  if (!ref) return null;
+  const n = typeof ref.getScrollableNode === 'function' ? ref.getScrollableNode() : ref;
+  return n && n.style ? n : null;
+}
+
+/** Web: what the browser keeps clear at the bottom when it brings an element into view. */
+function applyScrollPadding(ref: any, bottom: number | null) {
+  if (Platform.OS !== 'web') return;
+  const node = domNodeOf(ref);
+  if (node) node.style.scrollPaddingBottom = bottom !== null ? `${Math.round(bottom)}px` : '';
+}
+
+/** Web: bring the focused element of this scroll node back into view (above the sticky bar: scroll-padding). */
+function revealFocused(ref: any) {
+  const node = domNodeOf(ref);
+  const doc: any = (globalThis as any).document;
+  const el = doc?.activeElement;
+  if (!node || !el || el === doc.body || !node.contains(el) || typeof el.scrollIntoView !== 'function') return;
+  el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
 }
 
 const ScreenContext = createContext<ScreenContextValue | null>(null);
@@ -131,6 +164,9 @@ export function Screen({
   const focused = useSafeIsFocused();
   const scrollY = useSharedValue(0);
   const [footerH, setFooterH] = useState(0);
+  const kb = useKeyboardHeight(!!stickyFooter);
+  // The keyboard covers the bottom of the scroll area where nothing else makes room for it.
+  const kbInset = stickyFooter && (Platform.OS === 'web' || (Platform.OS === 'ios' && !keyboardAvoiding)) ? kb : 0;
   const [compactTitle, setCompactTitle] = useState<string | null>(null);
   const userOnScroll = useRef(onScroll);
   userOnScroll.current = onScroll;
@@ -139,7 +175,7 @@ export function Screen({
     typeof bottomInset === 'number'
       ? bottomInset
       : stickyFooter
-        ? footerH + 16
+        ? footerH + 16 + kbInset
         : insideTabs
           ? layout.contentBottomInset(insets.bottom)
           : insets.bottom + 24;
@@ -153,9 +189,39 @@ export function Screen({
   );
 
   const gutter = (padded ?? scroll) ? layout.gutter : 0;
+  // Web: the scroll node of this Screen (its ScrollView, or a ScreenList inside) for `scroll-padding-bottom`.
+  const scrollNode = useRef<any>(null);
+  const scrollPadding = stickyFooter ? computedBottom : null;
+  const scrollPaddingRef = useRef(scrollPadding);
+  scrollPaddingRef.current = scrollPadding;
+  const setScrollNode = useCallback((n: any) => {
+    scrollNode.current = n;
+    applyScrollPadding(n, scrollPaddingRef.current);
+  }, []);
+  useEffect(() => {
+    applyScrollPadding(scrollNode.current, scrollPadding);
+  }, [scrollPadding]);
+  // The keyboard just opened (the bar rose with it): the focused field, scrolled into view before, may now sit under it.
+  const lastKb = useRef(kbInset);
+  useEffect(() => {
+    const opened = kbInset > lastKb.current;
+    lastKb.current = kbInset;
+    if (!opened || Platform.OS !== 'web') return;
+    const raf = requestAnimationFrame(() => revealFocused(scrollNode.current));
+    return () => cancelAnimationFrame(raf);
+  }, [kbInset]);
+
   const ctx = useMemo<ScreenContextValue>(
-    () => ({ scrollY, bottomInset: computedBottom, gutter, insideTabs, handleScroll, setCompactTitle, refreshing, onRefresh }),
-    [scrollY, computedBottom, gutter, insideTabs, handleScroll, refreshing, onRefresh],
+    () => ({ scrollY, bottomInset: computedBottom, gutter, insideTabs, handleScroll, setCompactTitle, refreshing, onRefresh, setScrollNode }),
+    [scrollY, computedBottom, gutter, insideTabs, handleScroll, refreshing, onRefresh, setScrollNode],
+  );
+  const mergedScrollRef = useCallback(
+    (n: ScrollView | null) => {
+      setScrollNode(n);
+      if (typeof scrollRef === 'function') scrollRef(n);
+      else if (scrollRef) (scrollRef as React.MutableRefObject<ScrollView | null>).current = n;
+    },
+    [scrollRef, setScrollNode],
   );
 
   const refreshControl = onRefresh ? (
@@ -164,7 +230,7 @@ export function Screen({
 
   const body = scroll ? (
     <ScrollView
-      ref={scrollRef}
+      ref={mergedScrollRef}
       style={styles.flex}
       contentContainerStyle={[{ paddingHorizontal: gutter, paddingBottom: computedBottom, flexGrow: 1 }, contentContainerStyle]}
       showsVerticalScrollIndicator={false}
@@ -247,6 +313,8 @@ export type ScreenListProps<T> = FlatListProps<T> & { padded?: boolean };
  */
 export function ScreenList<T>({ padded, contentContainerStyle, onScroll, refreshControl, ...props }: ScreenListProps<T>) {
   const ctx = useContext(ScreenContext);
+  const setScrollNode = ctx?.setScrollNode;
+  const listRef = useCallback((n: any) => setScrollNode?.(n), [setScrollNode]);
   const insets = useSafeAreaInsets();
   const gutter = padded === false ? 0 : layout.gutter;
   const bottom = ctx?.bottomInset ?? insets.bottom + 24;
@@ -256,6 +324,7 @@ export function ScreenList<T>({ padded, contentContainerStyle, onScroll, refresh
   };
   return (
     <FlatList
+      ref={listRef}
       style={styles.flex}
       showsVerticalScrollIndicator={false}
       keyboardShouldPersistTaps="handled"

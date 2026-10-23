@@ -39,6 +39,7 @@ export async function getProducts(categoryId?: string): Promise<ProductWithMargi
   await settleLeftoverDeletes();
   const params = categoryId ? { categoryId } : {};
   const res = await api.get<ProductWithMargin[]>('/products', { params });
+  if (!categoryId) settleSentDeletes(res.data);
   return hiddenIds.size ? res.data.filter((p) => !hiddenIds.has(p.id)) : res.data;
 }
 
@@ -181,7 +182,15 @@ interface PendingDeleteEntry {
   name: string;
   userId: string | null;
   at: number;
+  /**
+   * When a page being left sent it (keepalive): its answer may never be read.
+   * The next launch does not send it again (a second DELETE, a 404): the
+   * full list tells whether it went through (see `settleSentDeletes`).
+   */
+  sentAt?: number;
 }
+/** A keepalive DELETE not confirmed by the list after this long is sent again. */
+const SENT_RETRY_AFTER_MS = 8000;
 
 /** Deletes in their undo window (this session), with what is needed to put the product back. */
 const pending = new Map<string, { entry: PendingDeleteEntry; snapshot?: ProductWithMargin; index: number }>();
@@ -255,6 +264,8 @@ function settleLeftoverDeletes(): Promise<void> {
       const mine = Array.from(stored.values()).filter((e) => e.userId === me && !pending.has(e.id));
       for (const e of mine) {
         hiddenIds.add(e.id);
+        // Sent by the page that was left: the list will say (settleSentDeletes).
+        if (e.sentAt) continue;
         try {
           if (await sendDelete(e.id, null, false)) forgetStored(e.id);
         } catch {
@@ -266,15 +277,46 @@ function settleLeftoverDeletes(): Promise<void> {
   return leftoversDone;
 }
 
+/**
+ * Every product of the account (GET /products without a category) just came
+ * back: a delete a left page sent (keepalive) is confirmed when its product
+ * is not in it any more; still there after SENT_RETRY_AFTER_MS, it is sent again.
+ */
+function settleSentDeletes(list: ProductWithMargin[]) {
+  const me = currentUserId();
+  const sent = Array.from(stored.values()).filter((e) => e.sentAt && e.userId === me && !pending.has(e.id));
+  if (!sent.length) return;
+  const present = new Set(list.map((p) => p.id));
+  for (const e of sent) {
+    if (!present.has(e.id)) {
+      forgetStored(e.id);
+    } else if (Date.now() - (e.sentAt ?? 0) > SENT_RETRY_AFTER_MS) {
+      e.sentAt = undefined;
+      saveStore();
+      sendDelete(e.id, null, false)
+        .then((ok) => ok && forgetStored(e.id))
+        .catch(() => {});
+    }
+  }
+}
+
+/** A keepalive DELETE for a page being left: marked sent on the device first (synchronous on web). */
+function sendOnLeave(id: string, token: string | null) {
+  const e = stored.get(id);
+  if (e) {
+    e.sentAt = Date.now();
+    saveStore();
+  }
+  // Kept hidden and stored until the server confirmed (else: the next launch's list).
+  sendDelete(id, token, true).then((ok) => ok && forgetStored(id));
+}
+
 /** The page / app is being left (or the user signs out): send every pending delete now. */
 export function flushPendingDeletes(token: string | null = useAuthStore.getState().token) {
   if (!pending.size) return;
   const ids = Array.from(pending.keys());
   pending.clear();
-  for (const id of ids) {
-    // Kept hidden and stored until the server confirmed (else: next launch).
-    sendDelete(id, token, true).then((ok) => ok && forgetStored(id));
-  }
+  for (const id of ids) sendOnLeave(id, token);
 }
 
 if (Platform.OS === 'web') {
@@ -352,7 +394,7 @@ export function deferProductDelete(queryClient: QueryClient, product: { id: stri
       pending.delete(id);
       if (pageHidden()) {
         // Leaving: a keepalive request; confirmed (or retried) like a flush.
-        sendDelete(id, useAuthStore.getState().token, true).then((ok) => ok && forgetStored(id));
+        sendOnLeave(id, useAuthStore.getState().token);
         forgetProduct(queryClient, id);
         return 'deleted';
       }
@@ -389,6 +431,13 @@ export function refreshProductCaches(queryClient: QueryClient, saved: ProductWit
   queryClient.invalidateQueries({ queryKey: productKeys.servings(id) });
   queryClient.invalidateQueries({ queryKey: productKeys.priceHistory(id) });
   queryClient.invalidateQueries({ queryKey: ADMIN_PRODUCTS });
+}
+
+/** The device's offline copies of a product the server no longer has (a 404). */
+export function dropOfflineProduct(id: string): void {
+  clearCache(JSON.stringify(productKeys.detail(id))).catch(() => {});
+  clearCache(JSON.stringify(productKeys.servings(id))).catch(() => {});
+  clearCache(JSON.stringify(productKeys.priceHistory(id))).catch(() => {});
 }
 
 /** After a delete: drop every cached trace of the product, then refetch the lists (RC7). */

@@ -12,6 +12,11 @@
  * « Tout voir »): route params `zone` (good | medium | bad), `category` and
  * `sort` (see list/listModel). They are applied once, then cleared from the
  * route, so the list then behaves as if the user had picked them.
+ * `review=1` (« Vérifier » on the invoice results and the dashboard) keeps only
+ * the prices to review: chip « Prix à vérifier · 3 ✕ » (polish n° 2), or only
+ * one invoice's (`reviewIds`, in memory: « Prix à vérifier (facture) · 6 ✕ »).
+ * While it is on, the prices to review are the list's whole scope: the legend
+ * counts, the zone chip's « 1 sur 3 » and « Corriger les prix » count them only.
  *
  * States: skeleton (after 150 ms, never over cached data; the header placeholders
  * mirror the legend, chips and sort row so nothing shifts), fresh account, no
@@ -71,14 +76,17 @@ import { useOfflineQuery } from '../../hooks/useOfflineQuery';
 import * as productService from '../../services/product.service';
 import {
   ALL_KEY,
+  REVIEW_FILTER_LABEL,
   SortKey,
   ZONE_FILTER_LABEL,
   averageMargin,
   categoryChips,
   inZone,
   matchesQuery,
+  reviewFromParam,
   sortFromParam,
   sortProducts,
+  toReview,
   zoneFromParam,
 } from './list/listModel';
 import { PriceEditSheet, PriceEditTarget } from './list/PriceEditSheet';
@@ -254,6 +262,10 @@ export function ProductListScreen({ navigation: nav, route }: Props) {
   const deferredQuery = useDeferredValue(query);
   const [category, setCategory] = useState<string>(ALL_KEY);
   const [zone, setZone] = useState<MarginZone | null>(null);
+  /** Only the prices to review (« Vérifier »). */
+  const [review, setReview] = useState(false);
+  /** With `review`: only these products (one invoice's, in memory). */
+  const [reviewIds, setReviewIds] = useState<Set<string> | null>(null);
   const [sort, setSort] = useState<SortKey>('recent');
   const [priceFor, setPriceFor] = useState<{ product: ProductWithMargin; target: PriceEditTarget } | null>(null);
   const [sortOpen, setSortOpen] = useState(false);
@@ -309,16 +321,27 @@ export function ProductListScreen({ navigation: nav, route }: Props) {
 
   // ── filters opened from the dashboard (route params, applied once) ──
   // `reset` (« Produits · 14 suivis », « Détails »): the whole list, user's sort.
-  const params = (route.params ?? {}) as { zone?: string; category?: string; sort?: string; reset?: string };
+  const params = (route.params ?? {}) as {
+    zone?: string;
+    category?: string;
+    sort?: string;
+    reset?: string;
+    review?: string | boolean;
+    reviewIds?: string[];
+  };
   const paramZone = zoneFromParam(params.zone);
   const paramSort = sortFromParam(params.sort);
   const paramCategory = typeof params.category === 'string' && params.category ? params.category : null;
   const paramReset = params.reset === '1';
-  const hasIntent = !!(paramZone || paramSort || paramCategory || paramReset);
+  const paramReview = reviewFromParam(params.review);
+  const paramReviewIds = paramReview && Array.isArray(params.reviewIds) && params.reviewIds.length ? params.reviewIds : null;
+  const hasIntent = !!(paramZone || paramSort || paramCategory || paramReset || paramReview);
   useEffect(() => {
     if (!hasIntent) return;
     setQuery('');
     setZone(paramZone);
+    setReview(paramReview);
+    setReviewIds(paramReviewIds ? new Set(paramReviewIds) : null);
     setCategory(paramCategory ?? ALL_KEY);
     // A sort from the link is not remembered: the user's own sort comes back
     // with the next link without one (or once its filter is removed).
@@ -326,34 +349,56 @@ export function ProductListScreen({ navigation: nav, route }: Props) {
     setSort(paramSort ?? userSort.current);
     restagger();
     scroller.scrollTo(0);
-    navigation.setParams({ zone: undefined, category: undefined, sort: undefined, reset: undefined });
+    navigation.setParams({ zone: undefined, category: undefined, sort: undefined, reset: undefined, review: undefined, reviewIds: undefined });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasIntent, paramZone, paramSort, paramCategory, paramReset]);
+  }, [hasIntent, paramZone, paramSort, paramCategory, paramReset, paramReview, paramReviewIds]);
 
   // ── derived data ──
-  const chips = useMemo(() => categoryChips(products), [products]);
-  // The selected category lost its last product (deleted): back to « Tous ».
+  // The list's scope: every product, or only the prices to review (« Vérifier »;
+  // one invoice's with `reviewIds`). The legend, the zone chip's « 1 sur 3 » and
+  // « Corriger les prix » count within it, so they always agree with the cards.
+  const reviewIdsOpen = review ? reviewIds : null;
+  const scope = useMemo(
+    () => (review ? products.filter((p) => toReview(p) && (!reviewIdsOpen || reviewIdsOpen.has(p.id))) : products),
+    [products, review, reviewIdsOpen],
+  );
+  /** With one invoice's prices: how many others still wait (« Autres prix à vérifier »). */
+  const otherReviews = useMemo(
+    () => (review && reviewIdsOpen ? products.filter((p) => toReview(p) && !reviewIdsOpen.has(p.id)).length : 0),
+    [products, review, reviewIdsOpen],
+  );
+  // Category chips count within the scope too (« Tous 4 » next to « Prix à vérifier · 4 »).
+  const chips = useMemo(() => categoryChips(scope), [scope]);
+  // The selected category lost its last product (deleted, or its last price confirmed): back to « Tous ».
   useEffect(() => {
-    if (hasData && category !== ALL_KEY && !products.some((p) => p.categoryId === category)) setCategory(ALL_KEY);
-  }, [hasData, products, category]);
-  const zoneCounts = useMemo(() => countByZone(products, thresholds), [products, thresholds]);
+    if (hasData && category !== ALL_KEY && !scope.some((p) => p.categoryId === category)) setCategory(ALL_KEY);
+  }, [hasData, scope, category]);
+  const zoneCounts = useMemo(() => countByZone(scope, thresholds), [scope, thresholds]);
   // « Corriger les prix » next to an « à revoir » / « à surveiller » filter: the prices to fix in that zone.
   const rounding = usePriceRounding();
-  const fixCount = useMemo(() => {
-    if (zone !== 'red' && zone !== 'orange') return 0;
-    return underTargetRows(products, thresholds, rounding).filter((r) => r.zone === zone).length;
-  }, [products, thresholds, rounding, zone]);
+  const fixRows = useMemo(() => {
+    if (zone !== 'red' && zone !== 'orange') return [];
+    return underTargetRows(scope, thresholds, rounding).filter((r) => r.zone === zone);
+  }, [scope, thresholds, rounding, zone]);
+  const fixCount = fixRows.length;
   const openFix = useCallback(() => {
-    if (zone === 'red' || zone === 'orange') openUnderTarget(navigation, { zone: zone === 'red' ? 'bad' : 'medium', from: 'list' });
-  }, [navigation, zone]);
+    if (zone !== 'red' && zone !== 'orange') return;
+    // With the review filter, « Sous l’objectif » shows these products only (as from an invoice).
+    const productIds = review ? Array.from(new Set(fixRows.map((r) => r.productId))) : undefined;
+    openUnderTarget(navigation, { zone: zone === 'red' ? 'bad' : 'medium', from: 'list', productIds });
+  }, [navigation, zone, review, fixRows]);
   const avg = useMemo(() => averageMargin(products), [products]);
   const visible = useMemo(() => {
-    const inCategory = category === ALL_KEY ? products : products.filter((p) => p.categoryId === category);
-    return sortProducts(inCategory.filter((p) => inZone(p, zone, thresholds) && matchesQuery(p, deferredQuery)), sort);
-  }, [products, category, zone, thresholds, deferredQuery, sort]);
-  const filtering = category !== ALL_KEY || deferredQuery.trim().length > 0 || !!zone;
+    const inCategory = category === ALL_KEY ? scope : scope.filter((p) => p.categoryId === category);
+    return sortProducts(
+      inCategory.filter((p) => inZone(p, zone, thresholds) && matchesQuery(p, deferredQuery)),
+      sort,
+    );
+  }, [scope, category, zone, thresholds, deferredQuery, sort]);
+  /** Narrowed past the scope (category, search, zone): the sort row or the zone chip says « N sur M ». */
+  const narrowed = category !== ALL_KEY || deferredQuery.trim().length > 0 || !!zone;
 
-  const pages = usePages(visible.length, `${category}|${zone ?? ''}|${deferredQuery.trim()}|${sort}`);
+  const pages = usePages(visible.length, `${category}|${zone ?? ''}|${review ? (reviewIdsOpen ? 'invoice' : 'review') : ''}|${deferredQuery.trim()}|${sort}`);
   const rows = useMemo(() => (pages.limit >= visible.length ? visible : visible.slice(0, pages.limit)), [visible, pages.limit]);
 
   // ── navigation ──
@@ -373,26 +418,37 @@ export function ProductListScreen({ navigation: nav, route }: Props) {
       if (key === category) return;
       setCategory(key);
       // Back to every product: a sort forced by a dashboard link gives way to the user's.
-      if (key === ALL_KEY && !zone) restoreUserSort();
+      if (key === ALL_KEY && !zone && !review) restoreUserSort();
       restagger();
     },
-    [category, zone, restoreUserSort, restagger],
+    [category, zone, review, restoreUserSort, restagger],
   );
   // Legend dots filter by zone; tapping the active one (or the chip's ✕) clears it.
   const onZone = useCallback(
     (z: MarginZone) => {
       const off = zone === z;
       setZone(off ? null : z);
-      if (off && category === ALL_KEY) restoreUserSort();
+      if (off && category === ALL_KEY && !review) restoreUserSort();
       restagger();
     },
-    [zone, category, restoreUserSort, restagger],
+    [zone, category, review, restoreUserSort, restagger],
   );
   const clearZone = useCallback(() => {
     setZone(null);
-    if (category === ALL_KEY) restoreUserSort();
+    if (category === ALL_KEY && !review) restoreUserSort();
     restagger();
-  }, [category, restoreUserSort, restagger]);
+  }, [category, review, restoreUserSort, restagger]);
+  const clearReview = useCallback(() => {
+    setReview(false);
+    setReviewIds(null);
+    if (category === ALL_KEY && !zone) restoreUserSort();
+    restagger();
+  }, [category, zone, restoreUserSort, restagger]);
+  /** One invoice's prices → every price to review. */
+  const widenReview = useCallback(() => {
+    setReviewIds(null);
+    restagger();
+  }, [restagger]);
   const onSort = useCallback(
     (key: SortKey) => {
       // The user's own choice from now on (and remembered on this device).
@@ -414,6 +470,8 @@ export function ProductListScreen({ navigation: nav, route }: Props) {
     setQuery('');
     setCategory(ALL_KEY);
     setZone(null);
+    setReview(false);
+    setReviewIds(null);
     restoreUserSort();
     restagger();
   }, [restoreUserSort, restagger]);
@@ -550,8 +608,21 @@ export function ProductListScreen({ navigation: nav, route }: Props) {
           {products.length ? (
             <>
               <MarginLegend counts={zoneCounts} thresholds={thresholds} selected={zone} onSelect={onZone} style={styles.legend} />
-              {zone ? (
-                <ZoneFilterChip zone={zone} shown={visible.length} total={products.length} onClear={clearZone} onFix={fixCount ? openFix : undefined} fixCount={fixCount} />
+              {zone || review ? (
+                <View style={styles.zoneRow}>
+                  {review ? <ReviewFilterChip count={scope.length} invoice={!!reviewIdsOpen} onClear={clearReview} /> : null}
+                  {zone ? (
+                    <ZoneFilterChip
+                      zone={zone}
+                      shown={visible.length}
+                      total={scope.length}
+                      ofReview={review}
+                      onClear={clearZone}
+                      onFix={fixCount ? openFix : undefined}
+                      fixCount={fixCount}
+                    />
+                  ) : null}
+                </View>
               ) : null}
               <ChipRow items={chips} selectedKey={category} onSelect={onCategory} style={styles.chips} accessibilityLabel="Catégories" />
               <View style={styles.toolbar}>
@@ -559,10 +630,10 @@ export function ProductListScreen({ navigation: nav, route }: Props) {
                   value={sort}
                   onPress={openSort}
                   right={
-                    // With a zone filter, its chip already says « 1 sur 14 ».
-                    filtering && !zone ? (
+                    // With a zone filter, its chip already says « N sur M » (M: the review scope when it is on).
+                    narrowed && !zone ? (
                       <Text style={styles.count} accessibilityLiveRegion="polite">
-                        {visible.length ? `${visible.length} sur ${products.length}` : 'Aucun résultat'}
+                        {visible.length ? `${visible.length} sur ${scope.length}` : 'Aucun résultat'}
                       </Text>
                     ) : null
                   }
@@ -615,6 +686,35 @@ export function ProductListScreen({ navigation: nav, route }: Props) {
         text={category !== ALL_KEY ? 'Aucun produit de cette catégorie ne correspond. Essayez un autre mot.' : undefined}
         primary={{ label: 'Effacer la recherche', icon: 'close', onPress: clearSearch }}
         secondary={category !== ALL_KEY ? { label: 'Voir tous les produits', onPress: showAll } : undefined}
+      />
+    ) : review && scope.length === 0 ? (
+      // Nothing left to review (all confirmed meanwhile), whatever the zone or category.
+      <EmptyState
+        icon="checkmark-circle-outline"
+        title={reviewIdsOpen ? 'Les prix de cette facture sont vérifiés' : 'Tous les prix sont vérifiés'}
+        text={
+          reviewIdsOpen
+            ? 'Aucun prix calculé par cette facture n’attend votre confirmation.'
+            : 'Aucun prix de vente calculé par une facture n’attend votre confirmation.'
+        }
+        primary={{ label: 'Voir tous les produits', onPress: showAll }}
+        secondary={otherReviews ? { label: `Autres prix à vérifier · ${otherReviews}`, onPress: widenReview } : undefined}
+      />
+    ) : review && zone ? (
+      // « < 50 % » tapped on the prices to review: say it about them, never about every product.
+      <EmptyState
+        icon="file-tray-outline"
+        title={`Aucun prix à vérifier ${zoneRange(zone, thresholds)}${category !== ALL_KEY ? ' dans cette catégorie' : ''}`}
+        text={`${scope.length > 1 ? `Les ${scope.length} prix à vérifier sont` : 'Le prix à vérifier est'} dans une autre zone de marge.`}
+        primary={{ label: scope.length > 1 ? `Voir les ${scope.length} prix à vérifier` : 'Voir le prix à vérifier', onPress: clearZone }}
+        secondary={{ label: `Tous les produits ${zoneRange(zone, thresholds)}`, onPress: clearReview }}
+      />
+    ) : review ? (
+      <EmptyState
+        icon="checkmark-circle-outline"
+        title="Aucun prix à vérifier dans cette catégorie"
+        text="Choisissez une autre catégorie : les prix à vérifier sont ailleurs."
+        primary={{ label: 'Voir tous les produits', onPress: showAll }}
       />
     ) : zone ? (
       <EmptyState
@@ -685,6 +785,13 @@ export function ProductListScreen({ navigation: nav, route }: Props) {
   );
 }
 
+/** « sous 50 % », « entre 50 % et 65 % », « à 65 % ou plus » (the user's thresholds). */
+function zoneRange(zone: MarginZone, t: { good: number; medium: number }): string {
+  if (zone === 'red') return `sous ${formatPercent(t.medium, 0)}`;
+  if (zone === 'orange') return `entre ${formatPercent(t.medium, 0)} et ${formatPercent(t.good, 0)}`;
+  return `à ${formatPercent(t.good, 0)} ou plus`;
+}
+
 /**
  * « ● À revoir · 1 sur 14 ✕ »: the zone filter in force; a tap anywhere removes it.
  * With prices to fix in that zone, « Corriger les prix » opens « Sous l’objectif » on it.
@@ -693,28 +800,32 @@ function ZoneFilterChip({
   zone,
   shown,
   total,
+  ofReview = false,
   onClear,
   onFix,
   fixCount = 0,
 }: {
   zone: MarginZone;
   shown: number;
+  /** The scope: every product, or the prices to review (`ofReview`). */
   total: number;
+  ofReview?: boolean;
   onClear: () => void;
   onFix?: () => void;
   fixCount?: number;
 }) {
   const c = marginColors[zone];
   const label = `${ZONE_FILTER_LABEL[zone]}${NBSP}· ${shown}${NBSP}sur${NBSP}${total}`;
+  const of = ofReview ? `sur ${total} prix à vérifier` : `sur ${total}`;
   return (
-    <View style={styles.zoneRow}>
+    <>
       <PressableScale
         onPress={onClear}
         scaleTo="chip"
         haptic="select"
         hitSlop={{ top: 4, bottom: 4 }}
         accessibilityRole="button"
-        accessibilityLabel={`Filtre : ${c.label}, ${shown} produit${shown > 1 ? 's' : ''} sur ${total}. Retirer le filtre`}
+        accessibilityLabel={`Filtre : ${c.label}, ${shown} produit${shown > 1 ? 's' : ''} ${of}. Retirer le filtre`}
         style={[styles.zoneChip, { backgroundColor: c.bg }]}
         testID="products-zone-chip"
       >
@@ -739,7 +850,36 @@ function ZoneFilterChip({
           <Text style={styles.fixChipText}>Corriger les prix</Text>
         </PressableScale>
       ) : null}
-    </View>
+    </>
+  );
+}
+
+/**
+ * « ⓘ Prix à vérifier · 3 ✕ »: only the prices an invoice computed (×4) and
+ * nobody confirmed yet (« (facture) »: one invoice's); a tap anywhere removes
+ * the filter. Amber like the cards' « Prix à vérifier » badge. `count` is the
+ * whole scope: a zone or category narrows it, and their own counts say so.
+ */
+function ReviewFilterChip({ count, invoice, onClear }: { count: number; invoice: boolean; onClear: () => void }) {
+  const c = marginColors.orange;
+  const label = invoice ? `${REVIEW_FILTER_LABEL} (facture)` : REVIEW_FILTER_LABEL;
+  return (
+    <PressableScale
+      onPress={onClear}
+      scaleTo="chip"
+      haptic="select"
+      hitSlop={{ top: 4, bottom: 4 }}
+      accessibilityRole="button"
+      accessibilityLabel={`Filtre : prix à vérifier${invoice ? ' de la facture' : ''}, ${count} produit${count > 1 ? 's' : ''}. Retirer le filtre`}
+      style={[styles.zoneChip, { backgroundColor: c.bg }]}
+      testID="products-review-chip"
+    >
+      <Icon name="alert-circle-outline" size={16} color={c.fg} />
+      <Text style={[styles.zoneText, { color: c.fg }]} accessibilityLiveRegion="polite">
+        {`${label}${NBSP}· ${count}`}
+      </Text>
+      <Icon name="close" size={16} color={c.fg} />
+    </PressableScale>
   );
 }
 
