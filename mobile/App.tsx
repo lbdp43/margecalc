@@ -149,7 +149,12 @@ const appLinking: LinkingOptions<{ Tabs: undefined; ProductForm: undefined; Invo
             // A product opened from the dashboard (Top & flop, Meilleur produit).
             [ROUTES.dashboardProductDetail]: 'tableau-de-bord/produits/:productId',
           }),
-          [ROUTES.productsTab]: stackPaths(ROUTES.productList, { [ROUTES.productList]: 'produits', [ROUTES.productDetail]: 'produits/:productId' }),
+          [ROUTES.productsTab]: stackPaths(ROUTES.productList, {
+            [ROUTES.productList]: 'produits',
+            // Static segment: React Navigation ranks it above produits/:productId.
+            [ROUTES.underTarget]: 'produits/sous-objectif',
+            [ROUTES.productDetail]: 'produits/:productId',
+          }),
           [ROUTES.settingsTab]: stackPaths(ROUTES.settingsMain, { [ROUTES.settingsMain]: 'reglages', [ROUTES.adminProducts]: 'reglages/produits' }),
         },
       } as any,

@@ -14,9 +14,29 @@
  * - The newest message wins: it replaces a plain toast at once, and cuts an
  *   action toast down to 1,5 s. A toast that waited more than 4 s (not
  *   counting time behind an open overlay) is dropped.
+ *
+ * Undo toasts (lot 2 n° 11): act now, commit later, « Annuler » meanwhile.
+ *
+ *   const h = toast.undo('Aperol supprimé', {
+ *     onUndo: restore,            // « Annuler » (or ⌘Z / Ctrl Z on web): put it back, no request
+ *     onCommit: sendDelete,       // the window closed without an undo: do the real write
+ *     commitOnLeave: true,        // the app goes to the background / the page is left: commit at once
+ *   });                           // h.undo() · h.commit()
+ *
+ * - « Annuler » carries a countdown (6 s by default): the seconds left in a
+ *   draining lime ring (UndoCountdown). The clock is time-based and PAUSES
+ *   while the toast is held (touch), hovered (mouse), hidden behind a sheet or
+ *   a dialog, or while the app is in the background.
+ * - Exactly one of `onUndo` / `onCommit` runs: swiping it away, a newer toast
+ *   (after 1,5 s), `toast.clear()` never drop it (it stays), and the end of the
+ *   countdown all commit. Never de-duplicated, never dropped as stale.
+ * - Logic adapted from Kokonut UI « Undo Button » by @dorianbaffier
+ *   (kokonutui.com, MIT License, Copyright (c) 2025 kokonutUI): phase
+ *   pending → done with onAction / onCommit / onUndo, time accumulated per
+ *   tick (not one setTimeout) so it can pause, ⌘Z while pending.
  */
 import React, { useEffect, useRef, useState } from 'react';
-import { PanResponder, Platform, StyleSheet, Text, View } from 'react-native';
+import { AppState, PanResponder, Platform, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { runOnJS, useAnimatedStyle, useReducedMotion, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
@@ -24,6 +44,7 @@ import { elevation, fontFamily, layout, motion, palette, type } from '../../them
 import { stickyBarHeight, useChromeStore } from './chrome';
 import { PressableScale } from './PressableScale';
 import { IconName } from './Icon';
+import { UndoCountdown } from './UndoCountdown';
 
 export type ToastKind = 'success' | 'error' | 'info';
 
@@ -34,12 +55,38 @@ export interface ToastOptions {
   icon?: IconName;
 }
 
+export interface UndoToastOptions {
+  /** « Annuler »: put things back (no request for a deferred write). */
+  onUndo: () => void;
+  /** The window closed without an undo (countdown over, swiped away, replaced, app left): do the real write. */
+  onCommit?: () => void;
+  /** Length of the undo window, in ms (default 6000). */
+  duration?: number;
+  /** Action label (default « Annuler »). */
+  label?: string;
+  /** Commit at once when the app goes to the background or the page is left (deferred deletes). */
+  commitOnLeave?: boolean;
+  icon?: IconName;
+  kind?: ToastKind;
+}
+
+export interface UndoHandle {
+  id: number;
+  /** Same as tapping « Annuler » (no-op once settled). */
+  undo: () => void;
+  /** Close the window now and commit (no-op once settled). */
+  commit: () => void;
+}
+
 interface ToastItem extends ToastOptions {
   id: number;
   kind: ToastKind;
   message: string;
   /** When it was asked for: a toast still waiting after STALE_MS is dropped. */
   queuedAt: number;
+  undo?: UndoToastOptions;
+  /** Undo toasts: onUndo or onCommit already ran. */
+  settled?: boolean;
 }
 
 /** A toast that waited longer than this (behind other toasts) is no longer news. Time spent behind an open sheet or dialog does not count. */
@@ -48,9 +95,11 @@ const STALE_MS = 4000;
 const SEEN_MS = 800;
 /** A new toast cuts a visible action toast down to at most this. */
 const ACTION_GRACE_MS = 1500;
+/** Default undo window. */
+export const UNDO_MS = 6000;
 
 type Listener = (queue: ToastItem[]) => void;
-type HostCommand = { type: 'preempt' } | { type: 'shorten'; ms: number };
+type HostCommand = { type: 'preempt' } | { type: 'shorten'; ms: number } | { type: 'hide'; id: number };
 let queue: ToastItem[] = [];
 let seq = 0;
 /** The toast the host is showing right now (kept by ToastHost). */
@@ -59,6 +108,20 @@ const listeners = new Set<Listener>();
 const hostCommands = new Set<(c: HostCommand) => void>();
 const emit = () => listeners.forEach((l) => l(queue));
 const command = (c: HostCommand) => hostCommands.forEach((h) => h(c));
+/** Undo clocks, per toast id: kept while the toast is hidden behind an overlay. */
+const clocks = new Map<number, { elapsed: number; duration: number }>();
+
+/** Runs exactly one of onUndo / onCommit for an undo toast. */
+function settle(item: ToastItem, how: 'undo' | 'commit') {
+  if (!item.undo || item.settled) return;
+  item.settled = true;
+  try {
+    if (how === 'undo') item.undo.onUndo();
+    else item.undo.onCommit?.();
+  } catch {
+    // A failing callback must never break the toast queue.
+  }
+}
 
 /**
  * Queue rules: one toast on screen at a time, and the newest message wins.
@@ -66,24 +129,71 @@ const command = (c: HostCommand) => hostCommands.forEach((h) => h(c));
  * - A visible action toast (« Annuler ») is cut down to 1,5 s, then the new one shows.
  * - Waiting toasts without an action are superseded by the new one.
  */
-function show(message: string, kind: ToastKind = 'info', opts: ToastOptions = {}) {
-  if (!message) return;
-  // de-duplicate identical consecutive messages
+function show(message: string, kind: ToastKind = 'info', opts: ToastOptions = {}, undo?: UndoToastOptions): number {
+  if (!message) return 0;
+  // de-duplicate identical consecutive messages (never an undo toast: each one owns a write)
   const last = queue[queue.length - 1];
-  if (last && last.message === message && last.kind === kind) return;
-  const item: ToastItem = { id: ++seq, kind, message, queuedAt: Date.now(), ...opts };
+  if (!undo && last && !last.undo && last.message === message && last.kind === kind) return 0;
+  const item: ToastItem = { id: ++seq, kind, message, queuedAt: Date.now(), ...opts, undo };
   const current = queue[0];
   const currentShown = !!current && shownNow?.id === current.id;
   const waiting = queue.slice(currentShown ? 1 : 0).filter((t) => !!t.action);
   queue = [...(currentShown ? [current] : []), ...waiting, item];
   emit();
   if (currentShown) command(current.action ? { type: 'shorten', ms: ACTION_GRACE_MS } : { type: 'preempt' });
+  return item.id;
 }
 
+/** Removes a toast from the queue. An undo toast that was neither undone nor committed commits here. */
 function dismiss(id: number) {
-  if (!queue.some((t) => t.id === id)) return;
+  const item = queue.find((t) => t.id === id);
+  if (!item) return;
+  settle(item, 'commit');
+  clocks.delete(id);
   queue = queue.filter((t) => t.id !== id);
   emit();
+}
+
+/** Settles an undo toast now and takes it off screen (fade when it is showing). */
+function settleNow(id: number, how: 'undo' | 'commit') {
+  const item = queue.find((t) => t.id === id);
+  if (!item || item.settled) return;
+  settle(item, how);
+  if (shownNow?.id === id) command({ type: 'hide', id });
+  else dismiss(id);
+}
+
+/** The app goes to the background, or the page is left: commit the deferred writes at once. */
+function commitOnLeave() {
+  const leaving = queue.filter((t) => t.undo?.commitOnLeave && !t.settled);
+  if (!leaving.length) return;
+  leaving.forEach((t) => settle(t, 'commit'));
+  leaving.forEach((t) => clocks.delete(t.id));
+  queue = queue.filter((t) => !leaving.includes(t));
+  emit();
+}
+
+let leaveWired = false;
+function wireLeave() {
+  if (leaveWired) return;
+  leaveWired = true;
+  AppState.addEventListener('change', (state) => {
+    if (state === 'background') commitOnLeave();
+  });
+  const w: any = Platform.OS === 'web' ? (globalThis as any).window : undefined;
+  w?.addEventListener?.('pagehide', commitOnLeave);
+}
+
+function undo(message: string, opts: UndoToastOptions): UndoHandle {
+  wireLeave();
+  const label = opts.label ?? 'Annuler';
+  const id = show(
+    message,
+    opts.kind ?? 'success',
+    { icon: opts.icon, action: { label, onPress: () => settleNow(id, 'undo') } },
+    { ...opts, label, duration: opts.duration ?? UNDO_MS },
+  );
+  return { id, undo: () => settleNow(id, 'undo'), commit: () => settleNow(id, 'commit') };
 }
 
 export const toast = {
@@ -91,10 +201,25 @@ export const toast = {
   success: (message: string, opts?: ToastOptions) => show(message, 'success', opts),
   error: (message: string, opts?: ToastOptions) => show(message, 'error', opts),
   info: (message: string, opts?: ToastOptions) => show(message, 'info', opts),
-  /** Remove every pending toast. */
+  /** « Aperol supprimé · Annuler ⑥ »: see the header. */
+  undo,
+  /**
+   * Remove every pending toast. Undo toasts stay (each one still owns a
+   * write): a newer toast cuts them to 1,5 s, then they commit.
+   */
   clear: () => {
-    queue = [];
+    queue = queue.filter((t) => t.undo && !t.settled);
     emit();
+  },
+  /** Commit every open undo window now (sign-out…). */
+  commitPending: () => {
+    const open = queue.filter((t) => t.undo && !t.settled);
+    open.forEach((t) => settle(t, 'commit'));
+    open.forEach((t) => clocks.delete(t.id));
+    if (open.length) {
+      queue = queue.filter((t) => !open.includes(t));
+      emit();
+    }
   },
 };
 
@@ -120,6 +245,9 @@ export function ToastHost() {
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const endsAt = useRef(0);
   const drag = useSharedValue(0);
+  // Undo clock: ms left (drawn by the ring) and what holds it.
+  const [undoLeft, setUndoLeft] = useState(0);
+  const pause = useRef({ press: false, hover: false, away: AppState.currentState === 'background' || AppState.currentState === 'inactive' });
 
   useEffect(() => {
     listeners.add(setItems);
@@ -169,8 +297,8 @@ export function ToastHost() {
     if (!current || blocked || shownId === current.id) return;
     // A sheet that opened in this same commit is not in `blocked` yet.
     if (useChromeStore.getState().sheetCount > 0) return;
-    // Waited too long behind other toasts: drop it.
-    if (Date.now() - Math.max(current.queuedAt, unblockedAt.current) > STALE_MS) {
+    // Waited too long behind other toasts: drop it (never an undo toast: it still owns a write).
+    if (!current.undo && Date.now() - Math.max(current.queuedAt, unblockedAt.current) > STALE_MS) {
       dismiss(current.id);
       return;
     }
@@ -181,7 +309,14 @@ export function ToastHost() {
     opacity.value = 0;
     opacity.value = withTiming(1, { duration: reduce ? 120 : motion.duration.fast });
     if (!reduce) y.value = withSpring(0, motion.spring.gentle);
-    schedule(current.id, current.duration ?? (current.action || current.kind === 'error' ? 5000 : 3000));
+    if (current.undo) {
+      // The clock effect below runs the window; it resumes where it stopped (behind a sheet).
+      if (timer.current) clearTimeout(timer.current);
+      timer.current = null;
+      const clock = clocks.get(current.id) ?? { elapsed: 0, duration: current.undo.duration ?? UNDO_MS };
+      clocks.set(current.id, clock);
+      setUndoLeft(Math.max(0, clock.duration - clock.elapsed));
+    } else schedule(current.id, current.duration ?? (current.action || current.kind === 'error' ? 5000 : 3000));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [current?.id, blocked, shownId]);
 
@@ -199,8 +334,16 @@ export function ToastHost() {
     const onCommand = (c: HostCommand) => {
       const live = shownNow;
       if (!live) return;
+      if (c.type === 'hide') {
+        if (c.id === live.id) hide(live.id);
+        return;
+      }
       if (c.type === 'preempt') hide(live.id, 100);
-      else if (endsAt.current - Date.now() > c.ms) schedule(live.id, c.ms);
+      else {
+        const clock = clocks.get(live.id);
+        if (clock) clock.elapsed = Math.max(clock.elapsed, clock.duration - c.ms);
+        else if (endsAt.current - Date.now() > c.ms) schedule(live.id, c.ms);
+      }
     };
     hostCommands.add(onCommand);
     return () => {
@@ -212,10 +355,12 @@ export function ToastHost() {
   // A sheet or dialog opened while a toast is showing — never stack overlays.
   // Already read (on screen for more than 800 ms): dismiss it. Barely seen:
   // hide it now and show it again once the overlay closes (unless it is stale by then).
+  // Undo toasts always come back once the overlay closes, their clock stopped meanwhile.
   useEffect(() => {
     if (!blocked || shownId === null) return;
     const live = shownNow;
-    if (live && live.id === shownId && Date.now() - live.at > SEEN_MS) {
+    const isUndo = !!queue.find((t) => t.id === shownId)?.undo;
+    if (!isUndo && live && live.id === shownId && Date.now() - live.at > SEEN_MS) {
       hide(live.id, 100);
       return;
     }
@@ -234,6 +379,59 @@ export function ToastHost() {
     if (timer.current) clearTimeout(timer.current);
     shownNow = null;
   }, []);
+
+  // ── Undo clock: time-based, paused while held, hovered or in the background ──
+  const undoShown = !!current?.undo && shownId === current.id && !blocked;
+  useEffect(() => {
+    if (!undoShown || !current) return;
+    const id = current.id;
+    pause.current.press = false;
+    pause.current.hover = false;
+    let last = Date.now();
+    const tick = () => {
+      const clock = clocks.get(id);
+      if (!clock) return;
+      const now = Date.now();
+      const p = pause.current;
+      if (!(p.press || p.hover || p.away)) clock.elapsed += now - last;
+      last = now;
+      const left = Math.max(0, clock.duration - clock.elapsed);
+      setUndoLeft(left);
+      if (left <= 0) {
+        clearInterval(interval);
+        hide(id);
+      }
+    };
+    const interval = setInterval(tick, 100);
+    return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [undoShown, current?.id]);
+
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      pause.current.away = state !== 'active';
+    });
+    return () => sub.remove();
+  }, []);
+
+  // ⌘Z / Ctrl Z while an undo toast is on screen (web, keyboard; ignored in fields).
+  useEffect(() => {
+    if (!undoShown || !current || Platform.OS !== 'web') return;
+    const w: any = (globalThis as any).window;
+    if (!w?.addEventListener) return;
+    const id = current.id;
+    const onKey = (e: any) => {
+      const t = e.target as any;
+      const editable = !!t && (t.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName));
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && String(e.key).toLowerCase() === 'z' && !editable) {
+        e.preventDefault();
+        settleNow(id, 'undo');
+      }
+    };
+    w.addEventListener('keydown', onKey);
+    return () => w.removeEventListener('keydown', onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [undoShown, current?.id]);
 
   const pan = useRef(
     PanResponder.create({
@@ -263,14 +461,33 @@ export function ToastHost() {
       ? layout.floatingBottom(insets.bottom)
       : insets.bottom + 16;
   const icon = current.icon ? { name: current.icon, color: palette.em300 } : ICONS[current.kind];
+  const undoItem = current.undo;
+  const undoDuration = undoItem ? clocks.get(current.id)?.duration ?? undoItem.duration ?? UNDO_MS : 0;
+  const undoSeconds = Math.ceil(undoLeft / 1000);
+  // Held (touch) or hovered (mouse only: a tap's emulated mouseenter never pauses for good).
+  const holdHandlers: any = undoItem
+    ? {
+        onTouchStart: () => (pause.current.press = true),
+        onTouchEnd: () => (pause.current.press = false),
+        onTouchCancel: () => (pause.current.press = false),
+        onPointerEnter: (e: any) => {
+          if (e?.nativeEvent?.pointerType === 'mouse') pause.current.hover = true;
+        },
+        onPointerLeave: (e: any) => {
+          if (e?.nativeEvent?.pointerType === 'mouse') pause.current.hover = false;
+        },
+      }
+    : null;
 
   return (
     <View pointerEvents="box-none" style={[StyleSheet.absoluteFill, styles.layer]}>
       <Animated.View
         {...pan.panHandlers}
-        style={[styles.toast, { bottom }, style]}
+        {...holdHandlers}
+        style={[styles.toast, undoItem ? styles.toastUndo : null, { bottom }, style]}
         accessibilityLiveRegion="polite"
         accessibilityRole="alert"
+        testID={undoItem ? 'toast-undo' : 'toast'}
       >
         <Ionicons name={icon.name} size={20} color={icon.color} />
         {/* 3 lines: a full French sentence (« Session expirée : reconnectez-vous… ») is never cut. */}
@@ -281,14 +498,25 @@ export function ToastHost() {
           <PressableScale
             scaleTo="chip"
             onPress={() => {
+              if (undoItem) {
+                // settleNow fades it out (undo runs first, exactly once).
+                current.action?.onPress();
+                return;
+              }
               current.action?.onPress();
               hide(current.id);
             }}
-            accessibilityLabel={current.action.label}
-            hitSlop={8}
-            style={styles.action}
+            accessibilityLabel={
+              undoItem
+                ? `${current.action.label}, ${undoSeconds} seconde${undoSeconds > 1 ? 's' : ''} pour annuler`
+                : current.action.label
+            }
+            hitSlop={undoItem ? { top: 4, bottom: 4, left: 8, right: 8 } : 8}
+            style={[styles.action, undoItem ? styles.actionUndo : null]}
+            testID={undoItem ? 'toast-undo-action' : undefined}
           >
             <Text style={styles.actionText}>{current.action.label}</Text>
+            {undoItem ? <UndoCountdown remaining={undoDuration ? undoLeft / undoDuration : 0} seconds={undoSeconds} still={reduce} /> : null}
           </PressableScale>
         ) : null}
       </Animated.View>
@@ -317,5 +545,8 @@ const styles = StyleSheet.create({
   },
   text: { ...type.calloutStrong, color: '#FFFFFF', flex: 1 },
   action: { paddingHorizontal: 4, height: 32, justifyContent: 'center' },
+  // 44 tall (40 + 4 px slop above and below): « Annuler » plus its countdown ring.
+  toastUndo: { paddingRight: 8, paddingVertical: 6 },
+  actionUndo: { height: 40, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 8, borderRadius: 12 },
   actionText: { fontFamily: fontFamily.bold, fontSize: 15, lineHeight: 20, color: palette.lime },
 });

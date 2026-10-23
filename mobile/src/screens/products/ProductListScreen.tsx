@@ -3,7 +3,8 @@
  *
  *   LargeTitleHeader « Mes produits » · « 14 produits · marge moy. 69,0 % » + FAB
  *   search (scan shortcut) · MarginLegend with counts (each item filters by zone)
- *   · active zone filter chip « À revoir · 1 sur 14 ✕ » · category ChipRow · sort
+ *   · active zone filter chip « À revoir · 1 sur 14 ✕ » (+ « Corriger les prix »
+ *   → « Sous l’objectif » on that zone, lot 2 n° 7) · category ChipRow · sort
  *   ScreenList of kit ProductCards (40 ms stagger, memoised rows, stable keys)
  *   long press → ProductActionsSheet (Changer le prix · Modifier · Dupliquer · Supprimer)
  *
@@ -63,7 +64,9 @@ import {
 import { fontFamily, layout, marginColors, motion, palette, radius, type } from '../../theme';
 import { formatPercent, NBSP, plural } from '../../utils/format';
 import { getMarginZone, MarginZone, useMarginThresholds } from '../../utils/marginThresholds';
-import { goToProduct, openInvoiceScan, openProductForm } from '../../navigation/routes';
+import { goToProduct, openInvoiceScan, openProductForm, openUnderTarget } from '../../navigation/routes';
+import { usePriceRounding } from '../../utils/priceRounding';
+import { underTargetRows } from './underTarget/model';
 import { useOfflineQuery } from '../../hooks/useOfflineQuery';
 import * as productService from '../../services/product.service';
 import {
@@ -334,6 +337,15 @@ export function ProductListScreen({ navigation: nav, route }: Props) {
     if (hasData && category !== ALL_KEY && !products.some((p) => p.categoryId === category)) setCategory(ALL_KEY);
   }, [hasData, products, category]);
   const zoneCounts = useMemo(() => countByZone(products, thresholds), [products, thresholds]);
+  // « Corriger les prix » next to an « à revoir » / « à surveiller » filter: the prices to fix in that zone.
+  const rounding = usePriceRounding();
+  const fixCount = useMemo(() => {
+    if (zone !== 'red' && zone !== 'orange') return 0;
+    return underTargetRows(products, thresholds, rounding).filter((r) => r.zone === zone).length;
+  }, [products, thresholds, rounding, zone]);
+  const openFix = useCallback(() => {
+    if (zone === 'red' || zone === 'orange') openUnderTarget(navigation, { zone: zone === 'red' ? 'bad' : 'medium', from: 'list' });
+  }, [navigation, zone]);
   const avg = useMemo(() => averageMargin(products), [products]);
   const visible = useMemo(() => {
     const inCategory = category === ALL_KEY ? products : products.filter((p) => p.categoryId === category);
@@ -538,7 +550,9 @@ export function ProductListScreen({ navigation: nav, route }: Props) {
           {products.length ? (
             <>
               <MarginLegend counts={zoneCounts} thresholds={thresholds} selected={zone} onSelect={onZone} style={styles.legend} />
-              {zone ? <ZoneFilterChip zone={zone} shown={visible.length} total={products.length} onClear={clearZone} /> : null}
+              {zone ? (
+                <ZoneFilterChip zone={zone} shown={visible.length} total={products.length} onClear={clearZone} onFix={fixCount ? openFix : undefined} fixCount={fixCount} />
+              ) : null}
               <ChipRow items={chips} selectedKey={category} onSelect={onCategory} style={styles.chips} accessibilityLabel="Catégories" />
               <View style={styles.toolbar}>
                 <SortTrigger
@@ -671,8 +685,25 @@ export function ProductListScreen({ navigation: nav, route }: Props) {
   );
 }
 
-/** « ● À revoir · 1 sur 14 ✕ »: the zone filter in force; a tap anywhere removes it. */
-function ZoneFilterChip({ zone, shown, total, onClear }: { zone: MarginZone; shown: number; total: number; onClear: () => void }) {
+/**
+ * « ● À revoir · 1 sur 14 ✕ »: the zone filter in force; a tap anywhere removes it.
+ * With prices to fix in that zone, « Corriger les prix » opens « Sous l’objectif » on it.
+ */
+function ZoneFilterChip({
+  zone,
+  shown,
+  total,
+  onClear,
+  onFix,
+  fixCount = 0,
+}: {
+  zone: MarginZone;
+  shown: number;
+  total: number;
+  onClear: () => void;
+  onFix?: () => void;
+  fixCount?: number;
+}) {
   const c = marginColors[zone];
   const label = `${ZONE_FILTER_LABEL[zone]}${NBSP}· ${shown}${NBSP}sur${NBSP}${total}`;
   return (
@@ -693,6 +724,21 @@ function ZoneFilterChip({ zone, shown, total, onClear }: { zone: MarginZone; sho
         </Text>
         <Icon name="close" size={16} color={c.fg} />
       </PressableScale>
+      {onFix ? (
+        <PressableScale
+          onPress={onFix}
+          scaleTo="chip"
+          haptic="select"
+          hitSlop={{ top: 4, bottom: 4 }}
+          accessibilityRole="button"
+          accessibilityLabel={`Corriger les prix : ${fixCount} prix conseillé${fixCount > 1 ? 's' : ''} à appliquer`}
+          style={styles.fixChip}
+          testID="products-fix-prices"
+        >
+          <Icon name="flash-outline" size={15} color={palette.onEmerald} />
+          <Text style={styles.fixChipText}>Corriger les prix</Text>
+        </PressableScale>
+      ) : null}
     </View>
   );
 }
@@ -726,7 +772,9 @@ const styles = StyleSheet.create({
   chips: { marginTop: 14 },
   chipsSkel: { flexDirection: 'row', gap: 8, height: 44, overflow: 'hidden' },
   toolbar: { marginTop: 6, marginBottom: 4 },
-  zoneRow: { flexDirection: 'row', marginTop: 10 },
+  zoneRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 },
+  fixChip: { flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 36, paddingHorizontal: 12, borderRadius: radius.full, backgroundColor: palette.em700 },
+  fixChipText: { ...type.footnoteStrong, color: palette.onEmerald },
   zoneChip: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 36, paddingLeft: 12, paddingRight: 10, borderRadius: radius.full },
   zoneDot: { width: 8, height: 8, borderRadius: 4 },
   zoneText: { ...type.footnoteStrong },

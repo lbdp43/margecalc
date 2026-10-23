@@ -4,7 +4,7 @@
  *   Root stack
  *   ├─ Tabs (floating TabBar)
  *   │   ├─ Réglages        → SettingsMain, AdminProducts
- *   │   ├─ Produits        → ProductList, ProductDetail
+ *   │   ├─ Produits        → ProductList, ProductDetail, UnderTarget (« Sous l’objectif »)
  *   │   └─ Tableau de bord → DashboardMain, DutyCalculator, DashboardProductDetail
  *   │                        (the same detail screen, for products opened from the dashboard)
  *   ├─ ProductForm   (create / edit — full screen, no tab bar)
@@ -20,6 +20,7 @@ import { createAppStackNavigator, stackScreenOptions } from './createStack';
 import { DashboardScreen } from '../screens/dashboard/DashboardScreen';
 import { ProductListScreen } from '../screens/products/ProductListScreen';
 import { ProductDetailScreen } from '../screens/products/ProductDetailScreen';
+import { UnderTargetScreen } from '../screens/products/underTarget/UnderTargetScreen';
 import { ProductFormScreen } from '../screens/products/ProductFormScreen';
 import { InvoiceScanScreen } from '../screens/products/InvoiceScanScreen';
 import { SettingsScreen } from '../screens/settings/SettingsScreen';
@@ -55,6 +56,7 @@ function ProductsNavigator() {
     <ProductStack.Navigator screenOptions={stackScreenOptions} initialRouteName={ROUTES.productList}>
       <ProductStack.Screen name={ROUTES.productList} component={ProductListScreen} options={{ title: 'Mes produits · MargeBar Pro' }} />
       <ProductStack.Screen name={ROUTES.productDetail} component={ProductDetailScreen} options={{ title: 'Produit · MargeBar Pro' }} />
+      <ProductStack.Screen name={ROUTES.underTarget} component={UnderTargetScreen} options={{ title: 'Sous l’objectif · MargeBar Pro' }} />
     </ProductStack.Navigator>
   );
 }

@@ -1,14 +1,20 @@
 /**
  * Invoice flow (« Scanner une facture »):
- *   POST /api/scan/invoice     { imageBase64 } → InvoiceScanResult (free OCR, ~2 000 px JPEG)
- *   POST /api/products/import  { supplier?, lines } → ImportProductsResult (per-line results)
+ *   POST /api/scan/invoice             { imageBase64 } → InvoiceScanResult (free OCR, ~2 000 px JPEG)
+ *   POST /api/products/import/preview  { supplier?, lines } → ImportPreviewResult (lot 2: what /import
+ *                                      would do with each line, writes nothing)
+ *   POST /api/products/import          { supplier?, lines (productId | createNew) } → ImportProductsResult
  *
  * The backend's `error` is always a readable French sentence: it is shown as is.
  * Failures never throw raw axios errors at the screen: `describeInvoiceScanError`
  * and `describeImportError` turn them into a calm title + message.
  */
 import type {
+  ImportCandidate,
   ImportLineResult,
+  ImportMatch,
+  ImportPreviewLine,
+  ImportPreviewResult,
   ImportProductLine,
   ImportProductsResult,
   InvoiceScanResult,
@@ -16,7 +22,16 @@ import type {
 import { api } from './api';
 import { OfflineError, isNetworkError, isOnline, isTimeoutError } from './offline';
 
-export type { ImportLineResult, ImportProductLine, ImportProductsResult, InvoiceScanResult };
+export type {
+  ImportCandidate,
+  ImportLineResult,
+  ImportMatch,
+  ImportPreviewLine,
+  ImportPreviewResult,
+  ImportProductLine,
+  ImportProductsResult,
+  InvoiceScanResult,
+};
 
 // ─── Scan ──────────────────────────────────────────────────────────────────
 
@@ -206,6 +221,24 @@ export async function importInvoiceLines(
     }
     throw err;
   }
+}
+
+/**
+ * Lot 2 — what the import WOULD do, line by line, without writing anything:
+ * `POST /api/products/import/preview` (same body as /import). Each line says
+ * which product it would update (exact name, a name remembered for this
+ * supplier, or a look-alike « fuzzy » name that the user must confirm), or
+ * that it would create one, with up to 3 look-alike candidates.
+ * Throws on any failure: the review then falls back to exact names only.
+ */
+export async function previewInvoiceLines(
+  input: { supplier?: string | null; lines: ImportProductLine[] },
+  opts: { signal?: AbortSignal } = {},
+): Promise<ImportPreviewResult> {
+  if (!isOnline()) throw new OfflineError('Pas de connexion : le rapprochement des noms a besoin d’internet.');
+  const res = await api.post<ImportPreviewResult>('/products/import/preview', input, { timeout: 20000, signal: opts.signal });
+  const lines = Array.isArray(res.data?.lines) ? res.data.lines : [];
+  return { lines };
 }
 
 export interface ImportErrorInfo {

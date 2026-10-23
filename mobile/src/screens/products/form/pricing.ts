@@ -339,3 +339,58 @@ export function tvaLabel(tva: number): string {
   const pct = round2(tva * 100);
   return `TVA ${formatPercent(pct, Number.isInteger(pct) ? 0 : 1)}`;
 }
+
+// ─── Usual service of a category (lot 2, UX audit n° 6) ───────────────────
+
+export interface UsualServices {
+  /** Service keys to switch on (service type ids, or CUSTOM_DOSE). */
+  keys: string[];
+  /** Dose of the CUSTOM_DOSE pseudo-service (à l’unité: the whole container). */
+  customDoseCl: number | null;
+}
+
+type ServiceTypeLike = { id: string; name: string; volumeCl: number; sortOrder: number };
+
+const near = (a: number, b: number) => Math.abs(a - b) < 0.01;
+
+/**
+ * The service a bar usually sells a category in, preselected after a bottle
+ * scan: spirits → « Verre 5 cl » (if the user has it), wines → « Verre de vin
+ * 12 cl », draught beer (a keg) → « Demi » + « Pinte », bottled beer and
+ * softs → à l’unité (the whole container). Null when nothing fits (the user
+ * picks the service). Service types are the user's own (GET /api/servings).
+ */
+export function usualServices(
+  categorySlug: string | null | undefined,
+  containerCl: number | null | undefined,
+  servingTypes: ServiceTypeLike[],
+): UsualServices | null {
+  const cl = containerCl && containerCl > 0 ? containerCl : 0;
+  const fits = (t: ServiceTypeLike) => !(cl > 0) || t.volumeCl <= cl;
+  const sorted = [...servingTypes].filter(fits).sort((a, b) => a.sortOrder - b.sortOrder || a.volumeCl - b.volumeCl);
+  const find = (vol: number, name?: RegExp) => sorted.find((t) => near(t.volumeCl, vol) && (!name || name.test(t.name))) ?? null;
+  const unit = (): UsualServices | null => (cl > 0 ? { keys: [CUSTOM_DOSE], customDoseCl: cl } : null);
+  switch (categorySlug) {
+    case 'spiritueux': {
+      const t = find(5, /verre/i) ?? find(5);
+      return t ? { keys: [t.id], customDoseCl: null } : null;
+    }
+    case 'vins': {
+      const t = find(12, /vin|verre/i) ?? find(12);
+      return t ? { keys: [t.id], customDoseCl: null } : null;
+    }
+    case 'bieres': {
+      if (cl >= 1000) {
+        const demi = find(25, /demi/i) ?? find(25);
+        const pinte = find(50, /pinte/i) ?? find(50);
+        const keys = [demi?.id, pinte?.id].filter((k): k is string => !!k);
+        return keys.length ? { keys, customDoseCl: null } : { keys: [CUSTOM_DOSE], customDoseCl: 25 };
+      }
+      return unit();
+    }
+    case 'softs':
+      return cl > 0 && cl <= 50 ? unit() : cl > 0 ? { keys: [CUSTOM_DOSE], customDoseCl: 25 } : null;
+    default:
+      return null;
+  }
+}

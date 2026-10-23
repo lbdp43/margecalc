@@ -2,6 +2,10 @@
  * « Contenant & achat »: container chips (the user's containers + « Autre »),
  * then one card with the purchase price, the degree, the optional « prix hors
  * droits » entry (duties added from the official rates) and the TVA.
+ *
+ * Lot 2 (after a bottle scan, mockup 4): `part="purchase"` renders the
+ * purchase price alone, at the top of the form, and `part="rest"` the
+ * container, degree, duties and TVA further down.
  */
 import React, { useMemo } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
@@ -52,6 +56,10 @@ interface PurchaseSectionProps {
   /** Product category slug: picks the likely fiscal category when « hors droits » is switched on. */
   categorySlug?: string;
   onOpenFiscal: () => void;
+  /** 'purchase': the purchase price card alone · 'rest': everything else · 'all' (default). */
+  part?: 'all' | 'purchase' | 'rest';
+  /** Wraps the purchase price field (focus it after a scan). */
+  purchaseRef?: React.Ref<View>;
 }
 
 const TVA_CHOICES = [0.2, 0.1, 0.055];
@@ -61,7 +69,19 @@ const tvaText = (t: number) => {
   return formatPercent(pct, Number.isInteger(pct) ? 0 : 1);
 };
 
-export function PurchaseSection({ values, patch, errors, containers, rates, duties, autoEntrepreneur, categorySlug, onOpenFiscal }: PurchaseSectionProps) {
+export function PurchaseSection({
+  values,
+  patch,
+  errors,
+  containers,
+  rates,
+  duties,
+  autoEntrepreneur,
+  categorySlug,
+  onOpenFiscal,
+  part = 'all',
+  purchaseRef,
+}: PurchaseSectionProps) {
   const list = useMemo(() => {
     const src = containers && containers.length ? containers.map((c) => ({ name: c.name, volumeCl: c.volumeCl })) : CONTAINER_PRESETS.map((c) => ({ name: c.label, volumeCl: c.volumeCl }));
     const seen = new Set<number>();
@@ -114,6 +134,43 @@ export function PurchaseSection({ values, patch, errors, containers, rates, duti
     else patch({ degree: n });
   };
 
+  const purchaseRow = (
+    <View ref={purchaseRef} collapsable={false}>
+      <ControlRow
+        title="Prix d’achat HT"
+        caption={values.horsDroits ? `hors droits · par ${noun}` : `droits inclus · par ${noun}`}
+        error={purchaseError}
+        stacked
+        divider={part !== 'purchase'}
+        testID="row-purchase"
+      >
+        <NumberInput
+          size="large"
+          value={values.purchase}
+          onChange={(n) => patch({ purchase: n })}
+          step={0.1}
+          min={0}
+          max={TYPING_MAX}
+          decimals={2}
+          format={(n) => formatEuro(n)}
+          suffix="€"
+          placeholder="—"
+          accessibilityLabel="Prix d’achat HT"
+          style={purchaseError ? styles.inputError : null}
+          testID="field-purchase"
+        />
+      </ControlRow>
+    </View>
+  );
+
+  if (part === 'purchase') {
+    return (
+      <Card noPadding style={styles.cardAlone}>
+        {purchaseRow}
+      </Card>
+    );
+  }
+
   return (
     <View>
       <FieldLabel label="Contenant" meta={cl > 0 ? `${noun} de ${formatVolumeCl(cl)}` : null} error={!!errors.container} />
@@ -148,29 +205,7 @@ export function PurchaseSection({ values, patch, errors, containers, rates, duti
       <FieldError message={errors.container} />
 
       <Card noPadding style={styles.card}>
-        <ControlRow
-          title="Prix d’achat HT"
-          caption={values.horsDroits ? `hors droits · par ${noun}` : `droits inclus · par ${noun}`}
-          error={purchaseError}
-          stacked
-          testID="row-purchase"
-        >
-          <NumberInput
-            size="large"
-            value={values.purchase}
-            onChange={(n) => patch({ purchase: n })}
-            step={0.1}
-            min={0}
-            max={TYPING_MAX}
-            decimals={2}
-            format={(n) => formatEuro(n)}
-            suffix="€"
-            placeholder="—"
-            accessibilityLabel="Prix d’achat HT"
-            style={purchaseError ? styles.inputError : null}
-            testID="field-purchase"
-          />
-        </ControlRow>
+        {part === 'all' ? purchaseRow : null}
 
         <ControlRow
           title="Degré"
@@ -297,6 +332,7 @@ function Note({ icon, text, tone }: { icon: React.ComponentProps<typeof Ionicons
 const styles = StyleSheet.create({
   flex: { flex: 1, minWidth: 0 },
   card: { marginTop: 16 },
+  cardAlone: { marginTop: 16 },
   otherCard: { marginTop: 10, backgroundColor: palette.surface, borderWidth: 1, borderColor: palette.line, borderRadius: 20 },
   divider: { borderBottomWidth: 1, borderBottomColor: palette.line },
   switchRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 14, minHeight: 60 },

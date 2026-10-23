@@ -4,7 +4,8 @@
  *
  * - at least one product under the alert threshold (« à revoir »): the count,
  *   the worst product (thumb + name + margin) and « Corriger », which opens its
- *   quick price sheet already set to the suggested price (`onFix`);
+ *   quick price sheet already set to the suggested price (`onFix`); « Tout
+ *   voir » (lot 2 n° 7) opens « Sous l’objectif » with every price to fix (`onSeeAll`);
  * - nothing under it: « Tout au-dessus de 50 % » with the best product
  *   (thumb + name + margin badge), which opens it (`onBest`).
  *
@@ -39,6 +40,8 @@ export interface KpiTilesProps {
   onBest: (id: string) => void;
   /** « Corriger »: open the worst product's quick price sheet at the suggested price. */
   onFix: (product: ProductWithMargin) => void;
+  /** « Tout voir »: every service under the objective (« Sous l’objectif »). */
+  onSeeAll?: () => void;
 }
 
 const NARROW = 375;
@@ -59,7 +62,7 @@ export function kpiTileLayout(width: number) {
   return { narrow, icons, height, flexBest: narrow ? 1 : 1.25 };
 }
 
-export const KpiTiles = React.memo(function KpiTiles({ count, categories, best, worst, toReview, thresholds, onProducts, onBest, onFix }: KpiTilesProps) {
+export const KpiTiles = React.memo(function KpiTiles({ count, categories, best, worst, toReview, thresholds, onProducts, onBest, onFix, onSeeAll }: KpiTilesProps) {
   const { width } = useWindowDimensions();
   const l = kpiTileLayout(width);
   return (
@@ -85,7 +88,16 @@ export const KpiTiles = React.memo(function KpiTiles({ count, categories, best, 
       </FadeIn>
       <FadeIn delay={120} style={[styles.wide, { flex: l.flexBest }]}>
         {worst && toReview > 0 ? (
-          <ReviewTile product={worst} count={toReview} thresholds={thresholds} narrow={l.narrow} height={l.height} onFix={onFix} />
+          <ReviewTile
+            product={worst}
+            count={toReview}
+            thresholds={thresholds}
+            narrow={l.narrow}
+            height={l.height}
+            innerWidth={reviewInnerWidth(width, l.flexBest)}
+            onFix={onFix}
+            onSeeAll={onSeeAll}
+          />
         ) : (
           <AllGoodTile product={best} thresholds={thresholds} narrow={l.narrow} height={l.height} onOpen={onBest} />
         )}
@@ -109,37 +121,98 @@ function TileTop({ label, icon, tone, narrow }: { label: string; icon: React.Com
   );
 }
 
-/** « 1 à revoir » · worst product · « Corriger ». The whole tile is the button. */
+/** Content width of the « À revoir » tile: body gutters 2 × 20, gap 12, padding 2 × 14, border 2 × 1. */
+function reviewInnerWidth(window: number, flexBest: number): number {
+  return ((window - 40 - 12) * flexBest) / (1 + flexBest) - 30;
+}
+
+/** Rough width of a footnoteStrong (13 px Jakarta SemiBold) label: measured 5,3–5,5 px per character. */
+const labelWidth = (text: string) => text.length * 5.6;
+const SEE_ALL_W = 54;
+const CHEVRON_W = 15;
+const LEAD_W = 26 + 6;
+
+/**
+ * Top row of the tile with « Tout voir »: the red alert tile (as on
+ * « Produits » and the tile without « Tout voir »), the label, then the link,
+ * as long as the label keeps one line. The chevron goes first when the row is
+ * short, then the alert tile (narrow phones never show icon tiles).
+ */
+export function reviewTopRow(innerWidth: number, label: string, narrow: boolean): { icon: boolean; chevron: boolean } {
+  if (narrow) return { icon: false, chevron: false };
+  const need = labelWidth(label) + 6;
+  if (innerWidth - SEE_ALL_W - CHEVRON_W - LEAD_W >= need) return { icon: true, chevron: true };
+  if (innerWidth - SEE_ALL_W - LEAD_W >= need) return { icon: true, chevron: false };
+  return { icon: false, chevron: true };
+}
+
+/**
+ * « 1 à revoir  Tout voir › » · worst product · « Corriger ». The product
+ * block is the « Corriger » button; « Tout voir » sits on the label row
+ * (two sibling buttons: never a pressable inside a pressable).
+ */
 function ReviewTile({
   product,
   count,
   thresholds,
   narrow,
   height,
+  innerWidth,
   onFix,
+  onSeeAll,
 }: {
   product: ProductWithMargin;
   count: number;
   thresholds: MarginThresholds;
   narrow: boolean;
   height: number;
+  innerWidth: number;
   onFix: (p: ProductWithMargin) => void;
+  onSeeAll?: () => void;
 }) {
   const margin = product.computed.marginPercent;
   const bad = marginColors.red;
   const under = formatPercent(thresholds.medium, 0);
+  const label = `${count}${NBSP}à revoir`;
+  const top = reviewTopRow(innerWidth, label, narrow);
   return (
-    <PressableScale
-      onPress={() => onFix(product)}
-      scaleTo="card"
-      haptic="select"
-      accessibilityRole="button"
-      accessibilityLabel={`${plural(count, 'produit')} à revoir, sous ${spoken(under)}. Le plus urgent : ${product.name}, marge ${spoken(formatPercent(margin))}. Corriger le prix`}
-      style={[styles.tile, { minHeight: height }]}
-      testID="dashboard-review-tile"
-    >
-      <TileTop label={`${count}${NBSP}à revoir`} icon="alert-circle-outline" tone={{ bg: palette.badBg, fg: palette.bad }} narrow={narrow} />
-      <View style={styles.block}>
+    <View style={[styles.tile, { minHeight: height }]} testID="dashboard-review-tile">
+      {onSeeAll ? (
+        <View style={[styles.top, top.icon ? styles.topLead : null]}>
+          {/* The red alert tile stays (same reading as « Produits »), before the label. */}
+          {top.icon ? (
+            <View style={[styles.iconTile, styles.iconLead, { backgroundColor: palette.badBg }]} testID="dashboard-review-icon">
+              <Icon name="alert-circle-outline" size={16} color={palette.bad} />
+            </View>
+          ) : null}
+          <Text style={styles.label} numberOfLines={2}>
+            {label}
+          </Text>
+          <PressableScale
+            onPress={onSeeAll}
+            scaleTo="chip"
+            haptic="select"
+            hitSlop={{ top: 8, bottom: 6, left: 8, right: 8 }}
+            accessibilityRole="button"
+            accessibilityLabel={`Tout voir : chaque prix sous l’objectif de ${spoken(formatPercent(thresholds.good, 0))}, avec le prix conseillé`}
+            style={styles.seeAll}
+            testID="dashboard-see-all-fix"
+          >
+            <Text style={styles.seeAllText}>Tout voir</Text>
+            {top.chevron ? <Icon name="chevron-forward" size={13} color={palette.em700} /> : null}
+          </PressableScale>
+        </View>
+      ) : (
+        <TileTop label={label} icon="alert-circle-outline" tone={{ bg: palette.badBg, fg: palette.bad }} narrow={narrow} />
+      )}
+      <PressableScale
+        onPress={() => onFix(product)}
+        scaleTo="card"
+        haptic="select"
+        accessibilityRole="button"
+        accessibilityLabel={`${plural(count, 'produit')} à revoir, sous ${spoken(under)}. Le plus urgent : ${product.name}, marge ${spoken(formatPercent(margin))}. Corriger le prix`}
+        style={styles.block}
+      >
         <View style={styles.product}>
           {narrow ? null : <ProductThumb product={product} size={36} radius={10} />}
           <Text style={[styles.name, narrow && styles.nameNarrow]} numberOfLines={2}>
@@ -157,8 +230,8 @@ function ReviewTile({
             {narrow ? null : <Icon name="chevron-forward" size={13} color={palette.onEmerald} />}
           </View>
         </View>
-      </View>
-    </PressableScale>
+      </PressableScale>
+    </View>
   );
 }
 
@@ -241,7 +314,13 @@ const styles = StyleSheet.create({
   },
   top: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8, minHeight: TOP_H },
   label: { ...type.footnoteStrong, color: palette.text3, flex: 1, marginTop: 6 },
+  // « Tout voir »: 30 tall + an 8 / 6 px slop = 44 (it shares the label row).
+  seeAll: { flexDirection: 'row', alignItems: 'center', gap: 2, height: 30, marginTop: 0 },
+  seeAllText: { ...type.footnoteStrong, color: palette.em700 },
   iconTile: { width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  // Before the label, next to « Tout voir »: a little smaller so the label keeps one line.
+  topLead: { gap: 6 },
+  iconLead: { width: 26, height: 26, borderRadius: 8, marginTop: 2 },
   block: { minHeight: BLOCK, justifyContent: 'space-between', gap: 4 },
   bestBlock: { justifyContent: 'center' },
   product: { flexDirection: 'row', alignItems: 'center', gap: 10 },

@@ -6,7 +6,9 @@
  *   without one: icon tile · name · category · meta · « Ajouter une photo »
  *   key numbers with count-up: Marge · Coefficient · Gain par dose · Gain par bouteille/fût
  *   services: Prix TTC / HT · Coût · Gain · margin badge (tap → quick price change)
- *   Achat & fiscalité facts · purchase-price history (sparkline)
+ *   Achat & fiscalité facts (« Prix d’achat HT » opens the purchase price sheet,
+ *   lot 2 n° 8) · purchase-price history (sparkline)
+ *   « Prix à vérifier » badge while `priceToReview` (an invoice computed the price ×4)
  *   Modifier le produit · Supprimer le produit
  *
  * Opens instantly from the list cache (placeholder), then refreshes: detail and
@@ -51,6 +53,7 @@ import {
   DetailIdentity,
   DetailSkeleton,
   dosesLabel,
+  EditableValueRow,
   formatShortDate,
   KeyTile,
   keyValueSize,
@@ -61,6 +64,7 @@ import {
 } from './list/DetailParts';
 import { persistableProduct, pruneDetailCaches, useLeanOfflineQuery } from './list/detailCache';
 import { DOSE_KEY, fixTarget, PriceEditSheet, PriceEditTarget } from './list/PriceEditSheet';
+import { PurchasePriceSheet } from './list/PurchasePriceSheet';
 import { apiStatus, loadErrorMessage, useProductActions } from './list/productActions';
 
 type Props = NativeStackScreenProps<any, 'ProductDetail'>;
@@ -123,7 +127,7 @@ function servicesOf(product: ProductWithMargin): ServiceFigures[] {
 /** What the list card shows: when it differs, the list entry is refreshed from the detail. */
 function listSignature(p: ProductWithMargin): string {
   const servings = (p.servings ?? []).map((s) => `${s.servingTypeId}:${s.sellingPriceTTC}`).join(',');
-  return [p.updatedAt, p.name, p.categoryId, p.purchasePriceHT, p.sellingPriceTTC, p.containerVolumeCl, p.computed?.marginPercent, servings, p.thumbnailUrl?.length ?? 0].join('|');
+  return [p.updatedAt, p.name, p.categoryId, p.purchasePriceHT, p.sellingPriceTTC, p.containerVolumeCl, p.computed?.marginPercent, servings, p.thumbnailUrl?.length ?? 0, p.priceToReview].join('|');
 }
 
 export function ProductDetailScreen({ route, navigation: nav }: Props) {
@@ -136,6 +140,7 @@ export function ProductDetailScreen({ route, navigation: nav }: Props) {
   const [deleting, setDeleting] = useState(false);
   const [actionsOpen, setActionsOpen] = useState(false);
   const [priceTarget, setPriceTarget] = useState<PriceEditTarget | null>(null);
+  const [purchaseOpen, setPurchaseOpen] = useState(false);
   const [titleShown, setTitleShown] = useState(false);
   const [pulling, setPulling] = useState(false);
   const titleRef = useRef(false);
@@ -259,6 +264,10 @@ export function ProductDetailScreen({ route, navigation: nav }: Props) {
     toast.clear();
     setPriceTarget(target);
   }, []);
+  const openPurchase = useCallback(() => {
+    toast.clear();
+    setPurchaseOpen(true);
+  }, []);
 
   // « Corriger » (dashboard « À revoir », links): `?prix=conseille` opens the
   // quick price sheet on the primary price, already set to the suggested price.
@@ -366,6 +375,9 @@ export function ProductDetailScreen({ route, navigation: nav }: Props) {
             meta={meta}
             withTile={!hasPhoto}
             onAddPhoto={!hasPhoto && !deleted ? edit : undefined}
+            priceToReview={!!product.priceToReview}
+            // The quick sheet on the primary price: saving it (even unchanged) confirms it.
+            onReview={deleted ? undefined : () => openPrice({})}
           />
         </View>
       </FadeIn>
@@ -444,7 +456,18 @@ export function ProductDetailScreen({ route, navigation: nav }: Props) {
       <FadeIn delay={160}>
         <SectionHeader title="Achat et fiscalité" style={styles.section} />
         <Card padding={16} style={styles.factsCard}>
-          <ValueRow label="Prix d’achat HT" qualifier={`par ${noun}`} value={formatEuro(product.purchasePriceHT)} />
+          {deleted ? (
+            <ValueRow label="Prix d’achat HT" qualifier={`par ${noun}`} value={formatEuro(product.purchasePriceHT)} />
+          ) : (
+            <EditableValueRow
+              label="Prix d’achat HT"
+              qualifier={`par ${noun}`}
+              value={formatEuro(product.purchasePriceHT)}
+              onPress={openPurchase}
+              accessibilityLabel={`Prix d’achat HT par ${noun} : ${formatEuro(product.purchasePriceHT)}. Modifier le prix d’achat`}
+              testID="detail-purchase"
+            />
+          )}
           <ValueRow label="Contenance" value={formatVolumeCl(product.containerVolumeCl)} />
           <ValueRow label="Degré d’alcool" value={product.alcoholDegree > 0 ? formatDegree(product.alcoholDegree) : 'Sans alcool'} />
           <ValueRow label="TVA" value={formatPercent(tva, Number.isInteger(Math.round(tva * 10) / 10) ? 0 : 1)} />
@@ -480,6 +503,7 @@ export function ProductDetailScreen({ route, navigation: nav }: Props) {
         onDelete={remove}
       />
       <PriceEditSheet product={product} target={priceTarget} onClose={() => setPriceTarget(null)} />
+      <PurchasePriceSheet product={product} open={purchaseOpen} onClose={() => setPurchaseOpen(false)} />
     </Screen>
   );
 }

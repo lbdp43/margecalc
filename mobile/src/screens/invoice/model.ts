@@ -7,10 +7,13 @@
  * The screen shows that price with « calculé ×4 » so it is never 0 and never a
  * surprise.
  *
- * A line whose name and container match a product the user already tracks is
- * NOT created: the backend only updates that product's purchase price and keeps
- * its selling price. `findExisting` mirrors that match so the review says so
- * (« Déjà suivi ») and shows the margin the product will have after the import.
+ * A line linked to a product the user already tracks is NOT created: the
+ * backend only updates that product's purchase price and keeps its selling
+ * price. Lot 2: the link comes from POST /api/products/import/preview (exact
+ * name, a label remembered for this supplier, or a look-alike name the user
+ * confirms or refuses), see `resolveTarget`; without the preview, the exact
+ * name and container (`findExisting`). The review shows the margin the
+ * product will have after the import, and the purchase price before → after.
  */
 import {
   DEFAULT_CATEGORIES,
@@ -20,10 +23,12 @@ import {
   deriveSellingPriceTTC,
   type Category,
   type ImportLineResult,
+  type ImportPreviewLine,
   type ImportProductLine,
   type InvoiceScanProduct,
   type ProductWithMargin,
 } from '@margebar/shared';
+import { doseLabel as productDoseLabel } from '../../utils/servings';
 import { NBSP, formatNumber, formatVolumeCl, parseLocaleFloat } from '../../utils/format';
 
 export type LineField = 'name' | 'category' | 'quantity' | 'container' | 'degree' | 'purchase' | 'selling';
@@ -50,6 +55,8 @@ export interface InvoiceLine {
   confidence: number;
   /** The backend's error for this line after the last import. */
   importError?: { message: string; field: LineField | null } | null;
+  /** Lot 2 — the user's choice: follow the matching, link to a product, or create a new one. */
+  link: LineLink;
 }
 
 export interface PricingContext {
@@ -102,6 +109,7 @@ export function linesFromScan(products: InvoiceScanProduct[], categories: Catego
       sellingPriceTTC: null,
       alcoholDegree: typeof p.alcoholDegree === 'number' && p.alcoholDegree > 0 ? p.alcoholDegree : null,
       confidence: typeof p.confidence === 'number' ? p.confidence : 1,
+      link: AUTO_LINK,
     };
   });
 }
@@ -122,6 +130,7 @@ export function emptyLine(position: number, categories: Category[]): InvoiceLine
     sellingPriceTTC: null,
     alcoholDegree: null,
     confidence: 1,
+    link: AUTO_LINK,
   };
 }
 
@@ -162,7 +171,7 @@ export function containerLabel(cl: number | null | undefined, slug?: string): st
   return formatVolumeCl(cl);
 }
 
-// ─── Existing products (same name + container → purchase price update only) ─
+// ─── The user's products ──────────────────────────────────────────────────
 
 export interface ExistingProduct {
   id: string;
@@ -176,22 +185,41 @@ export interface ExistingProduct {
   sellingPriceTTC: number;
   targetMarginPercent: number | null;
   coefficient: number | null;
+  /** Margin today (primary service), null when unknown. */
+  marginPercent: number | null;
+  categoryName: string | null;
+  categorySlug: string | null;
+  /** « Verre 5 cl », « À l’unité »: the service the headline price is for. */
+  primaryLabel: string;
 }
 
-export type ExistingIndex = Map<string, ExistingProduct>;
+/**
+ * The user's products: by id (a link chosen in the review), by normalised
+ * name + container (the exact match, used when the preview is unavailable)
+ * and sorted by name (the « Choisir un autre produit » sheet).
+ */
+export interface ProductCatalog {
+  byId: Map<string, ExistingProduct>;
+  byKey: Map<string, ExistingProduct>;
+  list: ExistingProduct[];
+}
+
+/** Kept for the callers that only need the exact-name index. */
+export type ExistingIndex = ProductCatalog;
+
+export const EMPTY_CATALOG: ProductCatalog = { byId: new Map(), byKey: new Map(), list: [] };
 
 const existingKey = (name: string, containerCl: number) => `${normName(name)}|${containerCl}`;
 
-/** Index of the user's products by (normalised name, container), oldest first like the backend. */
-export function indexProducts(products: ProductWithMargin[] | undefined | null): ExistingIndex {
-  const map: ExistingIndex = new Map();
-  if (!products?.length) return map;
+/** Index of the user's products (oldest first for the exact match, like the backend). */
+export function indexProducts(products: ProductWithMargin[] | undefined | null): ProductCatalog {
+  if (!products?.length) return EMPTY_CATALOG;
+  const byId = new Map<string, ExistingProduct>();
+  const byKey = new Map<string, ExistingProduct>();
   const sorted = [...products].sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)));
   for (const p of sorted) {
-    if (!p?.name || !(p.containerVolumeCl > 0)) continue;
-    const key = existingKey(p.name, p.containerVolumeCl);
-    if (map.has(key)) continue;
-    map.set(key, {
+    if (!p?.id || !p.name) continue;
+    const e: ExistingProduct = {
       id: p.id,
       name: p.name,
       containerVolumeCl: p.containerVolumeCl,
@@ -202,20 +230,272 @@ export function indexProducts(products: ProductWithMargin[] | undefined | null):
       sellingPriceTTC: p.computed?.sellingPriceTTC ?? p.sellingPriceTTC ?? 0,
       targetMarginPercent: p.targetMarginPercent,
       coefficient: p.coefficient,
-    });
+      marginPercent: typeof p.computed?.marginPercent === 'number' && Number.isFinite(p.computed.marginPercent) ? p.computed.marginPercent : null,
+      categoryName: p.category?.name ?? null,
+      categorySlug: p.category?.slug ?? null,
+      primaryLabel: primaryLabelOf(p),
+    };
+    byId.set(p.id, e);
+    if (p.containerVolumeCl > 0) {
+      const key = existingKey(p.name, p.containerVolumeCl);
+      if (!byKey.has(key)) byKey.set(key, e);
+    }
   }
-  return map;
+  const list = [...byId.values()].sort((a, b) => a.name.localeCompare(b.name, 'fr', { sensitivity: 'base' }));
+  return { byId, byKey, list };
 }
 
+/** « Verre 5 cl » (primary service, lowest sortOrder, like ProductCard), else « À l’unité » / « Dose 25 cl ». */
+function primaryLabelOf(p: ProductWithMargin): string {
+  const first = [...(p.servings ?? [])].filter((x) => x.servingType).sort((a, b) => (a.servingType!.sortOrder ?? 0) - (b.servingType!.sortOrder ?? 0))[0];
+  if (first?.servingType) {
+    const short = first.servingType.name.replace(/\s*\([^)]*\)\s*$/, '').trim() || first.servingType.name;
+    return `${short}${NBSP}${formatVolumeCl(first.servingType.volumeCl)}`;
+  }
+  return productDoseLabel(p.containerVolumeCl, p.doseVolumeCl);
+}
+
+/** Same name and container as a product already tracked (the backend's « exact » match, without the ± 1 cl). */
 export function findExisting(
   line: Pick<InvoiceLine, 'name' | 'containerVolumeCl'>,
-  index: ExistingIndex | null | undefined,
+  catalog: ProductCatalog | null | undefined,
   ctx: PricingContext,
 ): ExistingProduct | null {
-  if (!index || !index.size) return null;
+  if (!catalog || !catalog.byKey.size) return null;
   const name = line.name.trim();
   if (!name) return null;
-  return index.get(existingKey(name, containerOf(line, ctx))) ?? null;
+  return catalog.byKey.get(existingKey(name, containerOf(line, ctx))) ?? null;
+}
+
+// ─── Matching (lot 2: POST /api/products/import/preview) ───────────────────
+//
+// The preview says, for each line, what /import would do without flags:
+// update a product with the same name (« exact »), update the product this
+// supplier's label was linked to before (« alias »), or create a product.
+// A look-alike name (« fuzzy », e.g. « Côtes du Rhône Rouge 2022 » for
+// « Côtes du Rhône rouge ») is a QUESTION: /import would create a duplicate
+// unless the user confirms the link, so the review asks and sends `productId`
+// (link, remembered for the supplier) or `createNew` (refused). Never
+// `autoLinkFuzzy`.
+
+/** The user's decision for a line. */
+export type LineLink =
+  /** Follow the preview: exact / alias update, or creation. A fuzzy match still has to be decided. */
+  | { kind: 'auto' }
+  /** Update THIS product (`productId` is sent; the backend remembers it for the supplier). */
+  | { kind: 'product'; productId: string; name: string; containerVolumeCl: number; via: 'suggestion' | 'picked' }
+  /** Create a new product even if a name matches (`createNew: true`). */
+  | { kind: 'create' };
+
+export const AUTO_LINK: LineLink = { kind: 'auto' };
+
+/** The product before this line (primary service). */
+export interface PreviousState {
+  purchasePriceHT: number | null;
+  marginPercent: number | null;
+  sellingPriceTTC: number | null;
+  servingName: string | null;
+}
+
+export interface MatchSuggestion {
+  productId: string;
+  name: string;
+  containerVolumeCl: number;
+  score: number;
+}
+
+export type LineTarget =
+  /** Only the purchase price of this product changes. */
+  | {
+      kind: 'update';
+      productId: string;
+      name: string;
+      containerVolumeCl: number;
+      product: ExistingProduct | null;
+      /** exact | alias (automatic), fuzzy (a suggestion the user confirmed), manual (picked in the sheet). */
+      reason: 'exact' | 'alias' | 'fuzzy' | 'manual';
+      /** The user chose it (`productId` is sent). */
+      explicit: boolean;
+      previous: PreviousState | null;
+      suggestions: MatchSuggestion[];
+      /** Same label as this earlier line (index in the review list), which the user linked to this product. */
+      viaLine?: number;
+    }
+  /** A look-alike product: « Ressemble à … · Mettre à jour ce produit ? ». */
+  | {
+      kind: 'decide';
+      productId: string;
+      name: string;
+      containerVolumeCl: number;
+      score: number;
+      product: ExistingProduct | null;
+      previous: PreviousState | null;
+      suggestions: MatchSuggestion[];
+    }
+  /**
+   * The product an earlier ticked line of this invoice creates (same label
+   * twice): created by that line, then only its purchase price is updated by
+   * this one. `lineIndex` is the source line's index in the review list.
+   */
+  | { kind: 'sameAs'; lineIndex: number; name: string; source: InvoiceLine }
+  /** A new product. `forced`: the user refused the matches. */
+  | { kind: 'create'; forced: boolean; suggestions: MatchSuggestion[] };
+
+function previousOf(p: ImportPreviewLine['previous'] | undefined | null): PreviousState | null {
+  if (!p) return null;
+  return {
+    purchasePriceHT: typeof p.purchasePriceHT === 'number' ? p.purchasePriceHT : null,
+    marginPercent: typeof p.marginPercent === 'number' && Number.isFinite(p.marginPercent) ? p.marginPercent : null,
+    sellingPriceTTC: typeof p.sellingPriceTTC === 'number' ? p.sellingPriceTTC : null,
+    servingName: p.servingName ?? null,
+  };
+}
+
+function previousFromProduct(p: ExistingProduct | null): PreviousState | null {
+  if (!p) return null;
+  return { purchasePriceHT: p.purchasePriceHT, marginPercent: p.marginPercent, sellingPriceTTC: p.sellingPriceTTC || null, servingName: null };
+}
+
+/** The match and the candidates of a preview line, best first, without duplicates. */
+export function suggestionsOf(preview: ImportPreviewLine | null | undefined): MatchSuggestion[] {
+  const out: MatchSuggestion[] = [];
+  const seen = new Set<string>();
+  const m = preview?.match;
+  if (m && m.productId) {
+    out.push({ productId: m.productId, name: m.name, containerVolumeCl: m.containerVolumeCl, score: m.score });
+    seen.add(m.productId);
+  }
+  for (const c of preview?.candidates ?? []) {
+    if (!c?.productId || seen.has(c.productId)) continue;
+    seen.add(c.productId);
+    out.push({ productId: c.productId, name: c.name, containerVolumeCl: c.containerVolumeCl, score: c.score });
+  }
+  return out;
+}
+
+/**
+ * A preview line as the review keeps it: `match.sameAsLine` is rewritten to
+ * the source line's index in the review list, and `sameAsId` is that line's id
+ * (the preview only sees the ticked lines, in their order).
+ */
+export type StoredPreviewLine = ImportPreviewLine & { sameAsId?: string };
+
+/**
+ * What the import will do with this line, from the user's choice, then the
+ * preview, then (preview unavailable) the exact name and container.
+ * `lines`: the review list, to find the line a « same product » match points at.
+ */
+export function resolveTarget(
+  line: InvoiceLine,
+  preview: StoredPreviewLine | null | undefined,
+  catalog: ProductCatalog | null | undefined,
+  ctx: PricingContext,
+  lines?: InvoiceLine[],
+): LineTarget {
+  const link = line.link ?? AUTO_LINK;
+  const suggestions = suggestionsOf(preview);
+  if (link.kind === 'product') {
+    const product = catalog?.byId.get(link.productId) ?? null;
+    const fromPreview = preview?.match?.productId === link.productId ? previousOf(preview.previous) : null;
+    return {
+      kind: 'update',
+      productId: link.productId,
+      name: product?.name ?? link.name,
+      containerVolumeCl: product?.containerVolumeCl ?? link.containerVolumeCl,
+      product,
+      reason: link.via === 'suggestion' ? 'fuzzy' : 'manual',
+      explicit: true,
+      previous: fromPreview ?? previousFromProduct(product),
+      suggestions,
+    };
+  }
+  if (link.kind === 'create') return { kind: 'create', forced: true, suggestions };
+  if (preview) {
+    const m = preview.match;
+    if (!m) return { kind: 'create', forced: false, suggestions };
+    if ((!m.productId || typeof m.sameAsLine === 'number') && m.reason === 'fuzzy') {
+      // A look-alike of a product this invoice only creates: /import (no `autoLinkFuzzy`) creates this one too.
+      return { kind: 'create', forced: false, suggestions };
+    }
+    if (!m.productId || typeof m.sameAsLine === 'number') {
+      // The product a ticked earlier line creates. When that line is not imported (unticked since, or gone),
+      // the preview says nothing about this one: fall back to the exact name below.
+      const src = sameAsSource(preview, lines);
+      const srcLink = src?.line.link ?? AUTO_LINK;
+      if (src && srcLink.kind === 'product') {
+        // Line N was linked by the user: this line updates the same product (`productId` is sent for both).
+        const product = catalog?.byId.get(srcLink.productId) ?? null;
+        const srcPurchase = src.line.purchasePriceHT && src.line.purchasePriceHT > 0 ? round3(src.line.purchasePriceHT) : null;
+        const afterSrc = product ? marginAfterUpdate(product, srcPurchase) : null;
+        return {
+          kind: 'update',
+          productId: srcLink.productId,
+          name: product?.name ?? srcLink.name,
+          containerVolumeCl: product?.containerVolumeCl ?? srcLink.containerVolumeCl,
+          product,
+          reason: 'manual',
+          explicit: true,
+          previous: product ? { purchasePriceHT: srcPurchase ?? product.purchasePriceHT, marginPercent: afterSrc?.marginPercent ?? null, sellingPriceTTC: afterSrc?.price ?? null, servingName: null } : null,
+          suggestions,
+          viaLine: src.index,
+        };
+      }
+      if (src) return { kind: 'sameAs', lineIndex: src.index, name: src.line.name.trim() || m.name, source: src.line };
+    } else {
+      const product = catalog?.byId.get(m.productId) ?? null;
+      const previous = previousOf(preview.previous) ?? previousFromProduct(product);
+      if (m.reason === 'fuzzy') {
+        return { kind: 'decide', productId: m.productId, name: m.name, containerVolumeCl: m.containerVolumeCl, score: m.score, product, previous, suggestions };
+      }
+      return {
+        kind: 'update',
+        productId: m.productId,
+        name: m.name,
+        containerVolumeCl: m.containerVolumeCl,
+        product,
+        reason: m.reason,
+        explicit: false,
+        previous,
+        suggestions,
+      };
+    }
+  }
+  const exact = findExisting(line, catalog, ctx);
+  if (exact) {
+    return {
+      kind: 'update',
+      productId: exact.id,
+      name: exact.name,
+      containerVolumeCl: exact.containerVolumeCl,
+      product: exact,
+      reason: 'exact',
+      explicit: false,
+      previous: previousFromProduct(exact),
+      suggestions: [],
+    };
+  }
+  return { kind: 'create', forced: false, suggestions: [] };
+}
+
+/** The ticked line a « same product » match points at, with its index in the review list. */
+function sameAsSource(preview: StoredPreviewLine, lines: InvoiceLine[] | undefined): { line: InvoiceLine; index: number } | null {
+  if (!lines?.length) return null;
+  let index = preview.sameAsId ? lines.findIndex((l) => l.id === preview.sameAsId) : -1;
+  if (index < 0 && !preview.sameAsId && typeof preview.match?.sameAsLine === 'number') index = preview.match.sameAsLine;
+  const line = index >= 0 ? lines[index] : undefined;
+  return line && line.selected ? { line, index } : null;
+}
+
+/** True when the line updates an existing product (its selling price is kept). */
+export const updatesProduct = (t: LineTarget) => t.kind === 'update';
+
+/** The fields the preview depends on: a change asks the server again. */
+export function previewKeyOf(lines: InvoiceLine[], supplier: string): string {
+  return JSON.stringify([
+    supplier.trim(),
+    // `selected`: only the ticked lines are previewed (the preview reads them in order), so ticking asks again.
+    lines.map((l) => [l.id, l.selected, l.name.trim(), l.categoryId ?? l.categorySlug, l.containerVolumeCl, l.purchasePriceHT, l.sellingPriceTTC, l.alcoholDegree]),
+  ]);
 }
 
 export interface LinePreview {
@@ -225,39 +505,72 @@ export interface LinePreview {
   derived: boolean;
   /** Margin % after the import (null when it cannot be computed yet). */
   marginPercent: number | null;
-  /** The line updates this existing product (its selling price is kept). */
+  target: LineTarget;
+  /** The product this line would update (its selling price is kept), when known. */
   existing: ExistingProduct | null;
+  /** The matching has not answered for this line yet (its target is a guess): show it as pending. */
+  pending?: boolean;
 }
 
-/** What the product will look like after the import: price, margin, existing match. */
-export function previewLine(line: InvoiceLine, ctx: PricingContext, index: ExistingIndex | null | undefined): LinePreview {
-  const existing = findExisting(line, index, ctx);
+/** Margin of an existing product once its purchase price is `purchase` (its pricing mode is kept). */
+function marginAfterUpdate(existing: ExistingProduct, purchase: number | null): { price: number; marginPercent: number | null } {
+  let result: { sellingPriceTTC: number; marginPercent: number } | null = null;
+  try {
+    result = calculateMargin({
+      purchasePriceHT: purchase ?? existing.purchasePriceHT,
+      containerVolumeCl: existing.containerVolumeCl,
+      doseVolumeCl: existing.doseVolumeCl,
+      marginMode: existing.marginMode,
+      sellingPriceTTC: existing.sellingPriceTTC || undefined,
+      targetMarginPercent: existing.targetMarginPercent ?? undefined,
+      coefficient: existing.coefficient ?? undefined,
+      tvaRate: existing.tvaRate,
+    });
+  } catch {
+    result = null;
+  }
+  return {
+    price: result?.sellingPriceTTC ?? existing.sellingPriceTTC,
+    marginPercent: result && Number.isFinite(result.marginPercent) ? result.marginPercent : null,
+  };
+}
+
+/** What the product will look like after the import: price, margin, target. */
+export function previewLine(line: InvoiceLine, ctx: PricingContext, target: LineTarget): LinePreview {
   const purchase = line.purchasePriceHT && line.purchasePriceHT > 0 ? round3(line.purchasePriceHT) : null;
-  if (existing) {
-    let result: { sellingPriceTTC: number; marginPercent: number } | null = null;
-    try {
-      result = calculateMargin({
-        purchasePriceHT: purchase ?? existing.purchasePriceHT,
-        containerVolumeCl: existing.containerVolumeCl,
-        doseVolumeCl: existing.doseVolumeCl,
-        marginMode: existing.marginMode,
-        sellingPriceTTC: existing.sellingPriceTTC || undefined,
-        targetMarginPercent: existing.targetMarginPercent ?? undefined,
-        coefficient: existing.coefficient ?? undefined,
-        tvaRate: existing.tvaRate,
-      });
-    } catch {
-      result = null;
+  if (target.kind === 'update' || target.kind === 'decide') {
+    const existing = target.product;
+    if (existing) {
+      const after = marginAfterUpdate(existing, purchase);
+      return { price: after.price, derived: false, marginPercent: after.marginPercent, target, existing };
     }
-    return {
-      price: result?.sellingPriceTTC ?? existing.sellingPriceTTC,
-      derived: false,
-      marginPercent: result && Number.isFinite(result.marginPercent) ? result.marginPercent : null,
-      existing,
-    };
+    return { price: target.previous?.sellingPriceTTC ?? 0, derived: false, marginPercent: null, target, existing: null };
+  }
+  if (target.kind === 'sameAs') {
+    // Line N creates the product at ITS price (typed, or ×4 from its own purchase price), with its container and
+    // dose; this line then only changes the purchase price.
+    const src = target.source;
+    const { price } = effectivePrice(src, ctx);
+    return { price, derived: false, marginPercent: purchase && price > 0 ? marginFor(purchase, src, price, ctx) : null, target, existing: null };
   }
   const { price, derived } = effectivePrice(line, ctx);
-  return { price, derived, marginPercent: purchase && price > 0 ? marginFor(purchase, line, price, ctx) : null, existing: null };
+  return { price, derived, marginPercent: purchase && price > 0 ? marginFor(purchase, line, price, ctx) : null, target, existing: null };
+}
+
+/** « +10,5 % » change of a purchase price (null when it cannot be said). */
+export function changePercent(before: number | null | undefined, after: number | null | undefined): number | null {
+  if (typeof before !== 'number' || typeof after !== 'number' || !(before > 0) || !Number.isFinite(after)) return null;
+  return ((after - before) / before) * 100;
+}
+
+/** Same price to the cent. */
+export const samePurchase = (a: number | null | undefined, b: number | null | undefined) =>
+  typeof a === 'number' && typeof b === 'number' && Math.abs(a - b) < 0.0005;
+
+/** A suggestion whose container differs from the line's by more than 1 cl (linking it would apply a wrong price). */
+export function containerDiffers(line: Pick<InvoiceLine, 'containerVolumeCl'>, productCl: number | null | undefined, ctx: PricingContext): boolean {
+  if (!(typeof productCl === 'number' && productCl > 0)) return false;
+  return Math.abs(containerOf(line, ctx) - productCl) > 1;
 }
 
 function marginFor(purchase: number, line: InvoiceLine, price: number, ctx: PricingContext): number | null {
@@ -330,18 +643,29 @@ export function errorField(message: string): LineField | null {
   return null;
 }
 
-export function toImportLine(line: InvoiceLine, categories: Category[], supplier: string, existing: ExistingProduct | null): ImportProductLine {
+/**
+ * The line as sent to POST /api/products/import (and /preview). With a
+ * target: `productId` for a link the user chose, `createNew` for a match they
+ * refused, and no selling price for a product that keeps its own.
+ */
+export function toImportLine(line: InvoiceLine, categories: Category[], supplier: string, target: LineTarget | null): ImportProductLine {
   const known = line.categoryId ? categories.some((c) => c.id === line.categoryId) : false;
+  // An update (and « same product as line N », created by that line) keeps the product's selling price.
+  const keepsPrice = !!target && target.kind !== 'create';
+  const link = line.link ?? AUTO_LINK;
   return {
     name: line.name.trim(),
     ...(known ? { categoryId: line.categoryId! } : { category: line.categorySlug }),
     purchasePriceHT: line.purchasePriceHT,
     containerVolumeCl: line.containerVolumeCl,
     // An existing product keeps its selling price: never send one the API would ignore.
-    sellingPriceTTC: !existing && line.sellingPriceTTC && line.sellingPriceTTC > 0 ? line.sellingPriceTTC : null,
+    sellingPriceTTC: !keepsPrice && line.sellingPriceTTC && line.sellingPriceTTC > 0 ? line.sellingPriceTTC : null,
     alcoholDegree: line.alcoholDegree,
     quantity: line.quantity,
     supplier: supplier.trim() || null,
+    // A link the user chose (or the one of an earlier line with the same label): update THAT product.
+    ...(target && target.kind === 'update' && target.explicit ? { productId: target.productId } : null),
+    ...(target && link.kind === 'create' ? { createNew: true } : null),
   };
 }
 
@@ -377,30 +701,48 @@ export interface LineOutcome {
   result: ImportLineResult;
   /** Margin % after the import, when it can be computed. */
   marginPercent: number | null;
+  /** Updated products: the margin and the purchase price before the import. */
+  previousMarginPercent: number | null;
+  previousPurchasePriceHT: number | null;
+  /** The product's own name (an updated product keeps its name, not the invoice label). */
+  productName: string;
 }
 
 /** Pairs each result with its line (results carry the index of the lines sent). */
-export function pairResults(
-  sent: InvoiceLine[],
-  results: ImportLineResult[],
-  ctx: PricingContext,
-  index: ExistingIndex | null | undefined,
-): LineOutcome[] {
+export function pairResults(sent: InvoiceLine[], results: ImportLineResult[], ctx: PricingContext, previews: (LinePreview | null)[]): LineOutcome[] {
   const out: LineOutcome[] = [];
+  // A product an earlier line of this import created keeps that line's name (« same product as line N »).
+  const createdName = new Map<string, string>();
   for (const r of results) {
     const line = sent[r.index];
     if (!line) continue;
     let marginPercent: number | null = null;
+    let previousMarginPercent: number | null = null;
+    let previousPurchasePriceHT: number | null = null;
+    let productName = r.name || line.name.trim();
     if (r.ok) {
-      const pv = previewLine(line, ctx, r.action === 'updated' ? index : null);
+      const purchase = line.purchasePriceHT && line.purchasePriceHT > 0 ? round3(line.purchasePriceHT) : null;
       if (r.action === 'created') {
-        const purchase = line.purchasePriceHT && line.purchasePriceHT > 0 ? round3(line.purchasePriceHT) : null;
-        marginPercent = purchase && r.sellingPriceTTC > 0 ? marginFor(purchase, line, r.sellingPriceTTC, ctx) : pv.marginPercent;
+        marginPercent = purchase && r.sellingPriceTTC > 0 ? marginFor(purchase, line, r.sellingPriceTTC, ctx) : null;
+        if (r.productId && !createdName.has(r.productId)) createdName.set(r.productId, productName);
       } else {
-        marginPercent = pv.existing ? pv.marginPercent : null;
+        const pv = previews[r.index];
+        const local = pv && (pv.target.kind === 'update' || pv.target.kind === 'decide') && pv.target.productId === r.productId ? pv : null;
+        if (local && (local.target.kind === 'update' || local.target.kind === 'decide')) productName = local.target.name || productName;
+        else if (r.productId && createdName.has(r.productId)) productName = createdName.get(r.productId)!;
+        else if (pv?.target.kind === 'sameAs') productName = pv.target.name || productName;
+        marginPercent = num(r.newMarginPercent) ?? local?.marginPercent ?? null;
+        previousMarginPercent =
+          num(r.previousMarginPercent) ??
+          (local && local.target.kind !== 'create' && local.target.kind !== 'sameAs' ? (local.target.previous?.marginPercent ?? null) : null);
+        previousPurchasePriceHT =
+          num(r.previousPurchasePriceHT) ??
+          (local && local.target.kind !== 'create' && local.target.kind !== 'sameAs' ? (local.target.previous?.purchasePriceHT ?? null) : null);
       }
     }
-    out.push({ line, result: r, marginPercent });
+    out.push({ line, result: r, marginPercent, previousMarginPercent, previousPurchasePriceHT, productName });
   }
   return out;
 }
+
+const num = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);

@@ -1,18 +1,23 @@
 /**
  * Step 3 — review what was read: supplier and date header, the detected lines
- * (tick / untick, tap to edit, margin after import, « Déjà suivi » when the
- * line updates a product), « Ajouter une ligne », and the sticky
- * « Importer N produits » with the selection total.
+ * (tick / untick, tap to edit, margin after import), what each line does to
+ * the catalogue (lot 2: « Mettre à jour « … » » with the purchase price
+ * before → after, « Ressemble à « … » · Mettre à jour ce produit ? » with
+ * Lier / Créer un nouveau, « Nouveau produit »), « Ajouter une ligne », and
+ * the sticky « Importer N produits » with the selection total.
  */
 import React, { useCallback, useMemo } from 'react';
-import { Image, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Image, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import type { Category } from '@margebar/shared';
 import { AnimatedNumber, Button, Card, FadeIn, NavBar, PressableScale, Screen, ScreenList, SectionHeader, StickyActionBar } from '../../components/ui';
 import { palette, radius, type } from '../../theme';
 import { NBSP, formatEuro, plural } from '../../utils/format';
 import { LineCard } from './LineCard';
-import { hasErrors, previewLine, selectedTotalHT, validateLine, type ExistingIndex, type InvoiceLine, type LinePreview, type PricingContext } from './model';
+import { hasErrors, selectedTotalHT, validateLine, type InvoiceLine, type LinePreview, type PricingContext } from './model';
+
+/** State of the name matching (POST /api/products/import/preview). */
+export type MatchStatus = 'idle' | 'loading' | 'ok' | 'error';
 
 export interface ReviewStepProps {
   lines: InvoiceLine[];
@@ -21,13 +26,23 @@ export interface ReviewStepProps {
   previewUri: string | null;
   categories: Category[];
   ctx: PricingContext;
-  existing: ExistingIndex;
+  /** What each line will do (by line id): target, price and margin after the import. */
+  previews: Map<string, LinePreview>;
+  /** The preview's own error for a line (by line id). */
+  previewErrors: Map<string, string>;
+  matchStatus: MatchStatus;
+  /** True until the first preview of these lines answered. */
+  matchPending: boolean;
+  onRetryMatch: () => void;
   importing: boolean;
   /** True when these lines come back from a partial import (« Corriger »). */
   correcting: boolean;
   onToggle: (id: string) => void;
   onToggleAll: () => void;
   onEdit: (id: string) => void;
+  onLink: (id: string) => void;
+  onCreateNew: (id: string) => void;
+  onChoose: (id: string) => void;
   onEditSupplier: () => void;
   onAddLine: () => void;
   onRescan: () => void;
@@ -37,16 +52,19 @@ export interface ReviewStepProps {
 const Separator = () => <View style={styles.sep} />;
 
 export function ReviewStep(props: ReviewStepProps) {
-  const { lines, ctx, categories, importing, onToggle, onEdit, existing } = props;
+  const { lines, ctx, categories, importing, onToggle, onEdit, onLink, onCreateNew, onChoose, previews, previewErrors, supplier } = props;
   const selected = useMemo(() => lines.filter((l) => l.selected), [lines]);
   const n = selected.length;
   const total = useMemo(() => selectedTotalHT(lines), [lines]);
   const incomplete = useMemo(() => selected.filter((l) => hasErrors(validateLine(l))).length, [selected]);
-  const previews = useMemo(() => {
-    const m = new Map<string, LinePreview>();
-    for (const l of lines) m.set(l.id, previewLine(l, ctx, existing));
-    return m;
-  }, [lines, ctx, existing]);
+  const toConfirm = useMemo(
+    () =>
+      selected.filter((l) => {
+        const p = previews.get(l.id);
+        return p?.target.kind === 'decide' && !p.pending;
+      }).length,
+    [selected, previews],
+  );
   const anyDerived = useMemo(() => lines.some((l) => previews.get(l.id)?.derived), [lines, previews]);
   const anyManual = useMemo(() => lines.some((l) => l.source === 'manual'), [lines]);
   const allSelected = n === lines.length && lines.length > 0;
@@ -59,18 +77,25 @@ export function ReviewStep(props: ReviewStepProps) {
   const renderItem = useCallback(
     ({ item, index }: { item: InvoiceLine; index: number }) => (
       <FadeIn index={index}>
-        <LineCard
-          line={item}
-          category={catOf(item)}
-          ctx={ctx}
-          preview={previews.get(item.id) ?? previewLine(item, ctx, existing)}
-          disabled={importing}
-          onToggle={onToggle}
-          onEdit={onEdit}
-        />
+        {previews.get(item.id) ? (
+          <LineCard
+            line={item}
+            category={catOf(item)}
+            ctx={ctx}
+            preview={previews.get(item.id)!}
+            supplier={supplier}
+            previewError={previewErrors.get(item.id) ?? null}
+            disabled={importing}
+            onToggle={onToggle}
+            onEdit={onEdit}
+            onLink={onLink}
+            onCreateNew={onCreateNew}
+            onChoose={onChoose}
+          />
+        ) : null}
       </FadeIn>
     ),
-    [catOf, ctx, previews, existing, importing, onToggle, onEdit],
+    [catOf, ctx, previews, previewErrors, supplier, importing, onToggle, onEdit, onLink, onCreateNew, onChoose],
   );
 
   const supplierA11y = `Fournisseur ${props.supplier || 'non indiqué'}${props.dateLabel ? `, facture du ${props.dateLabel}` : ''}. Modifier`;
@@ -141,6 +166,35 @@ export function ReviewStep(props: ReviewStepProps) {
         style={styles.section}
       />
 
+      {props.matchPending && props.matchStatus === 'loading' ? (
+        <FadeIn delay={40}>
+          <View style={styles.note} accessibilityLiveRegion="polite" testID="invoice-match-loading">
+            <ActivityIndicator size="small" color={palette.em700} style={styles.noteIcon} />
+            <Text style={styles.noteText}>Rapprochement avec vos produits…</Text>
+          </View>
+        </FadeIn>
+      ) : props.matchStatus === 'error' ? (
+        <FadeIn delay={40}>
+          <View style={[styles.note, styles.noteMuted]} accessibilityLiveRegion="polite" testID="invoice-match-error">
+            <Ionicons name="cloud-offline-outline" size={20} color={palette.text2} style={styles.noteIcon} />
+            <View style={styles.flex}>
+              <Text style={[styles.noteText, { color: palette.text2 }]}>
+                Rapprochement des noms indisponible : seuls les noms identiques mettront à jour vos produits.
+              </Text>
+              <Button
+                title="Réessayer"
+                variant="text"
+                size="sm"
+                icon="refresh"
+                onPress={props.onRetryMatch}
+                style={styles.noteAction}
+                testID="invoice-match-retry"
+              />
+            </View>
+          </View>
+        </FadeIn>
+      ) : null}
+
       {anyDerived && !props.correcting ? (
         <FadeIn delay={60}>
           <View style={styles.note}>
@@ -164,7 +218,9 @@ export function ReviewStep(props: ReviewStepProps) {
       ? 'Cochez au moins un produit'
       : incomplete > 0
         ? plural(incomplete, 'ligne à compléter', 'lignes à compléter')
-        : `${n} sur ${lines.length} sélectionné${n > 1 ? 's' : ''}`;
+        : toConfirm > 0
+          ? plural(toConfirm, 'produit à confirmer', 'produits à confirmer')
+          : `${n} sur ${lines.length} sélectionné${n > 1 ? 's' : ''}`;
 
   return (
     <Screen
@@ -174,7 +230,7 @@ export function ReviewStep(props: ReviewStepProps) {
       stickyFooter={
         <StickyActionBar
           summary={summary}
-          summaryZone={incomplete > 0 && n > 0 ? 'red' : undefined}
+          summaryZone={incomplete > 0 && n > 0 ? 'red' : toConfirm > 0 && n > 0 ? 'orange' : undefined}
           summaryRight={
             n > 0 && total > 0 ? (
               <AnimatedNumber value={total} from={null} format={(v) => formatEuro(v)} prefix="Achat " suffix={`${NBSP}HT`} style={styles.total} numberOfLines={1} testID="invoice-total" />
@@ -232,6 +288,8 @@ const styles = StyleSheet.create({
   },
   noteIcon: { marginTop: 1 },
   noteBad: { backgroundColor: palette.badBg, marginTop: 12, marginBottom: 0 },
+  noteMuted: { backgroundColor: palette.surface2 },
+  noteAction: { alignSelf: 'flex-start', marginLeft: -12, marginTop: 2, marginBottom: -10 },
   noteText: { ...type.callout, color: palette.em800, flex: 1 },
   listFooter: { marginTop: 16, gap: 4 },
   total: { ...type.footnoteStrong, color: palette.ink },

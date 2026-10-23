@@ -1,39 +1,28 @@
 /**
  * « Scanner un produit » — the first step of a new product (spec §4 + BRIEF):
  * intro (tips, quota) → photo being prepared and read (emerald sweep, live
- * checklist) → what was recognised, or a calm error. Every path continues to
- * the form with the photo kept: the scan never blocks.
+ * checklist) → the form, straight away (lot 2, UX audit n° 6: the form shows
+ * « Étiquette lue » in a banner, no confirmation screen), or a calm error.
+ * Every path continues to the form with the photo kept: the scan never blocks.
  */
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import type { BottleScanResult, Category } from '@margebar/shared';
-import {
-  Button,
-  Card,
-  FadeIn,
-  ListGroup,
-  ListRow,
-  NavBar,
-  Screen,
-  StickyActionBar,
-  SwapFade,
-  ValueRow,
-} from '../../../components/ui';
+import type { Category } from '@margebar/shared';
+import { Button, Card, FadeIn, ListGroup, ListRow, NavBar, Screen, StickyActionBar, SwapFade } from '../../../components/ui';
 import { palette, radius, type } from '../../../theme';
-import { formatDegree, formatEuro, formatNumber, formatVolumeCl, NBSP, plural } from '../../../utils/format';
+import { NBSP, plural } from '../../../utils/format';
 import { QUOTA_SHOWN_BELOW, type ScanQuota } from '../../../services/scan.service';
 import { ScanFrame } from './ScanFrame';
 import type { PickSource } from './photo';
 
-export type ScanPhase = 'intro' | 'preparing' | 'reading' | 'result' | 'error';
+export type ScanPhase = 'intro' | 'preparing' | 'reading' | 'error';
 
 export interface ScanStepProps {
   phase: ScanPhase;
   photoUri: string | null;
   /** True once the photo is resized (it will be kept on the product). */
   photoReady: boolean;
-  result: BottleScanResult | null;
   error: { title: string; message: string; tone: 'bad' | 'warn'; icon?: React.ComponentProps<typeof Ionicons>['name'] } | null;
   categories: Category[];
   quota: ScanQuota | null;
@@ -80,13 +69,6 @@ export function ScanStep(props: ScanStepProps) {
         testID="scan-skip"
       />
     );
-  } else if (phase === 'result') {
-    actions = (
-      <View style={styles.footRow}>
-        <Button title="Reprendre" variant="secondary" icon="camera-reverse-outline" onPress={props.onRetake} style={{ flex: 1 }} />
-        <Button title="Continuer" trailingIcon="arrow-forward" onPress={props.onContinue} style={{ flex: 1.4 }} testID="scan-continue" />
-      </View>
-    );
   } else {
     actions = (
       <View style={styles.footStack}>
@@ -114,11 +96,6 @@ export function ScanStep(props: ScanStepProps) {
         <FadeIn key="working" offset={8}>
           <ScanFrame uri={photoUri} status="working" height={bigFrame} style={styles.frameGap} />
           <Progress phase={phase} />
-        </FadeIn>
-      ) : phase === 'result' ? (
-        <FadeIn key="result" offset={8}>
-          <ScanFrame uri={photoUri} status="done" height={smallFrame} style={styles.frameGap} />
-          <Result result={props.result} categories={props.categories} />
         </FadeIn>
       ) : (
         <FadeIn key="error" offset={8}>
@@ -275,43 +252,6 @@ function Progress({ phase }: { phase: ScanPhase }) {
             </View>
             <Text style={[styles.stepLabel, s.state === 'todo' && { color: palette.text3 }]}>{s.label}</Text>
           </View>
-        ))}
-      </Card>
-    </View>
-  );
-}
-
-// ─── Result ────────────────────────────────────────────────────────────────
-
-function Result({ result, categories }: { result: BottleScanResult | null; categories: Category[] }) {
-  if (!result) return null;
-  const cat = categories.find((c) => c.slug === result.category);
-  const missing = 'À compléter';
-  const rows: { label: string; value: string | null }[] = [
-    { label: 'Nom', value: result.name?.trim() || null },
-    { label: 'Catégorie', value: cat?.name ?? null },
-    { label: 'Contenance', value: result.containerVolumeCl ? formatVolumeCl(result.containerVolumeCl) : null },
-    { label: 'Degré', value: result.alcoholDegree !== null && result.alcoholDegree !== undefined ? formatDegree(result.alcoholDegree) : null },
-  ];
-  if (result.estimatedPriceHT) rows.push({ label: 'Prix d’achat HT', value: formatEuro(result.estimatedPriceHT) });
-  const found = rows.filter((r) => r.value).length;
-  return (
-    <View>
-      <Text style={styles.title} accessibilityRole="header">
-        Étiquette lue
-      </Text>
-      <Text style={styles.lead}>
-        {found >= rows.length ? 'Tout a été reconnu. Vérifiez, puis complétez les prix.' : 'Vérifiez ces informations et complétez ce qui manque dans la fiche.'}
-      </Text>
-      <Card style={styles.tips}>
-        {rows.map((r, i) => (
-          <ValueRow
-            key={r.label}
-            label={r.label}
-            value={r.value ?? missing}
-            valueColor={r.value ? palette.ink : palette.text3}
-            last={i === rows.length - 1}
-          />
         ))}
       </Card>
     </View>

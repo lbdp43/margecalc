@@ -10,6 +10,15 @@
  * One form with three sections (Produit · Contenant & achat · Services & prix),
  * a sticky « Enregistrer » bar, and ONE request that saves the product with
  * all its services (inline `servings`). See BRIEF §2 for RC1–RC13.
+ *
+ * Lot 2 (UX audit n° 6, mockup 4): a successful bottle scan opens the form
+ * directly (no « Étiquette lue · Continuer » screen) with a dismissible
+ * banner « Étiquette lue : Jameson Irish Whiskey · 70 cl · 40 % vol. ·
+ * Reprendre la photo », the purchase price first and focused (decimal
+ * keypad), the category's usual service already chosen at its suggested
+ * price, and the margin tiles right under it; what the label gave (name,
+ * category, container, degree, TVA) follows. A failed read keeps the friendly
+ * card and « Continuer sans lecture ».
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Platform, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
@@ -59,6 +68,7 @@ import {
 } from '../../services/draft.service';
 import { isOnline } from '../../services/offline';
 import { ScanPhase, ScanStep, ScanStepProps } from './form/ScanStep';
+import { ScanBanner, type ScanBannerInfo } from './form/ScanBanner';
 import { PhotoCard } from './form/PhotoCard';
 import { PurchaseSection } from './form/PurchaseSection';
 import { PricingSection, pricingMeta } from './form/PricingSection';
@@ -85,10 +95,11 @@ import {
   valuesFromProduct,
 } from './form/model';
 import { PhotoError, PickSource, PickedImage, pickImage, preparePhoto, recoverPendingImage } from './form/photo';
-import { defaultFiscalSlug, formatMargin, priceFromMode, round2, suggestedPrice } from './form/pricing';
+import { CUSTOM_DOSE, defaultFiscalSlug, formatMargin, priceFromMode, round2, suggestedPrice, usualServices } from './form/pricing';
 
 type Props = NativeStackScreenProps<any, 'ProductForm'>;
-type SectionKey = 'identity' | 'purchase' | 'pricing';
+/** `details`: container, degree, duties and TVA, apart from the purchase price after a scan. */
+type SectionKey = 'identity' | 'purchase' | 'pricing' | 'details';
 
 const SECTION_OF: Record<FieldKey, SectionKey> = {
   photo: 'identity',
@@ -120,7 +131,64 @@ const CLEARS: Array<[keyof FormValues, FieldKey]> = [
   ['photo', 'photo'],
 ];
 
+/** After a scan these fields sit in the « details » section, under the prices. */
+const QUICK_DETAILS = new Set<FieldKey>(['container', 'degree', 'tva']);
+
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * The category's usual service(s), switched on at the suggested price (they
+ * follow the purchase price until touched). Only when no service is chosen yet.
+ */
+function withUsualServices(
+  v: FormValues,
+  slug: string | null | undefined,
+  servingTypes: ServingType[],
+  goodPct: number,
+  rounding: number,
+): { values: FormValues; keys: string[] } | null {
+  if (Object.keys(v.services).length) return null;
+  const usual = usualServices(slug, v.containerCl, servingTypes);
+  if (!usual) return null;
+  const services: FormValues['services'] = {};
+  const containerCl = v.containerCl ?? 0;
+  for (const key of usual.keys) {
+    const dose = key === CUSTOM_DOSE ? (usual.customDoseCl ?? 0) : (servingTypes.find((t) => t.id === key)?.volumeCl ?? 0);
+    const cost = v.purchase !== null && v.purchase >= 0 && containerCl > 0 && dose > 0 && !v.horsDroits ? (v.purchase * dose) / containerCl : 0;
+    services[key] = { price: suggestedPrice(cost, v.tvaRate, goodPct, rounding), touched: false, mode: 'price', modeValue: null };
+  }
+  return {
+    values: { ...v, services, selected: usual.keys[0], customDoseCl: usual.customDoseCl ?? v.customDoseCl },
+    keys: usual.keys,
+  };
+}
+
+/** What the scan's usual services were chosen for: the category read, the container, the « à l’unité » dose. */
+interface UsualFor {
+  slug: string;
+  containerCl: number | null;
+  customDoseCl: number | null;
+}
+
+/**
+ * The services are exactly the usual ones the scan chose, untouched (prices
+ * still the suggested ones, the « à l’unité » dose still the container read):
+ * they may follow a corrected container or category.
+ */
+function untouchedUsual(v: FormValues, keys: string[] | null, f: UsualFor | null): boolean {
+  if (!keys || !f) return false;
+  const on = Object.keys(v.services);
+  if (on.length !== keys.length || !keys.every((k) => !!v.services[k] && !v.services[k].touched)) return false;
+  return !keys.includes(CUSTOM_DOSE) || v.customDoseCl === f.customDoseCl;
+}
+
+/** Web: focus the text input inside a wrapper (the kit's NumberInput takes no ref). */
+function focusInputIn(node: unknown) {
+  if (Platform.OS !== 'web' || !node) return;
+  const el: any = node;
+  const input = typeof el.querySelector === 'function' ? el.querySelector('input') : null;
+  if (input && typeof input.focus === 'function') input.focus();
+}
 
 /** « nom », « nom et degré », « nom, contenance et degré ». */
 const joinFr = (list: string[]) => (list.length <= 1 ? list.join('') : `${list.slice(0, -1).join(', ')} et ${list[list.length - 1]}`);
@@ -189,6 +257,8 @@ export function ProductFormScreen({ route, navigation }: Props) {
 
   // ─── State ───────────────────────────────────────────────────────────────
   const [step, setStep] = useState<'scan' | 'form'>(editing || prefill || params.start === 'form' || (!!params.manual && params.manual !== 'false') ? 'form' : 'scan');
+  const stepRef = useRef(step);
+  stepRef.current = step;
   const [values, setValues] = useState<FormValues>(() => {
     const base = emptyValues(user);
     return prefill ? applyPrefill(base, prefill, []) : base;
@@ -217,6 +287,22 @@ export function ProductFormScreen({ route, navigation }: Props) {
   // « Continuer sans attendre »: the read keeps going in the background.
   const [lateReading, setLateReading] = useState(false);
 
+  // Lot 2: the form opened straight from a read (banner, purchase price first).
+  const [scanBanner, setScanBanner] = useState<ScanBannerInfo | null>(null);
+  const [quick, setQuick] = useState(false);
+  const [focusTick, setFocusTick] = useState(0);
+  /** The usual services the scan switched on (the section says « habituel en … » while they are the chosen ones). */
+  const usualKeys = useRef<string[] | null>(null);
+  /** The category and container they were chosen for (a corrected container or category chooses them again). */
+  const usualFor = useRef<UsualFor | null>(null);
+  const rememberUsual = useCallback((u: { values: FormValues; keys: string[] } | null, slug: string | null | undefined) => {
+    usualKeys.current = u?.keys ?? null;
+    usualFor.current = u && slug ? { slug, containerCl: u.values.containerCl, customDoseCl: u.values.customDoseCl } : null;
+  }, []);
+  /** A read landed before the service types: switch the usual service on once they arrive. */
+  const pendingUsual = useRef<string | null>(null);
+  const purchaseRef = useRef<View>(null);
+
   const scanToken = useRef(0);
   const scanAbort = useRef<AbortController | null>(null);
   /** Token of a read the user skipped: its result only fills the fields still empty. */
@@ -242,6 +328,12 @@ export function ProductFormScreen({ route, navigation }: Props) {
   const baseline = useRef<string>(fingerprint(values));
   const valuesRef = useRef(values);
   valuesRef.current = values;
+  const servingTypesRef = useRef(servingTypes);
+  servingTypesRef.current = servingTypes;
+  const thresholdsRef = useRef(thresholds);
+  thresholdsRef.current = thresholds;
+  const roundingRef = useRef(rounding);
+  roundingRef.current = rounding;
   const prevValues = useRef(values);
   const categoryHint = useRef<{ categoryId?: string | null; category?: string | null; fiscalCategory?: string | null }>(
     prefill ? { categoryId: prefill.categoryId, category: prefill.category, fiscalCategory: prefill.fiscalCategory } : {},
@@ -253,7 +345,7 @@ export function ProductFormScreen({ route, navigation }: Props) {
     reloadedOnFormPending = false;
   }
   const scrollRef = useRef<ScrollView>(null);
-  const sectionY = useRef<Record<SectionKey, number>>({ identity: 0, purchase: 0, pricing: 0 });
+  const sectionY = useRef<Record<SectionKey, number>>({ identity: 0, purchase: 0, pricing: 0, details: 0 });
 
   const patch = useCallback((p: Partial<FormValues>) => {
     if ('tvaRate' in p) tvaTouched.current = true;
@@ -375,6 +467,48 @@ export function ProductFormScreen({ route, navigation }: Props) {
       return changed ? { ...v, services } : v;
     });
   }, [costKey, hydrated]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // The read landed before the service types: switch the usual service on as soon as they arrive.
+  useEffect(() => {
+    const slug = pendingUsual.current;
+    if (!slug || step !== 'form' || !servingTypes.length) return;
+    pendingUsual.current = null;
+    const usual = withUsualServices(valuesRef.current, slug, servingTypes, thresholds.good, rounding);
+    if (!usual) return;
+    rememberUsual(usual, slug);
+    setValues(usual.values);
+  }, [servingTypes, step, thresholds.good, rounding, rememberUsual]);
+
+  // The usual services follow what the label said until the user touches them: a corrected container
+  // (« À l’unité » 33 → 50 cl, a 33 cl bottle → a keg: Demi + Pinte) or category (a wine read as a
+  // spirit: Verre de vin 12 cl) chooses them again, at the suggested price. Never once one is touched.
+  useEffect(() => {
+    const f = usualFor.current;
+    if (!f || step !== 'form' || !servingTypes.length) return;
+    const slugChanged = !!categorySlug && categorySlug !== f.slug;
+    if (!slugChanged && values.containerCl === f.containerCl) return;
+    const cur = valuesRef.current;
+    if (!untouchedUsual(cur, usualKeys.current, f)) return;
+    const slug = categorySlug ?? f.slug;
+    const next = withUsualServices({ ...cur, services: {} }, slug, servingTypes, thresholds.good, rounding);
+    // No usual service there (a category without one, a container too small): keep these as they are.
+    if (!next) return;
+    // The suggested price of each, duties included (as the « follow the purchase price » effect computes it).
+    const dv = derive(next.values, servingTypes, rates, seuilSS);
+    const services: FormValues['services'] = {};
+    for (const [k, svc] of Object.entries(next.values.services)) {
+      services[k] = { ...svc, price: suggestedPrice(dv.costOf(k), next.values.tvaRate, thresholds.good, rounding) };
+    }
+    rememberUsual(next, slug);
+    setValues((v) => ({ ...v, services, selected: next.values.selected, customDoseCl: next.values.customDoseCl }));
+  }, [categorySlug, values.containerCl, step, servingTypes, thresholds.good, rounding, rates, seuilSS, rememberUsual]);
+
+  // After a read: the purchase price is the one field left, focus it (decimal keypad; web only, see FOUNDATION §4).
+  useEffect(() => {
+    if (!focusTick || step !== 'form') return;
+    const t = setTimeout(() => focusInputIn(purchaseRef.current), 360);
+    return () => clearTimeout(t);
+  }, [focusTick, step]);
 
   // ─── Draft (new product): saved as you type ─────────────────────────────
   useEffect(() => {
@@ -557,17 +691,24 @@ export function ProductFormScreen({ route, navigation }: Props) {
       }
       if (!filled.length) return;
       // Re-check at apply time: a field typed meanwhile is never overwritten.
-      setValues((v) => ({
-        ...v,
-        ...(next.name && !v.name.trim() ? { name: next.name } : null),
-        ...(next.categoryId && !v.categoryId ? { categoryId: next.categoryId } : null),
-        ...(next.containerCl && !containerTouched.current ? { containerCl: next.containerCl, containerOther: false } : null),
-        ...(next.degree !== undefined && v.degree === null ? { degree: next.degree } : null),
-        ...(next.purchase !== undefined && v.purchase === null ? { purchase: next.purchase } : null),
-      }));
+      setValues((v) => {
+        const merged: FormValues = {
+          ...v,
+          ...(next.name && !v.name.trim() ? { name: next.name } : null),
+          ...(next.categoryId && !v.categoryId ? { categoryId: next.categoryId } : null),
+          ...(next.containerCl && !containerTouched.current ? { containerCl: next.containerCl, containerOther: false } : null),
+          ...(next.degree !== undefined && v.degree === null ? { degree: next.degree } : null),
+          ...(next.purchase !== undefined && v.purchase === null ? { purchase: next.purchase } : null),
+        };
+        // No service chosen yet: the category's usual one (lot 2).
+        const slug = categories.find((c) => c.id === merged.categoryId)?.slug ?? res.category;
+        const usual = withUsualServices(merged, slug, servingTypesRef.current, thresholdsRef.current.good, roundingRef.current);
+        if (usual) rememberUsual(usual, slug);
+        return usual ? usual.values : merged;
+      });
       toast.success(`Étiquette lue${NBSP}: ${joinFr(filled)} pré-rempli${filled.length > 1 ? 's' : ''}`);
     },
-    [categories],
+    [categories, rememberUsual],
   );
   const applyLateScanRef = useRef(applyLateScan);
   applyLateScanRef.current = applyLateScan;
@@ -614,8 +755,9 @@ export function ProductFormScreen({ route, navigation }: Props) {
         }
         if (token !== scanToken.current) return;
         setScanResult(res);
-        setPhase('result');
         haptics.success();
+        // Straight to the form (lot 2): no « Étiquette lue · Continuer » screen.
+        arriveFromScanRef.current(res, token);
       } catch (err) {
         if (scanAbort.current === ctrl) scanAbort.current = null;
         if (!mounted.current || scanService.isScanCancelled(err)) return;
@@ -768,6 +910,92 @@ export function ProductFormScreen({ route, navigation }: Props) {
     setStep('form');
   }, [prefillFromScan, confirmOverDraft]);
 
+  /**
+   * A read succeeded (lot 2): fill the form, switch the category's usual
+   * service on, show the « Étiquette lue » banner and open the form with the
+   * purchase price first and focused.
+   */
+  const arriveFromScan = useCallback(
+    async (res: BottleScanResult, token: number) => {
+      if (draft) {
+        const go = await confirmOverDraft();
+        if (!mounted.current || token !== scanToken.current) return;
+        if (!go) {
+          // « Reprendre le brouillon » opened the form already; « Annuler » goes back to the camera step.
+          if (stepRef.current === 'scan') {
+            setScanPhoto(null);
+            setScanResult(null);
+            setPhotoReady(false);
+            setValues((v) => ({ ...v, photo: NO_PHOTO }));
+            setPhase('intro');
+          }
+          return;
+        }
+      }
+      scanToken.current++;
+      categoryHint.current = { category: res.category };
+      const slug = res.category || null;
+      const filled = applyPrefill(
+        valuesRef.current,
+        {
+          name: res.name || undefined,
+          category: res.category,
+          containerVolumeCl: res.containerVolumeCl,
+          alcoholDegree: res.alcoholDegree,
+          estimatedPriceHT: res.estimatedPriceHT,
+        },
+        categories,
+      );
+      const usual = withUsualServices(filled, slug, servingTypesRef.current, thresholdsRef.current.good, roundingRef.current);
+      setValues(usual ? usual.values : filled);
+      rememberUsual(usual, slug);
+      pendingUsual.current = usual || servingTypesRef.current.length ? null : slug;
+      setScanBanner({
+        name: (res.name ?? '').trim(),
+        containerCl: res.containerVolumeCl && res.containerVolumeCl > 0 ? res.containerVolumeCl : null,
+        degree: typeof res.alcoholDegree === 'number' ? res.alcoholDegree : null,
+      });
+      setQuick(true);
+      setStep('form');
+      setFocusTick((n) => n + 1);
+    },
+    [draft, confirmOverDraft, categories, rememberUsual],
+  );
+  const arriveFromScanRef = useRef(arriveFromScan);
+  arriveFromScanRef.current = arriveFromScan;
+
+  /** « Reprendre la photo » from the banner: back to the camera; a purchase price already typed is kept. */
+  const retakeFromForm = useCallback(() => {
+    scanToken.current++;
+    scanAbort.current?.abort();
+    lateScan.current = null;
+    setLateReading(false);
+    clearUndoToast();
+    // The read was this very product: its draft is not « another » product to protect.
+    clearProductDraft(user?.id);
+    setDraft(null);
+    setDraftSaved(false);
+    const keepPurchase = valuesRef.current.purchase;
+    const fresh = { ...emptyValues(user), purchase: keepPurchase, supplier: valuesRef.current.supplier };
+    baseline.current = fingerprint(emptyValues(user));
+    prevValues.current = fresh;
+    tvaTouched.current = false;
+    containerTouched.current = false;
+    rememberUsual(null, null);
+    pendingUsual.current = null;
+    categoryHint.current = {};
+    setValues(fresh);
+    setErrors({});
+    setScanBanner(null);
+    setQuick(false);
+    setScanPhoto(null);
+    setScanResult(null);
+    setScanError(null);
+    setPhotoReady(false);
+    setPhase('intro');
+    setStep('scan');
+  }, [user, clearUndoToast, rememberUsual]);
+
   /** « Continuer sans attendre »: go to the form now, the read fills the empty fields when it lands. */
   const skipScan = useCallback(async () => {
     const token = scanToken.current;
@@ -874,9 +1102,12 @@ export function ProductFormScreen({ route, navigation }: Props) {
   }, [markUndoToast]);
 
   // ─── Save ────────────────────────────────────────────────────────────────
+  const quickRef = useRef(quick);
+  quickRef.current = quick;
   const scrollToField = useCallback((key: FieldKey | null) => {
     if (!key) return;
-    const y = sectionY.current[SECTION_OF[key]] ?? 0;
+    const section: SectionKey = quickRef.current && QUICK_DETAILS.has(key) ? 'details' : SECTION_OF[key];
+    const y = sectionY.current[section] ?? 0;
     scrollRef.current?.scrollTo({ y: Math.max(0, y - 12), animated: true });
   }, []);
 
@@ -1006,7 +1237,6 @@ export function ProductFormScreen({ route, navigation }: Props) {
           phase={phase}
           photoUri={scanPhoto}
           photoReady={photoReady}
-          result={scanResult}
           error={scanError}
           categories={categories}
           quota={quotaQ.data ?? null}
@@ -1124,6 +1354,99 @@ export function ProductFormScreen({ route, navigation }: Props) {
     />
   );
 
+  // The form's blocks: in this order normally; after a scan, the purchase price and the prices first (mockup 4).
+  const identityBlock = (first: boolean) => (
+    <FormSection title="Produit" first={first}>
+      <PhotoCard photo={values.photo} busy={photoBusy} error={errors.photo} onAdd={addPhoto} onRemove={removePhoto} />
+      <TextField
+        label="Nom du produit"
+        value={values.name}
+        onChangeText={(name) => patch({ name })}
+        placeholder="Hendrick’s Gin"
+        error={errors.name}
+        returnKeyType="done"
+        maxLength={200}
+        containerStyle={styles.field}
+        testID="field-name"
+      />
+      <View style={styles.field}>
+        <FieldLabel label="Catégorie" error={!!errors.category} />
+        {categories.length ? (
+          <ChipRow
+            items={categories.map((c) => ({ key: c.id, label: c.name, icon: categoryIcon(c.slug) }))}
+            selectedKey={values.categoryId}
+            onSelect={(categoryId) => {
+              // « Prix hors droits » not on yet: its fiscal category follows the product category.
+              const slug = categories.find((c) => c.id === categoryId)?.slug;
+              patch(values.horsDroits ? { categoryId } : { categoryId, fiscalSlug: defaultFiscalSlug(slug) });
+            }}
+            accessibilityLabel="Catégorie"
+          />
+        ) : categoriesQ.isError ? (
+          <View style={styles.inlineRetry}>
+            <Text style={styles.inlineRetryText}>Les catégories n’ont pas pu être chargées.</Text>
+            <Button title="Réessayer" variant="tonal" size="sm" icon="refresh" onPress={() => categoriesQ.refetch()} />
+          </View>
+        ) : (
+          <Text style={styles.inlineRetryText}>Chargement des catégories…</Text>
+        )}
+        <FieldError message={errors.category} />
+      </View>
+      <TextField
+        label="Fournisseur"
+        meta="facultatif"
+        value={values.supplier}
+        onChangeText={(supplier) => patch({ supplier })}
+        placeholder="France Boissons"
+        error={errors.supplier}
+        maxLength={200}
+        containerStyle={styles.field}
+        testID="field-supplier"
+      />
+    </FormSection>
+  );
+  const purchaseBlock = (part: 'all' | 'purchase' | 'rest') => (
+    <PurchaseSection
+      values={values}
+      patch={patch}
+      errors={errors}
+      containers={containersQ.data}
+      rates={rates}
+      duties={d.duties}
+      autoEntrepreneur={!!user?.isAutoEntrepreneur}
+      categorySlug={categorySlug}
+      onOpenFiscal={() => setFiscalOpen(true)}
+      part={part}
+      purchaseRef={part === 'purchase' ? purchaseRef : undefined}
+    />
+  );
+  const pricingBlock = (
+    <PricingSection
+      values={values}
+      setValues={setValues}
+      servingTypes={servingTypes}
+      loading={servingTypesQ.isLoading}
+      loadError={servingTypesQ.isError && !servingTypes.length}
+      onUndoToast={markUndoToast}
+      onRetry={() => servingTypesQ.refetch()}
+      derived={d}
+      thresholds={thresholds}
+      error={errors.services}
+      onLiveChange={setLive}
+      quick={quick}
+    />
+  );
+  // « habituel en Spiritueux » while the usual service the scan chose for THIS category is the one priced
+  // (its price may be the user's; a changed « à l’unité » dose is no longer the usual one).
+  const usualKeysNow = usualKeys.current;
+  const usualOn =
+    !!usualKeysNow &&
+    usualKeysNow.length === Object.keys(values.services).length &&
+    usualKeysNow.every((k) => !!values.services[k]) &&
+    (!usualKeysNow.includes(CUSTOM_DOSE) || values.customDoseCl === usualFor.current?.customDoseCl);
+  const categoryLabel = categories.find((c) => c.id === values.categoryId)?.name;
+  const usualMeta = usualOn && categoryLabel && !!categorySlug && usualFor.current?.slug === categorySlug ? `habituel en ${categoryLabel}` : null;
+
   return (
     <>
       <Screen
@@ -1143,90 +1466,45 @@ export function ProductFormScreen({ route, navigation }: Props) {
         scrollRef={scrollRef}
         testID="product-form"
       >
-        <FadeIn index={0} onLayout={(e) => (sectionY.current.identity = e.nativeEvent.layout.y)}>
-          <FormSection title="Produit" first>
-            <PhotoCard photo={values.photo} busy={photoBusy} error={errors.photo} onAdd={addPhoto} onRemove={removePhoto} />
-            <TextField
-              label="Nom du produit"
-              value={values.name}
-              onChangeText={(name) => patch({ name })}
-              placeholder="Hendrick’s Gin"
-              error={errors.name}
-              returnKeyType="done"
-              maxLength={200}
-              containerStyle={styles.field}
-              testID="field-name"
-            />
-            <View style={styles.field}>
-              <FieldLabel label="Catégorie" error={!!errors.category} />
-              {categories.length ? (
-                <ChipRow
-                  items={categories.map((c) => ({ key: c.id, label: c.name, icon: categoryIcon(c.slug) }))}
-                  selectedKey={values.categoryId}
-                  onSelect={(categoryId) => {
-                    // « Prix hors droits » not on yet: its fiscal category follows the product category.
-                    const slug = categories.find((c) => c.id === categoryId)?.slug;
-                    patch(values.horsDroits ? { categoryId } : { categoryId, fiscalSlug: defaultFiscalSlug(slug) });
-                  }}
-                  accessibilityLabel="Catégorie"
-                />
-              ) : categoriesQ.isError ? (
-                <View style={styles.inlineRetry}>
-                  <Text style={styles.inlineRetryText}>Les catégories n’ont pas pu être chargées.</Text>
-                  <Button title="Réessayer" variant="tonal" size="sm" icon="refresh" onPress={() => categoriesQ.refetch()} />
-                </View>
-              ) : (
-                <Text style={styles.inlineRetryText}>Chargement des catégories…</Text>
-              )}
-              <FieldError message={errors.category} />
-            </View>
-            <TextField
-              label="Fournisseur"
-              meta="facultatif"
-              value={values.supplier}
-              onChangeText={(supplier) => patch({ supplier })}
-              placeholder="France Boissons"
-              error={errors.supplier}
-              maxLength={200}
-              containerStyle={styles.field}
-              testID="field-supplier"
-            />
-          </FormSection>
-        </FadeIn>
+        {quick ? (
+          <>
+            {scanBanner ? (
+              <FadeIn index={0}>
+                <ScanBanner info={scanBanner} onRetake={retakeFromForm} onDismiss={() => setScanBanner(null)} />
+              </FadeIn>
+            ) : null}
+            <FadeIn index={1} onLayout={(e) => (sectionY.current.purchase = e.nativeEvent.layout.y)}>
+              {purchaseBlock('purchase')}
+            </FadeIn>
+            <FadeIn index={2} onLayout={(e) => (sectionY.current.pricing = e.nativeEvent.layout.y + 28)}>
+              <FormSection title="Services & prix" meta={usualMeta ?? meta}>
+                {pricingBlock}
+              </FormSection>
+            </FadeIn>
+            <FadeIn index={3} onLayout={(e) => (sectionY.current.identity = e.nativeEvent.layout.y + 28)}>
+              {identityBlock(false)}
+            </FadeIn>
+            <FadeIn index={4} onLayout={(e) => (sectionY.current.details = e.nativeEvent.layout.y + 28)}>
+              <FormSection title="Contenant & degré">{purchaseBlock('rest')}</FormSection>
+            </FadeIn>
+          </>
+        ) : (
+          <>
+            <FadeIn index={0} onLayout={(e) => (sectionY.current.identity = e.nativeEvent.layout.y)}>
+              {identityBlock(true)}
+            </FadeIn>
 
-        <FadeIn index={1} onLayout={(e) => (sectionY.current.purchase = e.nativeEvent.layout.y + 28)}>
-          <FormSection title="Contenant & achat">
-            <PurchaseSection
-              values={values}
-              patch={patch}
-              errors={errors}
-              containers={containersQ.data}
-              rates={rates}
-              duties={d.duties}
-              autoEntrepreneur={!!user?.isAutoEntrepreneur}
-              categorySlug={categorySlug}
-              onOpenFiscal={() => setFiscalOpen(true)}
-            />
-          </FormSection>
-        </FadeIn>
+            <FadeIn index={1} onLayout={(e) => (sectionY.current.purchase = e.nativeEvent.layout.y + 28)}>
+              <FormSection title="Contenant & achat">{purchaseBlock('all')}</FormSection>
+            </FadeIn>
 
-        <FadeIn index={2} onLayout={(e) => (sectionY.current.pricing = e.nativeEvent.layout.y + 28)}>
-          <FormSection title="Services & prix" meta={meta}>
-            <PricingSection
-              values={values}
-              setValues={setValues}
-              servingTypes={servingTypes}
-              loading={servingTypesQ.isLoading}
-              loadError={servingTypesQ.isError && !servingTypes.length}
-              onUndoToast={markUndoToast}
-              onRetry={() => servingTypesQ.refetch()}
-              derived={d}
-              thresholds={thresholds}
-              error={errors.services}
-              onLiveChange={setLive}
-            />
-          </FormSection>
-        </FadeIn>
+            <FadeIn index={2} onLayout={(e) => (sectionY.current.pricing = e.nativeEvent.layout.y + 28)}>
+              <FormSection title="Services & prix" meta={meta}>
+                {pricingBlock}
+              </FormSection>
+            </FadeIn>
+          </>
+        )}
 
         {editing ? (
           <FadeIn index={3}>

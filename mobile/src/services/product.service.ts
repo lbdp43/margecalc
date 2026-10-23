@@ -1,12 +1,18 @@
 import type { QueryClient } from '@tanstack/react-query';
+import { Platform } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   ProductWithMargin,
   CreateProductInput,
   ImportProductsInput,
   ImportProductsResult,
+  BatchPriceSnapshot,
+  BatchPriceUpdate,
+  BatchPricesResult,
 } from '@margebar/shared';
 import { api } from './api';
 import { assertOnline, clearCache, setCache, withoutFullPhoto } from './offline';
+import { useAuthStore } from '../store/auth.store';
 
 /**
  * Products API. Writes never queue offline: they throw an `OfflineError`
@@ -29,9 +35,11 @@ export const productKeys = {
 };
 
 export async function getProducts(categoryId?: string): Promise<ProductWithMargin[]> {
+  // A delete still in its undo window (or left unsent by a closed app) never reappears.
+  await settleLeftoverDeletes();
   const params = categoryId ? { categoryId } : {};
   const res = await api.get<ProductWithMargin[]>('/products', { params });
-  return res.data;
+  return hiddenIds.size ? res.data.filter((p) => !hiddenIds.has(p.id)) : res.data;
 }
 
 export async function getProduct(id: string): Promise<ProductWithMargin> {
@@ -85,6 +93,283 @@ export interface PriceHistoryEntry {
 export async function getPriceHistory(productId: string): Promise<PriceHistoryEntry[]> {
   const res = await api.get<PriceHistoryEntry[]>(`/products/${productId}/price-history`);
   return res.data;
+}
+
+// ─── Batch prices (lot 2): POST /api/products/prices/batch ──────────────────
+//
+// One transaction for 1 to 200 products: « Appliquer », « Tout appliquer »
+// (Sous l’objectif), the quick price sheet and the purchase price sheet. The
+// response's `previous` posted back as is is the exact undo (pricing mode,
+// dose, services, « À vérifier » flag): see `undoOf`.
+
+export async function batchUpdatePrices(updates: BatchPriceUpdate[]): Promise<BatchPricesResult> {
+  assertOnline('Pas de connexion : aucun prix n’a été modifié. Réessayez une fois connecté.');
+  const res = await api.post<BatchPricesResult>('/products/prices/batch', { updates }, { timeout: 30000 });
+  return res.data;
+}
+
+/** Most updates one POST /prices/batch accepts (« Trop de produits en une fois (200 maximum). »). */
+export const BATCH_MAX = 200;
+
+/**
+ * Any number of updates, sent BATCH_MAX at a time, one batch after another
+ * (« Tout appliquer » on a big catalogue). `products` and `previous` merge the
+ * batches in order. When a later batch fails, the earlier ones stay written:
+ * the result carries what they wrote plus `error` (the first batch's failure
+ * is thrown, nothing was written).
+ */
+export async function batchUpdatePricesChunked(updates: BatchPriceUpdate[]): Promise<BatchPricesResult & { error?: unknown }> {
+  if (updates.length <= BATCH_MAX) return batchUpdatePrices(updates);
+  const out: BatchPricesResult = { products: [], previous: [] };
+  for (let i = 0; i < updates.length; i += BATCH_MAX) {
+    try {
+      const r = await batchUpdatePrices(updates.slice(i, i + BATCH_MAX));
+      out.products.push(...r.products);
+      out.previous.push(...r.previous);
+    } catch (error) {
+      if (!out.products.length) throw error;
+      return { ...out, error };
+    }
+  }
+  return out;
+}
+
+/** « Annuler » of a batch: its `previous` snapshots, posted back as is. */
+export function undoOf(previous: BatchPriceSnapshot[]): BatchPriceUpdate[] {
+  return previous.map((p) => ({ ...p, servings: p.servings.map((s) => ({ ...s })) }));
+}
+
+/**
+ * The products a batch returned, in every cache: the list entries replaced in
+ * place (same order), each open detail merged (it keeps its full photo: batch
+ * products carry no `imageUrl`), then everything that depends on them refetched.
+ */
+export function applyBatchProducts(queryClient: QueryClient, products: ProductWithMargin[]): void {
+  if (!products.length) return;
+  const byId = new Map(products.map((p) => [p.id, p]));
+  queryClient.setQueryData<ProductWithMargin[]>(productKeys.list, (old) =>
+    old ? old.map((p) => (byId.has(p.id) ? ({ ...p, ...byId.get(p.id) } as ProductWithMargin) : p)) : old,
+  );
+  for (const p of products) {
+    queryClient.setQueryData<ProductWithMargin>(productKeys.detail(p.id), (old) => (old ? ({ ...old, ...p } as ProductWithMargin) : old));
+    clearCache(JSON.stringify(productKeys.servings(p.id))).catch(() => {});
+    queryClient.invalidateQueries({ queryKey: productKeys.detail(p.id) });
+    queryClient.invalidateQueries({ queryKey: productKeys.servings(p.id) });
+    queryClient.invalidateQueries({ queryKey: productKeys.priceHistory(p.id) });
+  }
+  queryClient.invalidateQueries({ queryKey: productKeys.list });
+  queryClient.invalidateQueries({ queryKey: ADMIN_PRODUCTS });
+}
+
+// ─── Deferred deletes (lot 2 n° 11): « Aperol supprimé · Annuler » ──────────
+//
+// The product leaves every list at once; DELETE is only sent when the undo
+// window closes (`commit`), or right away when the page / app is left
+// (pagehide, visibilitychange, sign-out: a keepalive request). « Annuler »
+// (`undo`) puts it back with no request at all.
+//
+// Backstop: pending ids are kept on the device (`margebar_pending_deletes`)
+// until the server confirmed. One the page could not send (closed mid-window,
+// expired token) is sent at the next launch, and stays hidden meanwhile.
+
+const PENDING_DELETES_KEY = 'margebar_pending_deletes';
+/** A leftover older than this is forgotten (and shows again if it still exists). */
+const LEFTOVER_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+
+interface PendingDeleteEntry {
+  id: string;
+  name: string;
+  userId: string | null;
+  at: number;
+}
+
+/** Deletes in their undo window (this session), with what is needed to put the product back. */
+const pending = new Map<string, { entry: PendingDeleteEntry; snapshot?: ProductWithMargin; index: number }>();
+/** Ids saved on the device until the server confirmed the DELETE. */
+let stored = new Map<string, PendingDeleteEntry>();
+/** Ids that every product list leaves out. */
+const hiddenIds = new Set<string>();
+let storeLoaded: Promise<void> | null = null;
+let leftoversDone: Promise<void> | null = null;
+let leftoversFor: string | null = null;
+
+function loadStore(): Promise<void> {
+  if (!storeLoaded) {
+    storeLoaded = AsyncStorage.getItem(PENDING_DELETES_KEY)
+      .then((raw) => {
+        const list = raw ? (JSON.parse(raw) as PendingDeleteEntry[]) : [];
+        for (const e of Array.isArray(list) ? list : []) {
+          if (!e || typeof e.id !== 'string') continue;
+          if (Date.now() - (e.at || 0) > LEFTOVER_MAX_AGE_MS) continue;
+          // An entry written this session (before the read finished) wins.
+          if (!stored.has(e.id)) stored.set(e.id, e);
+        }
+        for (const [id, e] of stored) if (e.userId === currentUserId()) hiddenIds.add(id);
+      })
+      .catch(() => {});
+  }
+  return storeLoaded;
+}
+
+function saveStore() {
+  AsyncStorage.setItem(PENDING_DELETES_KEY, JSON.stringify(Array.from(stored.values()))).catch(() => {});
+}
+
+function forgetStored(id: string) {
+  if (stored.delete(id)) saveStore();
+  if (!pending.has(id)) hiddenIds.delete(id);
+}
+
+const currentUserId = (): string | null => useAuthStore.getState().user?.id ?? null;
+
+/** DELETE that survives the page being closed (web keepalive). Resolves true when the server confirmed. */
+async function sendDelete(id: string, token: string | null, keepalive: boolean): Promise<boolean> {
+  if (!keepalive) {
+    try {
+      await api.delete(`/products/${id}`);
+      return true;
+    } catch (err: any) {
+      if (err?.response?.status === 404) return true; // already gone (deleted elsewhere)
+      throw err;
+    }
+  }
+  try {
+    const base = api.defaults.baseURL ?? '/api';
+    const res = await fetch(`${base}/products/${id}`, {
+      method: 'DELETE',
+      keepalive: true,
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    } as RequestInit);
+    return res.ok || res.status === 404;
+  } catch {
+    return false;
+  }
+}
+
+/** Once per account and session, before the first list: send the deletes a closed app left behind. */
+function settleLeftoverDeletes(): Promise<void> {
+  const me = currentUserId();
+  if (!leftoversDone || leftoversFor !== me) {
+    leftoversFor = me;
+    leftoversDone = loadStore().then(async () => {
+      const mine = Array.from(stored.values()).filter((e) => e.userId === me && !pending.has(e.id));
+      for (const e of mine) {
+        hiddenIds.add(e.id);
+        try {
+          if (await sendDelete(e.id, null, false)) forgetStored(e.id);
+        } catch {
+          // Still unreachable: kept hidden, tried again at the next launch.
+        }
+      }
+    });
+  }
+  return leftoversDone;
+}
+
+/** The page / app is being left (or the user signs out): send every pending delete now. */
+export function flushPendingDeletes(token: string | null = useAuthStore.getState().token) {
+  if (!pending.size) return;
+  const ids = Array.from(pending.keys());
+  pending.clear();
+  for (const id of ids) {
+    // Kept hidden and stored until the server confirmed (else: next launch).
+    sendDelete(id, token, true).then((ok) => ok && forgetStored(id));
+  }
+}
+
+if (Platform.OS === 'web') {
+  const w: any = (globalThis as any).window;
+  const d: any = (globalThis as any).document;
+  w?.addEventListener?.('pagehide', () => flushPendingDeletes());
+  d?.addEventListener?.('visibilitychange', () => {
+    if (d.visibilityState === 'hidden') flushPendingDeletes();
+  });
+}
+useAuthStore.subscribe((state, prev) => {
+  // Signing out: the token is about to go, send with the one still known.
+  if (prev.token && !state.token) flushPendingDeletes(prev.token);
+});
+
+const pageHidden = () => Platform.OS === 'web' && (globalThis as any).document?.visibilityState === 'hidden';
+
+export interface DeferredDelete {
+  /** « Annuler »: back in the list, no request. False when it is too late (already sent). */
+  undo: () => boolean;
+  /**
+   * The window closed: send DELETE. Resolves 'deleted' (or 'noop' when it was
+   * undone or already sent). On failure the product is put back and the error
+   * is thrown (show it as is).
+   */
+  commit: () => Promise<'deleted' | 'noop'>;
+}
+
+/** True while a product is waiting for its DELETE (undo window, or left unsent). */
+export function isDeletePending(id: string): boolean {
+  return hiddenIds.has(id);
+}
+
+function putBack(queryClient: QueryClient, snapshot: ProductWithMargin | undefined, index: number) {
+  if (snapshot) {
+    queryClient.setQueryData<ProductWithMargin[]>(productKeys.list, (old) => {
+      if (!old || old.some((p) => p.id === snapshot.id)) return old;
+      const next = [...old];
+      next.splice(Math.max(0, Math.min(index, next.length)), 0, snapshot);
+      return next;
+    });
+  }
+  queryClient.invalidateQueries({ queryKey: productKeys.list });
+}
+
+/**
+ * Soft delete: the product disappears from every list now, DELETE waits for
+ * `commit()`. Offline is refused by the caller first (nothing to defer to).
+ */
+export function deferProductDelete(queryClient: QueryClient, product: { id: string; name: string }): DeferredDelete {
+  const { id } = product;
+  const list = queryClient.getQueryData<ProductWithMargin[]>(productKeys.list);
+  const index = list ? list.findIndex((p) => p.id === id) : -1;
+  const entry: PendingDeleteEntry = { id, name: product.name, userId: currentUserId(), at: Date.now() };
+  pending.set(id, { entry, snapshot: index >= 0 ? list![index] : undefined, index });
+  hiddenIds.add(id);
+  stored.set(id, entry);
+  saveStore();
+  loadStore();
+  queryClient.setQueryData<ProductWithMargin[]>(productKeys.list, (old) => (old ? old.filter((p) => p.id !== id) : old));
+
+  return {
+    undo: () => {
+      const p = pending.get(id);
+      if (!p) return false;
+      pending.delete(id);
+      hiddenIds.delete(id);
+      forgetStored(id);
+      putBack(queryClient, p.snapshot, p.index);
+      return true;
+    },
+    commit: async () => {
+      const p = pending.get(id);
+      if (!p) return 'noop';
+      pending.delete(id);
+      if (pageHidden()) {
+        // Leaving: a keepalive request; confirmed (or retried) like a flush.
+        sendDelete(id, useAuthStore.getState().token, true).then((ok) => ok && forgetStored(id));
+        forgetProduct(queryClient, id);
+        return 'deleted';
+      }
+      try {
+        await sendDelete(id, null, false);
+      } catch (err) {
+        hiddenIds.delete(id);
+        forgetStored(id);
+        putBack(queryClient, p.snapshot, p.index);
+        throw err;
+      }
+      forgetStored(id);
+      forgetProduct(queryClient, id);
+      clearCache(JSON.stringify(productKeys.priceHistory(id))).catch(() => {});
+      return 'deleted';
+    },
+  };
 }
 
 /**

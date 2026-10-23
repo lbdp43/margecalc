@@ -7,7 +7,8 @@
  *   Root stack
  *   ├─ Tabs (bottom tabs, floating TabBar, back → Tableau de bord)
  *   │   ├─ Réglages        → SettingsMain [/reglages], AdminProducts [/reglages/produits]
- *   │   ├─ Produits        → ProductList [/produits], ProductDetail [/produits/:productId]
+ *   │   ├─ Produits        → ProductList [/produits], ProductDetail [/produits/:productId],
+ *   │   │                    UnderTarget [/produits/sous-objectif] (« Sous l’objectif »)
  *   │   └─ Tableau de bord → DashboardMain [/], DutyCalculator [/calculateur],
  *   │                        DashboardProductDetail [/tableau-de-bord/produits/:productId]
  *   │                        (a product opened from the dashboard stays in its tab:
@@ -26,6 +27,8 @@ export const ROUTES = {
   adminProducts: 'AdminProducts',
   productList: 'ProductList',
   productDetail: 'ProductDetail',
+  /** « Sous l’objectif »: every service under the objective, with the suggested price. */
+  underTarget: 'UnderTarget',
   dashboardMain: 'DashboardMain',
   dutyCalculator: 'DutyCalculator',
   /** The same ProductDetail screen, inside the Tableau de bord stack. */
@@ -38,8 +41,12 @@ export const ROUTES = {
   register: 'Register',
 } as const;
 
-/** Routes that never show the floating tab bar (defensive: forms live in the root stack). */
-export const TAB_BAR_HIDDEN_ROUTES = new Set<string>([ROUTES.productForm, ROUTES.invoiceScan]);
+/**
+ * Routes that never show the floating tab bar (defensive: forms live in the
+ * root stack). « Sous l’objectif » lives in the Produits stack but has its own
+ * sticky « Tout appliquer » bar: the tab bar hides there, so two bottom bars never stack.
+ */
+export const TAB_BAR_HIDDEN_ROUTES = new Set<string>([ROUTES.productForm, ROUTES.invoiceScan, ROUTES.underTarget]);
 
 type NavState = { routeNames?: string[]; index?: number; routes?: { name: string; params?: any; state?: NavState }[] };
 type Nav = {
@@ -116,6 +123,25 @@ export function goToProductList(navigation: Nav, filter?: ProductListFilter) {
     return;
   }
   navigation.navigate(ROUTES.tabs, { screen: ROUTES.productsTab, params: { screen: ROUTES.productList } });
+}
+
+/** Params of « Sous l’objectif ». */
+export interface UnderTargetParams {
+  /** Restrict the screen to these products (e.g. the ones an invoice just changed). Kept in memory, never in the URL. */
+  productIds?: string[];
+  /** Where it was opened from (copy and analytics only). */
+  from?: 'dashboard' | 'invoice' | 'list';
+  /** Open on one zone chip (« < 50 % » = 'bad', « 50–65 % » = 'medium'); default « Tous ». Applied once. */
+  zone?: 'bad' | 'medium';
+}
+
+/**
+ * « Sous l’objectif » (/produits/sous-objectif), in the Produits stack with
+ * « Mes produits » kept underneath (`initial: false`), from any tab or from a
+ * root-stack screen (the invoice results).
+ */
+export function openUnderTarget(navigation: Nav, params: UnderTargetParams = {}) {
+  navigateInTab(navigation, ROUTES.productsTab, ROUTES.underTarget, params);
 }
 
 /** Create (no productId) or edit a product. Full-screen, tab bar hidden. */

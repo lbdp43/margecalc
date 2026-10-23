@@ -14,7 +14,7 @@ import type { Category } from '@margebar/shared';
 import { Badge, BottomSheet, Button, ChipRow, TextField } from '../../components/ui';
 import { haptics } from '../../theme/haptics';
 import { marginColors, palette, type } from '../../theme';
-import { formatEuro, formatPercent, toInputString } from '../../utils/format';
+import { NBSP, formatEuro, formatPercent, toInputString } from '../../utils/format';
 import { getMarginZone, useMarginThresholds } from '../../utils/marginThresholds';
 import {
   FALLBACK_CATEGORIES,
@@ -23,12 +23,11 @@ import {
   doseLabel,
   hasErrors,
   parseStrictNumber,
-  previewLine,
   priceDecimals,
   validateLine,
-  type ExistingIndex,
   type InvoiceLine,
   type LineErrors,
+  type LinePreview,
   type PricingContext,
 } from './model';
 
@@ -40,8 +39,8 @@ export interface LineEditSheetProps {
   showErrors?: boolean;
   categories: Category[];
   ctx: PricingContext;
-  /** The user's products, to spot a line that updates one of them. */
-  existing: ExistingIndex;
+  /** What the line (as edited) will do: the product it updates, its price and margin after the import. */
+  resolve: (line: InvoiceLine) => LinePreview;
   onSubmit: (line: InvoiceLine) => void;
   onClose: () => void;
 }
@@ -103,7 +102,7 @@ function applyDraft(line: InvoiceLine, d: Draft): InvoiceLine {
   };
 }
 
-export function LineEditSheet({ line, isNew, showErrors, categories, ctx, existing, onSubmit, onClose }: LineEditSheetProps) {
+export function LineEditSheet({ line, isNew, showErrors, categories, ctx, resolve, onSubmit, onClose }: LineEditSheetProps) {
   const [draft, setDraft] = useState<Draft | null>(line ? toDraft(line) : null);
   const [touched, setTouched] = useState(false);
   const [held, setHeld] = useState<InvoiceLine | null>(line);
@@ -119,8 +118,14 @@ export function LineEditSheet({ line, isNew, showErrors, categories, ctx, existi
   }, [line, showErrors]);
 
   const current = held && draft ? applyDraft(held, draft) : null;
-  const preview = useMemo(() => (current ? previewLine(current, ctx, existing) : null), [current, ctx, existing]);
-  const match = preview?.existing ?? null;
+  const preview = useMemo(() => (current ? resolve(current) : null), [current, resolve]);
+  // Only a confirmed update keeps the product's selling price (an undecided look-alike may still become a new product).
+  const updating = preview?.target.kind === 'update' ? preview.target : null;
+  const match = updating ? (preview?.existing ?? null) : null;
+  // « Same product as line N »: line N creates it at its own price, this line only changes the purchase price.
+  const sameAs = preview?.target.kind === 'sameAs' ? preview.target : null;
+  const keepsPrice = !!updating || !!sameAs;
+  const lineN = sameAs ? sameAs.lineIndex + 1 : 0;
 
   const errors: LineErrors = useMemo(() => {
     if (!current) return {};
@@ -131,10 +136,10 @@ export function LineEditSheet({ line, isNew, showErrors, categories, ctx, existi
     if (Number.isNaN(current.alcoholDegree as number)) e.degree = 'Degré invalide : un seul nombre, par exemple 40 ou 12,5.';
     if (Number.isNaN(current.purchasePriceHT as number)) e.purchase = 'Prix d’achat invalide : un seul nombre, par exemple 17,90.';
     if (Number.isNaN(current.sellingPriceTTC as number)) e.selling = 'Prix de vente invalide : un seul nombre, par exemple 6,50.';
-    // The selling price of a product already tracked is kept: nothing to check.
-    if (match) delete e.selling;
+    // The selling price of a product already tracked (or created by line N) is kept: nothing to check.
+    if (keepsPrice) delete e.selling;
     return e;
-  }, [current, match]);
+  }, [current, keepsPrice]);
 
   // The backend's error for this line stays on its field until that field is changed.
   const original = useMemo(() => (held ? toDraft(held) : null), [held]);
@@ -178,7 +183,7 @@ export function LineEditSheet({ line, isNew, showErrors, categories, ctx, existi
       ...current,
       name: current.name.trim(),
       // A product already tracked keeps its price: drop a price typed before the match.
-      sellingPriceTTC: match ? null : current.sellingPriceTTC,
+      sellingPriceTTC: updating ? null : current.sellingPriceTTC,
       alcoholDegree: current.alcoholDegree && current.alcoholDegree > 0 ? current.alcoholDegree : null,
       importError: null,
       selected: isNew ? true : held.selected || !!held.importError,
@@ -186,9 +191,11 @@ export function LineEditSheet({ line, isNew, showErrors, categories, ctx, existi
     onSubmit(clean);
   };
 
-  const sellingHelper = match
+  const sellingHelper = updating
     ? `Ce produit existe déjà : seul son prix d’achat sera mis à jour. Son prix de vente actuel est conservé.`
-    : derived > 0
+    : sameAs
+      ? `La ligne${NBSP}${lineN} crée ce produit à ce prix : cette ligne ne met à jour que son prix d’achat.`
+      : derived > 0
       ? sellingEmpty
         ? `Laissé vide : calculé ×4, soit ${formatEuro(derived)} TTC (${current ? doseLabel(current, ctx) : ''}).`
         : `Le calcul ×4 donnerait ${formatEuro(derived)} TTC. Videz le champ pour l’utiliser.`
@@ -196,7 +203,7 @@ export function LineEditSheet({ line, isNew, showErrors, categories, ctx, existi
 
   const margin = preview?.marginPercent ?? null;
   const zone = margin !== null ? getMarginZone(margin, thresholds) : null;
-  const sellingError = match ? undefined : fieldError('selling');
+  const sellingError = keepsPrice ? undefined : fieldError('selling');
 
   // Half-width fields: the message runs full width under their row.
   const sizeError = fieldError('container') ?? fieldError('degree');
@@ -228,10 +235,20 @@ export function LineEditSheet({ line, isNew, showErrors, categories, ctx, existi
               error={fieldError('name')}
               testID="invoice-field-name"
             />
-            {match ? (
+            {updating ? (
               <View style={styles.matchRow} testID="invoice-field-match">
                 <Badge variant="brand" icon="sync-outline" label="Déjà suivi" size="sm" />
-                <Text style={styles.matchText}>Même nom et même contenance qu’un de vos produits.</Text>
+                <Text style={styles.matchText}>{`Met à jour «${NBSP}${updating.name}${NBSP}» : seul son prix d’achat change.`}</Text>
+              </View>
+            ) : sameAs ? (
+              <View style={styles.matchRow} testID="invoice-field-match">
+                <Badge variant="neutral" icon="copy-outline" label="Même produit" size="sm" />
+                <Text style={styles.matchText}>{`Créé par la ligne${NBSP}${lineN} : seul son prix d’achat change ici.`}</Text>
+              </View>
+            ) : preview?.target.kind === 'decide' ? (
+              <View style={styles.matchRow} testID="invoice-field-match">
+                <Badge zone="orange" icon="git-compare-outline" label="À confirmer" size="sm" />
+                <Text style={styles.matchText}>{`Ressemble à «${NBSP}${preview.target.name}${NBSP}» : confirmez le lien sur la ligne (Lier ou Créer un nouveau).`}</Text>
               </View>
             ) : null}
           </View>
@@ -322,11 +339,11 @@ export function LineEditSheet({ line, isNew, showErrors, categories, ctx, existi
           <View>
             <TextField
               label="Prix de vente TTC"
-              meta={match ? 'prix actuel conservé' : current ? doseLabel(current, ctx) : undefined}
-              value={match ? toInputString(preview?.price ?? match.sellingPriceTTC, 2) : draft.selling}
+              meta={updating ? 'prix actuel conservé' : sameAs ? `prix de la ligne${NBSP}${lineN} conservé` : current ? doseLabel(current, ctx) : undefined}
+              value={keepsPrice ? toInputString(preview?.price ?? match?.sellingPriceTTC ?? 0, 2) : draft.selling}
               onChangeText={(t) => set({ selling: t })}
               onBlur={tidy('selling', (n) => toInputString(n, 2))}
-              editable={!match}
+              editable={!keepsPrice}
               keyboardType="decimal-pad"
               placeholder={derived > 0 ? toInputString(derived, 2) : '0,00'}
               suffix="€"
@@ -342,7 +359,7 @@ export function LineEditSheet({ line, isNew, showErrors, categories, ctx, existi
                     ? 'Prix sous le coût d’une dose : ce produit serait vendu à perte.'
                     : zone === 'red'
                       ? `Marge faible : sous ${formatPercent(thresholds.medium, 0)}. Vérifiez le prix de vente.`
-                      : match
+                      : keepsPrice
                         ? 'Marge après la mise à jour du prix d’achat'
                         : sellingEmpty
                           ? 'Marge avec le prix calculé ×4'

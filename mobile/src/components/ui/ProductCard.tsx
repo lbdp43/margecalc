@@ -11,7 +11,9 @@
  *   1. name (wraps to 2 lines, so « Jameson Irish Whiskey (copie) » stays
  *      distinguishable from the original) + margin Badge, top-aligned
  *   2. meta « Catégorie · 70 cl · 40° » (only the category shortens) + gain per dose « +5,18 €/dose »
- *      in the margin colour
+ *      in the margin colour — or, for a price calculated ×4 by an invoice import that nobody
+ *      confirmed yet (`product.priceToReview`, lot 2), an amber « Prix à vérifier » badge instead
+ *      of a gain computed from that unconfirmed price
  *   3. a PriceTag for EVERY service, primary first (« Verre de vin 12 cl · 7,00 € »
  *      alone; « Demi · 4,50 € » « Pinte · 8,00 € » side by side when there are
  *      several, see `allPrices`: « c’est combien la pinte ? » reads off the
@@ -154,6 +156,7 @@ export const ProductCard = React.memo(function ProductCard({ product, thresholds
   const zone = getMarginZone(margin, t);
   const gain = product.computed?.marginPerDoseHT ?? 0;
   const prices = allPrices(product);
+  const toReview = product.priceToReview === true;
   // Several services: tighter pills, so « Demi · 4,50 € » « Pinte · 8,00 € » share a line at 360 px.
   const several = prices.length > 1;
   const category = product.category?.name;
@@ -167,7 +170,8 @@ export const ProductCard = React.memo(function ProductCard({ product, thresholds
     product.name,
     category,
     prices.map((x) => `${x.label} ${formatEuro(x.price)}`).join(', '),
-    `marge ${formatPercent(margin)}, ${marginColors[zone].label}`,
+    // A price calculated ×4 is not confirmed: no « bonne » verdict on it.
+    toReview ? `marge ${formatPercent(margin)}, prix à vérifier, calculé par l’import de facture` : `marge ${formatPercent(margin)}, ${marginColors[zone].label}`,
     `achat ${formatEuro(product.purchasePriceHT)} hors taxes`,
   ]
     .filter(Boolean)
@@ -203,17 +207,26 @@ export const ProductCard = React.memo(function ProductCard({ product, thresholds
             <Text style={styles.name} numberOfLines={2}>
               {keepUnits(product.name)}
             </Text>
-            <Badge value={margin} thresholds={t} style={styles.badge} />
+            {toReview ? (
+              // Neutral until the user confirms the ×4 price (never a green « good » on a price nobody chose).
+              <Badge variant="neutral" label={formatPercent(margin)} style={styles.badge} accessibilityLabel={`Marge ${formatPercent(margin)}, prix à vérifier`} />
+            ) : (
+              <Badge value={margin} thresholds={t} style={styles.badge} />
+            )}
           </View>
           <View style={styles.middle}>
             {/* Never truncated: a long category (« Ingrédients cocktails ») wraps to a second line. */}
             <Text style={[styles.meta, styles.metaRow]} numberOfLines={2}>
               {[category, specs.replace(/ /g, NBSP)].filter(Boolean).join(`${NBSP}· `)}
             </Text>
-            <Text style={[styles.gain, { color: marginColors[zone].fg }]} maxFontSizeMultiplier={1.3}>
-              {formatEuro(gain, { sign: true })}
-              <Text style={styles.gainUnit}>/dose</Text>
-            </Text>
+            {toReview ? (
+              <Badge zone="orange" noDot label="Prix à vérifier" size="sm" accessibilityLabel="Prix à vérifier" />
+            ) : (
+              <Text style={[styles.gain, { color: marginColors[zone].fg }]} maxFontSizeMultiplier={1.3}>
+                {formatEuro(gain, { sign: true })}
+                <Text style={styles.gainUnit}>/dose</Text>
+              </Text>
+            )}
           </View>
           <View style={[styles.bottom, several ? styles.bottomSeveral : null]}>
             {prices.map((x) => (

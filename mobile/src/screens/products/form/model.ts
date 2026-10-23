@@ -15,6 +15,7 @@ import {
 } from '@margebar/shared';
 import type { ProductFormPrefs } from '../../../services/draft.service';
 import { NBSP, formatEuro, formatVolumeCl } from '../../../utils/format';
+import { doseLabel } from '../../../utils/servings';
 import { FieldErrors, FieldKey } from './errors';
 import {
   CUSTOM_DOSE,
@@ -319,7 +320,13 @@ export function orderedServiceKeys(values: FormValues, servingTypes: ServingType
 }
 
 export function serviceName(key: string, values: FormValues, servingTypes: ServingType[]): string {
-  if (key === CUSTOM_DOSE) return values.customDoseCl ? `Dose${NBSP}${formatVolumeCl(values.customDoseCl)}` : 'Autre dose';
+  if (key === CUSTOM_DOSE) {
+    if (!values.customDoseCl) return 'Autre dose';
+    // A can or a bottle sold whole reads « À l’unité », like the card and the detail.
+    return values.containerCl && values.containerCl > 0
+      ? doseLabel(values.containerCl, values.customDoseCl)
+      : `Dose${NBSP}${formatVolumeCl(values.customDoseCl)}`;
+  }
   const st = servingTypes.find((s) => s.id === key);
   if (!st) return 'Service';
   const short = st.name.replace(/\s*\([^)]*\)\s*$/, '').trim() || st.name;

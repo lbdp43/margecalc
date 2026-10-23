@@ -3,9 +3,12 @@
  *
  *   HeroHeader  avatar · « Bonjour, » / « Bonsoir, » + établissement · Aide & retours
  *               « Marge moyenne » count-up · gap to the objective · distribution bar
- *               · the three counters, each opening Mes produits on its zone
+ *               · the three counters: « à revoir » / « à surveiller » open « Sous
+ *               l’objectif » on that zone when it has prices to fix, else (and
+ *               « rentables ») Mes produits on its zone
  *   Tiles       Produits · « À revoir » (count, worst product, « Corriger » → the
- *               quick price sheet at the suggested price, here on the dashboard)
+ *               quick price sheet at the suggested price, here on the dashboard;
+ *               « Tout voir » → « Sous l’objectif »)
  *               or « Tout au-dessus de 50 % » + the best product (overlap the hero by 28)
  *   Install     « Installer MargeBar Pro » (web only, while installable; InstallAppCardSlot)
  *   Card        « Calculer les droits d’alcool » → Calculateur (Tableau de bord stack)
@@ -56,7 +59,9 @@ import { useRatesStore } from '../../store/rates.store';
 import { useSystemParamsStore } from '../../store/systemParams.store';
 import { formatDegree, formatEuro, formatVolumeCl, NBSP } from '../../utils/format';
 import { getMarginZone, MarginZone, useMarginThresholds } from '../../utils/marginThresholds';
-import { goToProduct, goToProductList, openDutyCalculator, openInvoiceScan, openProductForm } from '../../navigation/routes';
+import { goToProduct, goToProductList, openDutyCalculator, openInvoiceScan, openProductForm, openUnderTarget } from '../../navigation/routes';
+import { usePriceRounding } from '../../utils/priceRounding';
+import { underTargetRows } from '../products/underTarget/model';
 import { fixTarget, PriceEditSheet, PriceEditTarget } from '../products/list/PriceEditSheet';
 import { zoneParam } from '../products/list/listModel';
 import { DashboardHero, HeroKpi } from './parts/DashboardHero';
@@ -142,10 +147,24 @@ export function DashboardScreen() {
   // earlier counter or category row left on the list (with the user's own sort).
   const openList = useCallback(() => goToProductList(navigation, { reset: '1' }), [navigation]);
   // The counters, the category rows and « Tout voir » open the list filtered and sorted (lot 1 n° 2).
+  // Lot 2 n° 7: a zone with prices to fix opens « Sous l’objectif » on it (the list otherwise).
+  const rounding = usePriceRounding();
+  const fixZones = useMemo(() => {
+    const zones = new Set<MarginZone>();
+    for (const r of underTargetRows(view.list, thresholds, rounding)) zones.add(r.zone);
+    return zones;
+  }, [view.list, thresholds, rounding]);
   const openZone = useCallback(
-    (zone: MarginZone) => goToProductList(navigation, { zone: zoneParam(zone), sort: zone === 'green' ? 'marginDesc' : 'marginAsc' }),
-    [navigation],
+    (zone: MarginZone) => {
+      if (zone !== 'green' && fixZones.has(zone)) {
+        openUnderTarget(navigation, { zone: zone === 'red' ? 'bad' : 'medium', from: 'dashboard' });
+        return;
+      }
+      goToProductList(navigation, { zone: zoneParam(zone), sort: zone === 'green' ? 'marginDesc' : 'marginAsc' });
+    },
+    [navigation, fixZones],
   );
+  const seeAllToFix = useCallback(() => openUnderTarget(navigation, { from: 'dashboard' }), [navigation]);
   const openCategory = useCallback((key: string) => goToProductList(navigation, { category: key, sort: 'marginAsc' }), [navigation]);
   const seeAll = useCallback(
     (mode: TopFlopMode) => goToProductList(navigation, { sort: mode === 'flop' ? 'marginAsc' : 'marginDesc' }),
@@ -190,6 +209,7 @@ export function DashboardScreen() {
         onProducts={openList}
         onBest={openProduct}
         onFix={openFix}
+        onSeeAll={fixZones.size ? seeAllToFix : undefined}
       />
     ) : state === 'loading' ? (
       <View style={{ height: tiles.height }}>{showSkeleton ? <SkeletonTiles height={tiles.height} flexBest={tiles.flexBest} /> : null}</View>

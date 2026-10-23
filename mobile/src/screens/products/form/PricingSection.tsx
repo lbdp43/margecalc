@@ -77,6 +77,11 @@ interface PricingSectionProps {
   onLiveChange?: (live: boolean) => void;
   /** An « Annuler » toast was shown (the screen clears it when the form goes away). */
   onUndoToast?: () => void;
+  /**
+   * Lot 2, after a bottle scan (mockup 4): the three answers first (Prix TTC
+   * conseillé · Marge · Gain/dose), the other tiles under the control.
+   */
+  quick?: boolean;
 }
 
 /** Meta of the section header: « 14 verres par bouteille », « Vendu à l’unité ». */
@@ -102,6 +107,7 @@ export function PricingSection({
   error,
   onLiveChange,
   onUndoToast,
+  quick,
 }: PricingSectionProps) {
   const tva = values.tvaRate;
   const lastMode = useRef<PriceMode>('price');
@@ -263,6 +269,7 @@ export function PricingSection({
           }}
           onRemove={removeService}
           onLiveChange={onLiveChange}
+          quick={quick}
         />
       ) : (
         <Card style={styles.empty}>
@@ -292,9 +299,10 @@ interface ServicePricingProps {
   onModeChange: (m: PriceMode) => void;
   onRemove: (key: string) => void;
   onLiveChange?: (live: boolean) => void;
+  quick?: boolean;
 }
 
-function ServicePricing({ serviceKey: key, values, setValues, servingTypes, d, t, tva, onModeChange, onRemove, onLiveChange }: ServicePricingProps) {
+function ServicePricing({ serviceKey: key, values, setValues, servingTypes, d, t, tva, onModeChange, onRemove, onLiveChange, quick }: ServicePricingProps) {
   const s = values.services[key];
   const { width: winW, height: winH } = useWindowDimensions();
   const short = winH < 740;
@@ -400,10 +408,41 @@ function ServicePricing({ serviceKey: key, values, setValues, servingTypes, d, t
   // Graft 1: the answer above the control. On short phones only the compact
   // strip (Marge · Gain/dose · Coeff) stays above, so the Marge tile is still in
   // view while the thumb is on the slider; the rest moves below it.
-  const above = short
-    ? [tiles.margin, tiles.gain, tiles.coeff]
-    : [tiles.priceTTC, tiles.priceHT, tiles.margin, tiles.cost, tiles.gain, whole ? tiles.coeff : tiles.total];
-  const below = short ? (whole ? [tiles.priceTTC, tiles.priceHT, tiles.cost] : [tiles.priceHT, tiles.cost, tiles.total]) : null;
+  // After a scan: « Prix TTC · conseillé », « Marge · objectif », « Gain/dose · HT · 14 verres » (mockup 4).
+  const quickTiles = quick
+    ? [
+        // No cost yet (purchase price, or degree for the duties, still to come): the price on file is only a
+        // placeholder, not a suggestion. « – · à calculer » until there is one; the user's own price stays.
+        <ResultTile
+          key="ttc"
+          label="Prix TTC"
+          value={s.price > 0 && (s.touched || cost > 0) ? tileEuro(s.price) : '–'}
+          caption={s.touched ? tvaLabel(tva) : cost > 0 ? 'conseillé' : 'à calculer'}
+          style={tileStyle}
+        />,
+        tiles.margin,
+        <ResultTile
+          key="gain"
+          label="Gain/dose"
+          value={result ? formatEuro(result.marginPerServingHT, { sign: true, decimals: Math.abs(result.marginPerServingHT) >= 1000 ? 0 : 2 }) : '–'}
+          valueColor={zone ? marginColors[zone].fg : undefined}
+          caption={glassesText && !whole ? `HT · ${glassesText}` : 'HT'}
+          style={tileStyle}
+        />,
+      ]
+    : null;
+  const above = quickTiles
+    ? quickTiles
+    : short
+      ? [tiles.margin, tiles.gain, tiles.coeff]
+      : [tiles.priceTTC, tiles.priceHT, tiles.margin, tiles.cost, tiles.gain, whole ? tiles.coeff : tiles.total];
+  const below = quickTiles
+    ? [tiles.priceHT, tiles.cost, whole ? tiles.coeff : tiles.total]
+    : short
+      ? whole
+        ? [tiles.priceTTC, tiles.priceHT, tiles.cost]
+        : [tiles.priceHT, tiles.cost, tiles.total]
+      : null;
 
   return (
     <FadeIn offset={6} duration={160}>

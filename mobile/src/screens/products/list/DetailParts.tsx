@@ -98,6 +98,8 @@ export function DetailIdentity({
   meta,
   withTile,
   onAddPhoto,
+  priceToReview,
+  onReview,
 }: {
   name: string;
   categoryName?: string | null;
@@ -106,6 +108,9 @@ export function DetailIdentity({
   /** No photo: an icon tile leads, and « Ajouter une photo » follows the meta. */
   withTile: boolean;
   onAddPhoto?: () => void;
+  /** « Prix à vérifier » (a price an invoice computed ×4): the badge, tappable when `onReview` is set. */
+  priceToReview?: boolean;
+  onReview?: () => void;
 }) {
   // Beside the tile the column is ~270 px: past a short name, title2 keeps it to two lines.
   const long = withTile ? name.length > 16 : name.length > 42;
@@ -116,6 +121,23 @@ export function DetailIdentity({
       </Text>
       <View style={styles.metaRow}>
         {categoryName ? <Badge variant="brand" icon={icon} label={categoryName} size="sm" /> : null}
+        {priceToReview ? (
+          onReview ? (
+            <PressableScale
+              onPress={onReview}
+              scaleTo="chip"
+              haptic="select"
+              hitSlop={{ top: 11, bottom: 11, left: 4, right: 4 }}
+              accessibilityRole="button"
+              accessibilityLabel="Prix à vérifier : prix de vente calculé à partir du prix d’achat. Vérifier le prix"
+              testID="detail-price-review"
+            >
+              <Badge zone="orange" icon="alert-circle-outline" label="Prix à vérifier" size="sm" noDot />
+            </PressableScale>
+          ) : (
+            <Badge zone="orange" icon="alert-circle-outline" label="Prix à vérifier" size="sm" noDot />
+          )
+        ) : null}
         {meta ? (
           <Text style={styles.meta} numberOfLines={2}>
             {meta}
@@ -145,6 +167,49 @@ export function DetailIdentity({
         ) : null}
       </View>
     </View>
+  );
+}
+
+// ─── Editable fact row (lot 2 n° 8) ─────────────────────────────────────────
+/**
+ * A ValueRow that opens an editor: « Prix d’achat HT  par bouteille   32,50 € ✎ ».
+ * Same metrics as the kit ValueRow (44 min, callout label, valueRow value), the
+ * value in em700 with a pencil, so it reads as tappable.
+ */
+export function EditableValueRow({
+  label,
+  qualifier,
+  value,
+  onPress,
+  accessibilityLabel,
+  testID,
+}: {
+  label: string;
+  qualifier?: string;
+  value: string;
+  onPress: () => void;
+  accessibilityLabel?: string;
+  testID?: string;
+}) {
+  return (
+    <PressableScale
+      onPress={onPress}
+      scaleTo="card"
+      haptic="select"
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel ?? `${label}${qualifier ? ` ${qualifier}` : ''} : ${value}. Modifier`}
+      style={[styles.editRow, styles.editRowDivider]}
+      testID={testID}
+    >
+      <Text style={styles.editLabel} numberOfLines={2}>
+        {label}
+        {qualifier ? <Text style={styles.editQualifier}>{`  ${qualifier}`}</Text> : null}
+      </Text>
+      <View style={styles.editValueBox}>
+        <Text style={styles.editValue}>{value}</Text>
+        <Icon name="create-outline" size={18} color={palette.em700} />
+      </View>
+    </PressableScale>
   );
 }
 
@@ -525,6 +590,12 @@ export function DetailSkeleton() {
 }
 
 const styles = StyleSheet.create({
+  editRow: { minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, paddingVertical: 10 },
+  editRowDivider: { borderBottomWidth: 1, borderBottomColor: palette.line },
+  editLabel: { ...type.callout, color: palette.text2, flexShrink: 0, maxWidth: '60%' },
+  editQualifier: { ...type.footnote, color: palette.text3 },
+  editValueBox: { flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 1 },
+  editValue: { ...type.valueRow, color: palette.em700, textAlign: 'right' },
   photo: {
     height: PHOTO_HEIGHT,
     borderRadius: radius.xl,

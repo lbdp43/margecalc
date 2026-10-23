@@ -14,19 +14,21 @@
  *   ✓ Objectif atteint (+0,2 pts)
  *   [ Enregistrer 13,10 € ]
  *
- * Works for every product: with services (PUT /api/products/:id/servings,
- * which replaces the whole set: every service is sent, changed or not) and
- * sold à l’unité / without service types (PUT /api/products/:id with the
- * selling price). Several services can be changed before one save.
+ * Works for every product: with services (the whole set is sent, changed or
+ * not) and sold à l’unité / without service types (the selling price). Several
+ * services can be changed before one save. Lot 2: one POST
+ * /api/products/prices/batch, then the undo toast « Nouveau prix … · Annuler ⑥ »
+ * posts the returned previous values back (list/productActions `applyPricesWithUndo`).
  */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { useQueryClient } from '@tanstack/react-query';
-import { calculateServingMargin, MarginMode, ProductWithMargin, ServingType } from '@margebar/shared';
+import { BatchPriceUpdate, calculateServingMargin, ProductWithMargin, ServingType } from '@margebar/shared';
 import {
   BottomSheet,
   Button,
   ChipRow,
+  Icon,
   NumberInput,
   ResultGrid,
   ResultTile,
@@ -41,11 +43,9 @@ import { getMarginZone, MarginThresholds, useMarginThresholds } from '../../../u
 import { doseCost, samePrice, suggestedPrice } from '../../../utils/pricing';
 import { getPriceRounding } from '../../../utils/priceRounding';
 import { isOnline } from '../../../services/offline';
-import * as productService from '../../../services/product.service';
-import * as servingService from '../../../services/serving.service';
 import { serviceNoun } from '../form/pricing';
 import { doseLabel, soldWhole } from '../../../utils/servings';
-import { freshToast, writeErrorMessage } from './productActions';
+import { applyPricesWithUndo, writeErrorMessage } from './productActions';
 
 /** Key of the product's own dose (a product sold without service types). */
 export const DOSE_KEY = '__dose';
@@ -209,28 +209,23 @@ export function PriceEditSheet({ product, target, onClose }: { product: ProductW
     setSaving(true);
     const started = Date.now();
     try {
-      if (line.key === DOSE_KEY) {
-        const savedProduct = await productService.updateProduct(p.id, { marginMode: MarginMode.FIX_SELLING_PRICE, sellingPriceTTC: round2(price) });
-        await new Promise((r) => setTimeout(r, Math.max(0, 400 - (Date.now() - started))));
-        productService.refreshProductCaches(queryClient, savedProduct);
-      } else {
-        const servings = lines.map((l) => ({ servingTypeId: l.key, sellingPriceTTC: round2(drafts[l.key] ?? l.price) }));
-        await servingService.upsertProductServings(p.id, servings);
-        await new Promise((r) => setTimeout(r, Math.max(0, 400 - (Date.now() - started))));
-        queryClient.invalidateQueries({ queryKey: ['product', p.id] });
-        queryClient.invalidateQueries({ queryKey: ['productServings', p.id] });
-        queryClient.invalidateQueries({ queryKey: ['products'] });
-      }
+      const updates: BatchPriceUpdate[] =
+        line.key === DOSE_KEY
+          ? [{ productId: p.id, sellingPriceTTC: round2(price) }]
+          : [{ productId: p.id, servings: lines.map((l) => ({ servingTypeId: l.key, sellingPriceTTC: round2(drafts[l.key] ?? l.price) })) }];
+      const first = changed[0] ?? line;
+      // Shown as soon as the sheet closes (toasts wait behind sheets), with « Annuler ».
+      await applyPricesWithUndo(queryClient, updates, {
+        message: !changed.length
+          ? `Prix confirmé : ${first.label}, ${formatEuro(drafts[first.key] ?? price)}`
+          : changed.length > 1
+            ? `${plural(changed.length, 'nouveau prix', 'nouveaux prix')} enregistrés · ${p.name}`
+            : `Nouveau prix enregistré : ${first.label}, ${formatEuro(drafts[first.key] ?? price)}`,
+      });
+      await new Promise((r) => setTimeout(r, Math.max(0, 400 - (Date.now() - started))));
       setSaving(false);
       setSaved(true);
       haptics.success();
-      // Shown as soon as the sheet closes, never behind an older toast.
-      freshToast(
-        'success',
-        changed.length > 1
-          ? `${plural(changed.length, 'nouveau prix', 'nouveaux prix')} enregistrés · ${p.name}`
-          : `Nouveau prix enregistré : ${(changed[0] ?? line).label}, ${formatEuro(drafts[(changed[0] ?? line).key] ?? price)}`,
-      );
       closeTimer.current = setTimeout(onClose, 650);
     } catch (err) {
       setSaving(false);
@@ -239,8 +234,12 @@ export function PriceEditSheet({ product, target, onClose }: { product: ProductW
     }
   };
 
+  // « Prix à vérifier » (an invoice computed it ×4): saving it unchanged confirms it.
+  const confirming = !!p?.priceToReview && !changed.length;
   const saveTitle = !changed.length
-    ? 'Prix inchangé'
+    ? confirming
+      ? `Confirmer ${formatEuro(price)}`
+      : 'Prix inchangé'
     : changed.length > 1
       ? `Enregistrer ${changed.length}${NBSP}prix`
       : `Enregistrer ${formatEuro(drafts[changed[0].key])}`;
@@ -258,13 +257,19 @@ export function PriceEditSheet({ product, target, onClose }: { product: ProductW
           onPress={save}
           loading={saving}
           success={saved}
-          disabled={!changed.length && !saved}
+          disabled={!changed.length && !saved && !confirming}
           fullWidth
           testID="price-save"
         />
       }
       testID="price-sheet"
     >
+      {p?.priceToReview ? (
+        <View style={styles.review} testID="price-review-note">
+          <Icon name="alert-circle" size={18} color={palette.warnSolid} />
+          <Text style={styles.reviewText}>Prix calculé à partir du prix d’achat (×4) : confirmez-le ou changez-le.</Text>
+        </View>
+      ) : null}
       {lines.length > 1 ? (
         <ChipRow
           items={lines.map((l) => ({
@@ -350,6 +355,8 @@ export function PriceEditSheet({ product, target, onClose }: { product: ProductW
 
 const styles = StyleSheet.create({
   services: { marginBottom: 14 },
+  review: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: palette.warnBg, borderRadius: 14, paddingVertical: 10, paddingHorizontal: 12, marginBottom: 14 },
+  reviewText: { ...type.footnoteStrong, color: palette.warn, flex: 1 },
   labelRow: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: 8, marginTop: 18, marginBottom: 8 },
   label: { ...type.calloutStrong, color: palette.ink },
   before: { ...type.footnote, color: palette.text3 },
