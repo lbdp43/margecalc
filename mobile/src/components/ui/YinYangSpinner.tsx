@@ -1,7 +1,40 @@
 import React, { useEffect, useRef } from 'react';
 import { View, StyleSheet, Animated, Easing, Text } from 'react-native';
-import Svg, { Circle, Path } from 'react-native-svg';
-import { colors, spacing, typography } from '../../theme';
+import Svg, {
+  Path,
+  Circle,
+  Rect,
+  Defs,
+  ClipPath,
+  Ellipse,
+  LinearGradient,
+  Stop,
+} from 'react-native-svg';
+import { useReducedMotion } from 'react-native-reanimated';
+import { palette, spacing, type } from '../../theme';
+
+/**
+ * Beer mug filling — the full-screen / first-load loader requested by the
+ * owner, in the emerald palette. Use Skeletons for lists and cards, and the
+ * Button's built-in spinner for actions.
+ *
+ *   <YinYangSpinner size={80} message="Chargement des produits…" />
+ */
+
+// Animated.createAnimatedComponent passes `collapsable={false}`, which
+// react-native-svg forwards to the DOM on web (React warning). Strip it.
+function stripCollapsable<P extends object>(Component: React.ComponentType<P>) {
+  const Wrapped = React.forwardRef<any, P & { collapsable?: boolean }>(function Stripped(props, ref) {
+    const { collapsable: _c, ...rest } = props as any;
+    return <Component ref={ref} {...(rest as P)} />;
+  });
+  return Wrapped;
+}
+
+const AnimatedRect = Animated.createAnimatedComponent(stripCollapsable(Rect as any)) as any;
+const AnimatedEllipse = Animated.createAnimatedComponent(stripCollapsable(Ellipse as any)) as any;
+const AnimatedCircle = Animated.createAnimatedComponent(stripCollapsable(Circle as any)) as any;
+const AnimatedPath = Animated.createAnimatedComponent(stripCollapsable(Path as any)) as any;
 
 interface YinYangSpinnerProps {
   size?: number;
@@ -14,114 +47,473 @@ export function YinYangSpinner({
   message,
   submessage,
 }: YinYangSpinnerProps) {
-  const rotation = useRef(new Animated.Value(0)).current;
-  const pulse = useRef(new Animated.Value(1)).current;
+  const fillLevel = useRef(new Animated.Value(0)).current;
+  const foamScale = useRef(new Animated.Value(0)).current;
+  const bubble1 = useRef(new Animated.Value(0)).current;
+  const bubble2 = useRef(new Animated.Value(0)).current;
+  const bubble3 = useRef(new Animated.Value(0)).current;
+  const bubble4 = useRef(new Animated.Value(0)).current;
+  const bubble5 = useRef(new Animated.Value(0)).current;
+  const bubble6 = useRef(new Animated.Value(0)).current;
+  const bubble7 = useRef(new Animated.Value(0)).current;
+  const bubble8 = useRef(new Animated.Value(0)).current;
+  const foamWobble = useRef(new Animated.Value(0)).current;
   const fadeMessage = useRef(new Animated.Value(0)).current;
+  const dripAnim = useRef(new Animated.Value(0)).current;
+  // Reduce motion: a static, filled mug (no loops), message shown at once.
+  const reduce = useReducedMotion();
 
   useEffect(() => {
-    // Smooth rotation
-    const spin = Animated.loop(
-      Animated.timing(rotation, {
-        toValue: 1,
-        duration: 2400,
-        easing: Easing.inOut(Easing.ease),
-        useNativeDriver: true,
-      }),
-    );
+    if (reduce) {
+      fillLevel.setValue(1);
+      foamScale.setValue(1);
+      dripAnim.setValue(0);
+      foamWobble.setValue(0.5);
+      fadeMessage.setValue(1);
+      [bubble1, bubble2, bubble3, bubble4, bubble5, bubble6, bubble7, bubble8].forEach((b) => b.setValue(0));
+      return undefined;
+    }
+    // Every timing is `isInteraction: false` (and the pauses too: the stock
+    // Animated.delay registers an interaction). Otherwise the spinner keeps an
+    // InteractionManager handle open, which stalls FlatList windowing and
+    // onEndReached app-wide. Every loop handle is kept and stopped on unmount.
+    const t = (value: Animated.Value, toValue: number, duration: number, easing?: (v: number) => number) =>
+      Animated.timing(value, { toValue, duration, easing, useNativeDriver: false, isInteraction: false });
+    const pause = (ms: number) =>
+      Animated.timing(new Animated.Value(0), { toValue: 0, delay: ms, duration: 0, useNativeDriver: false, isInteraction: false });
 
-    // Breathing pulse
-    const breathe = Animated.loop(
+    const fill = Animated.loop(
       Animated.sequence([
-        Animated.timing(pulse, {
-          toValue: 1.12,
-          duration: 1200,
-          easing: Easing.inOut(Easing.ease),
-          useNativeDriver: true,
-        }),
-        Animated.timing(pulse, {
-          toValue: 0.92,
-          duration: 1200,
-          easing: Easing.inOut(Easing.ease),
-          useNativeDriver: true,
-        }),
+        t(fillLevel, 1, 2800, Easing.out(Easing.cubic)), // fill the glass
+        t(foamScale, 1, 700, Easing.out(Easing.back(1.5))), // foam appears
+        t(dripAnim, 1, 800, Easing.in(Easing.ease)), // drip starts
+        pause(600), // hold
+        Animated.parallel([t(fillLevel, 0, 400), t(foamScale, 0, 400), t(dripAnim, 0, 200)]), // reset
+        pause(300),
       ]),
     );
 
-    // Fade in message
+    const makeBubble = (anim: Animated.Value, delay: number, duration: number) =>
+      Animated.loop(Animated.sequence([pause(delay), t(anim, 1, duration, Easing.out(Easing.ease)), t(anim, 0, 0)]));
+
+    const wobble = Animated.loop(
+      Animated.sequence([t(foamWobble, 1, 1000, Easing.inOut(Easing.ease)), t(foamWobble, 0, 1000, Easing.inOut(Easing.ease))]),
+    );
+
     const fade = Animated.timing(fadeMessage, {
       toValue: 1,
       duration: 600,
       delay: 300,
       useNativeDriver: true,
+      isInteraction: false,
     });
 
-    spin.start();
-    breathe.start();
-    fade.start();
+    const loops: Animated.CompositeAnimation[] = [
+      fill,
+      makeBubble(bubble1, 0, 1400),
+      makeBubble(bubble2, 250, 1100),
+      makeBubble(bubble3, 500, 1300),
+      makeBubble(bubble4, 150, 1500),
+      makeBubble(bubble5, 400, 1000),
+      makeBubble(bubble6, 700, 1200),
+      makeBubble(bubble7, 100, 1350),
+      makeBubble(bubble8, 550, 1150),
+      wobble,
+      fade,
+    ];
+    loops.forEach((a) => a.start());
 
     return () => {
-      spin.stop();
-      breathe.stop();
-      fade.stop();
+      loops.forEach((a) => a.stop());
     };
-  }, [rotation, pulse, fadeMessage]);
+  }, [reduce, fillLevel, foamScale, dripAnim, bubble1, bubble2, bubble3, bubble4, bubble5, bubble6, bubble7, bubble8, foamWobble, fadeMessage]);
 
-  const spinInterp = rotation.interpolate({
+  // ────────── DIMENSIONS ──────────
+  // All coordinates are relative to size for scalability
+  const s = size / 100; // scale factor (design is based on size=100)
+  const svgW = 130 * s;
+  const svgH = 130 * s;
+
+  // Mug body (rectangular with slight taper like the icon)
+  const mugL = 15 * s;   // left edge
+  const mugR = 85 * s;   // right edge
+  const mugT = 30 * s;   // top edge
+  const mugB = 115 * s;  // bottom edge
+  const mugW = mugR - mugL;
+  const mugH = mugB - mugT;
+  const mugCx = (mugL + mugR) / 2;
+  const stroke = 4.5 * s; // thick outline like the icon
+  const cornerR = 6 * s;  // rounded corners at bottom
+
+  // Inner cavity (for clipping beer)
+  const innerL = mugL + stroke;
+  const innerR = mugR - stroke;
+  const innerT = mugT + stroke;
+  const innerB = mugB - stroke;
+
+  // Handle
+  const handleX = mugR - stroke * 0.5;
+  const handleTop = mugT + mugH * 0.22;
+  const handleBot = mugT + mugH * 0.72;
+  const handleOut = mugR + 25 * s;
+
+  // Base
+  const baseW = mugW + 12 * s;
+  const baseH = 6 * s;
+  const baseL = mugCx - baseW / 2;
+
+  // ────────── COLORS ──────────
+  const beerBody = palette.em500;     // bright emerald liquid
+  const beerDark = palette.em700;     // depth
+  const outline = palette.em800;      // mug outline
+  const foamWhite = '#FFFFFF';
+  const foamCream = palette.em50;
+  const baseTint = palette.em100;
+
+  // ────────── INTERPOLATIONS ──────────
+  const beerY = fillLevel.interpolate({
     inputRange: [0, 1],
-    outputRange: ['0deg', '360deg'],
+    outputRange: [innerB, innerT + mugH * 0.05],
+  });
+  const beerHeight = fillLevel.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, innerB - innerT - mugH * 0.05],
   });
 
-  const r = size / 2;
-  const dotR = size / 8;
+  // Drip lengths (foam running down outside of glass)
+  const dripLenL = dripAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, mugH * 0.45],
+  });
+  const dripLenR = dripAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, mugH * 0.3],
+  });
 
-  // S-curve wave dimensions
-  const waveW = size * 1.6;
-  const waveH = size * 0.3;
+  // Bubble helper
+  const makeBubbleProps = (anim: Animated.Value, xPos: number, bubbleR: number) => ({
+    cx: xPos,
+    cy: anim.interpolate({
+      inputRange: [0, 1],
+      outputRange: [innerB - 6 * s, innerT + mugH * 0.2],
+    }),
+    r: bubbleR * s,
+    opacity: anim.interpolate({
+      inputRange: [0, 0.1, 0.7, 1],
+      outputRange: [0, 0.55, 0.35, 0],
+    }),
+  });
+
+  const bubbles = [
+    makeBubbleProps(bubble1, mugCx - 18 * s, 3.0),
+    makeBubbleProps(bubble2, mugCx + 10 * s, 2.5),
+    makeBubbleProps(bubble3, mugCx - 5 * s, 3.5),
+    makeBubbleProps(bubble4, mugCx + 22 * s, 2.2),
+    makeBubbleProps(bubble5, mugCx - 25 * s, 2.0),
+    makeBubbleProps(bubble6, mugCx + 3 * s, 2.8),
+    makeBubbleProps(bubble7, mugCx + 16 * s, 1.8),
+    makeBubbleProps(bubble8, mugCx - 12 * s, 2.3),
+  ];
+
+  // ────────── STATIC PATHS ──────────
+  // Mug body outline (rounded bottom corners)
+  const mugOutline = `
+    M${mugL},${mugT}
+    L${mugL},${mugB - cornerR}
+    Q${mugL},${mugB} ${mugL + cornerR},${mugB}
+    L${mugR - cornerR},${mugB}
+    Q${mugR},${mugB} ${mugR},${mugB - cornerR}
+    L${mugR},${mugT}
+  `;
+
+  // Inner cavity clip
+  const innerClip = `
+    M${innerL},${innerT}
+    L${innerL},${innerB - cornerR}
+    Q${innerL},${innerB} ${innerL + cornerR},${innerB}
+    L${innerR - cornerR},${innerB}
+    Q${innerR},${innerB} ${innerR},${innerB - cornerR}
+    L${innerR},${innerT}
+    Z
+  `;
+
+  // Handle outer path (thick rounded D-shape)
+  const handleOuter = `
+    M${handleX},${handleTop}
+    C${handleX + 8 * s},${handleTop - 5 * s}
+     ${handleOut + 4 * s},${handleTop + 5 * s}
+     ${handleOut},${handleTop + (handleBot - handleTop) * 0.35}
+    C${handleOut - 2 * s},${handleBot - 5 * s}
+     ${handleX + 8 * s},${handleBot + 5 * s}
+     ${handleX},${handleBot}
+  `;
+
+  // Handle inner path
+  const hInnerOut = handleOut - 10 * s;
+  const handleInner = `
+    M${handleX},${handleTop + 8 * s}
+    C${handleX + 5 * s},${handleTop + 5 * s}
+     ${hInnerOut + 2 * s},${handleTop + 12 * s}
+     ${hInnerOut},${handleTop + (handleBot - handleTop) * 0.4}
+    C${hInnerOut - 1 * s},${handleBot - 10 * s}
+     ${handleX + 5 * s},${handleBot - 3 * s}
+     ${handleX},${handleBot - 8 * s}
+  `;
+
+  // Foam cloud path — bubbly cloud shape that overflows above the mug
+  // Uses cubic beziers to create round bumps like the reference icon
+  const fL = mugL - 5 * s;
+  const fR = mugR + 5 * s;
+  const fMid = mugCx;
+  const fTop = mugT - 22 * s;
+
+  const foamCloudPath = `
+    M${fL},${mugT + 2 * s}
+    C${fL - 6 * s},${mugT - 5 * s}
+     ${fL + 2 * s},${fTop + 15 * s}
+     ${fL + 15 * s},${fTop + 10 * s}
+    C${fL + 18 * s},${fTop + 2 * s}
+     ${fMid - 18 * s},${fTop - 3 * s}
+     ${fMid - 8 * s},${fTop}
+    C${fMid - 2 * s},${fTop - 4 * s}
+     ${fMid + 5 * s},${fTop - 2 * s}
+     ${fMid + 12 * s},${fTop + 2 * s}
+    C${fMid + 22 * s},${fTop + 5 * s}
+     ${fR - 10 * s},${fTop + 3 * s}
+     ${fR - 5 * s},${fTop + 12 * s}
+    C${fR},${fTop + 18 * s}
+     ${fR + 5 * s},${mugT - 3 * s}
+     ${fR},${mugT + 2 * s}
+    Z
+  `;
+
+  // Vertical highlight lines inside the beer (like the icon)
+  const highlightLines = [
+    { x: mugCx - 14 * s, top: innerT + mugH * 0.12, bot: innerB - 10 * s },
+    { x: mugCx, top: innerT + mugH * 0.08, bot: innerB - 8 * s },
+    { x: mugCx + 14 * s, top: innerT + mugH * 0.15, bot: innerB - 12 * s },
+  ];
 
   return (
     <View style={styles.container}>
-      {/* Animated S-curve wave behind the yin-yang */}
-      <Animated.View style={[styles.waveWrap, { opacity: pulse }]}>
-        <Svg width={waveW} height={waveH} viewBox={`0 0 ${waveW} ${waveH}`}>
-          <Path
-            d={`M0,${waveH} C${waveW * 0.35},${waveH} ${waveW * 0.65},0 ${waveW},0`}
-            fill="none"
-            stroke={colors.primary}
-            strokeWidth={2}
-            opacity={0.25}
-          />
-          <Path
-            d={`M0,${waveH * 0.7} C${waveW * 0.3},${waveH * 0.7} ${waveW * 0.7},${waveH * 0.15} ${waveW},${waveH * 0.15}`}
-            fill="none"
-            stroke={colors.accent}
-            strokeWidth={1.5}
-            opacity={0.2}
-          />
-        </Svg>
-      </Animated.View>
+      <Svg width={svgW + 10 * s} height={svgH} viewBox={`${-5 * s} 0 ${svgW + 10 * s} ${svgH}`}>
+        <Defs>
+          <ClipPath id="mugInner">
+            <Path d={innerClip} />
+          </ClipPath>
 
-      {/* Yin-Yang symbol */}
-      <Animated.View
-        style={{
-          transform: [{ rotate: spinInterp }, { scale: pulse }],
-        }}
-      >
-        <Svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-          {/* Left half (primary) */}
-          <Path
-            d={`M${r},0 A${r},${r} 0 0 1 ${r},${size} A${r / 2},${r / 2} 0 0 1 ${r},${r} A${r / 2},${r / 2} 0 0 0 ${r},0 Z`}
-            fill={colors.primary}
+          <LinearGradient id="beerFill" x1="0" y1="0" x2="1" y2="0">
+            <Stop offset="0" stopColor={beerDark} stopOpacity="0.75" />
+            <Stop offset="0.35" stopColor={beerBody} stopOpacity="0.9" />
+            <Stop offset="0.65" stopColor={beerBody} stopOpacity="0.9" />
+            <Stop offset="1" stopColor={beerDark} stopOpacity="0.7" />
+          </LinearGradient>
+
+          <LinearGradient id="foamFill" x1="0" y1="0" x2="0" y2="1">
+            <Stop offset="0" stopColor={foamWhite} stopOpacity="1" />
+            <Stop offset="0.6" stopColor={foamCream} stopOpacity="0.9" />
+            <Stop offset="1" stopColor={beerBody} stopOpacity="0.25" />
+          </LinearGradient>
+        </Defs>
+
+        {/* ===== BASE ===== */}
+        <Rect
+          x={baseL}
+          y={mugB}
+          width={baseW}
+          height={baseH}
+          rx={cornerR * 0.6}
+          fill={baseTint}
+          stroke={outline}
+          strokeWidth={stroke}
+        />
+
+        {/* ===== MUG BODY FILL (light tint) ===== */}
+        <Path
+          d={`${mugOutline} Z`}
+          fill={baseTint}
+          opacity={0.3}
+        />
+
+        {/* ===== BEER LIQUID ===== */}
+        <AnimatedRect
+          x={innerL - 1}
+          y={beerY}
+          width={innerR - innerL + 2}
+          height={beerHeight}
+          fill="url(#beerFill)"
+          clipPath="url(#mugInner)"
+        />
+
+        {/* Beer depth at bottom */}
+        <AnimatedRect
+          x={innerL}
+          y={fillLevel.interpolate({
+            inputRange: [0, 1],
+            outputRange: [innerB, innerB - mugH * 0.06],
+          })}
+          width={innerR - innerL}
+          height={mugH * 0.06}
+          fill={beerDark}
+          opacity={0.25}
+          clipPath="url(#mugInner)"
+        />
+
+        {/* ===== VERTICAL HIGHLIGHT LINES (icon style) ===== */}
+        {highlightLines.map((hl, i) => (
+          <AnimatedRect
+            key={`hl-${i}`}
+            x={hl.x - 1.5 * s}
+            y={beerY}
+            width={3 * s}
+            height={beerHeight}
+            fill={beerDark}
+            opacity={0.25}
+            clipPath="url(#mugInner)"
           />
-          {/* Right half (accent green) */}
-          <Path
-            d={`M${r},0 A${r},${r} 0 0 0 ${r},${size} A${r / 2},${r / 2} 0 0 0 ${r},${r} A${r / 2},${r / 2} 0 0 1 ${r},0 Z`}
-            fill={colors.accent}
+        ))}
+
+        {/* ===== BUBBLES ===== */}
+        {bubbles.map((b, i) => (
+          <AnimatedCircle
+            key={`bub-${i}`}
+            cx={b.cx}
+            cy={b.cy}
+            r={b.r}
+            fill={foamWhite}
+            opacity={b.opacity}
+            clipPath="url(#mugInner)"
           />
-          {/* Dots */}
-          <Circle cx={r} cy={r / 2} r={dotR} fill={colors.accent} />
-          <Circle cx={r} cy={r + r / 2} r={dotR} fill={colors.primary} />
-        </Svg>
-      </Animated.View>
+        ))}
+
+        {/* ===== FOAM CLOUD (overflowing above mug) ===== */}
+        <AnimatedPath
+          d={foamCloudPath}
+          fill="url(#foamFill)"
+          stroke={outline}
+          strokeWidth={stroke}
+          opacity={foamScale}
+        />
+
+        {/* Foam cloud inner highlight bumps */}
+        <AnimatedEllipse
+          cx={fMid - 12 * s}
+          cy={fillLevel.interpolate({
+            inputRange: [0, 1],
+            outputRange: [innerB, fTop + 14 * s],
+          })}
+          rx={foamWobble.interpolate({
+            inputRange: [0, 1],
+            outputRange: [10 * s, 12 * s],
+          })}
+          ry={foamScale.interpolate({
+            inputRange: [0, 0.5, 1],
+            outputRange: [0, 0, 7 * s],
+          })}
+          fill={foamWhite}
+          opacity={foamScale.interpolate({
+            inputRange: [0, 0.5, 1],
+            outputRange: [0, 0, 0.6],
+          })}
+        />
+        <AnimatedEllipse
+          cx={fMid + 10 * s}
+          cy={fillLevel.interpolate({
+            inputRange: [0, 1],
+            outputRange: [innerB, fTop + 12 * s],
+          })}
+          rx={foamWobble.interpolate({
+            inputRange: [0, 1],
+            outputRange: [8 * s, 11 * s],
+          })}
+          ry={foamScale.interpolate({
+            inputRange: [0, 0.5, 1],
+            outputRange: [0, 0, 6 * s],
+          })}
+          fill={foamWhite}
+          opacity={foamScale.interpolate({
+            inputRange: [0, 0.5, 1],
+            outputRange: [0, 0, 0.5],
+          })}
+        />
+
+        {/* ===== FOAM DRIPS running down the sides ===== */}
+        {/* Left drip */}
+        <AnimatedRect
+          x={mugL - 2 * s}
+          y={mugT}
+          width={6 * s}
+          height={dripLenL}
+          rx={3 * s}
+          fill={foamCream}
+          stroke={outline}
+          strokeWidth={stroke * 0.7}
+          opacity={dripAnim}
+        />
+        {/* Right drip */}
+        <AnimatedRect
+          x={mugR - 4 * s}
+          y={mugT - 1 * s}
+          width={5 * s}
+          height={dripLenR}
+          rx={2.5 * s}
+          fill={foamCream}
+          stroke={outline}
+          strokeWidth={stroke * 0.7}
+          opacity={dripAnim}
+        />
+        {/* Center-left small drip */}
+        <AnimatedRect
+          x={mugCx - 10 * s}
+          y={mugT}
+          width={4 * s}
+          height={dripAnim.interpolate({
+            inputRange: [0, 1],
+            outputRange: [0, mugH * 0.2],
+          })}
+          rx={2 * s}
+          fill={foamCream}
+          stroke={outline}
+          strokeWidth={stroke * 0.5}
+          opacity={dripAnim}
+        />
+
+        {/* ===== MUG OUTLINE (thick, like the icon) ===== */}
+        <Path
+          d={mugOutline}
+          fill="none"
+          stroke={outline}
+          strokeWidth={stroke}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+        {/* Top rim */}
+        <Path
+          d={`M${mugL},${mugT} L${mugR},${mugT}`}
+          stroke={outline}
+          strokeWidth={stroke * 1.2}
+          strokeLinecap="round"
+        />
+
+        {/* ===== HANDLE (thick outline D-shape) ===== */}
+        <Path
+          d={handleOuter}
+          fill={baseTint}
+          fillOpacity={0.25}
+          stroke={outline}
+          strokeWidth={stroke}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+        <Path
+          d={handleInner}
+          fill="none"
+          stroke={outline}
+          strokeWidth={stroke * 0.65}
+          strokeLinecap="round"
+          opacity={0.5}
+        />
+      </Svg>
 
       {/* Text with fade-in */}
       <Animated.View style={{ opacity: fadeMessage }}>
@@ -138,21 +530,16 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingVertical: spacing.xl,
   },
-  waveWrap: {
-    position: 'absolute',
-    top: spacing.sm,
-  },
   message: {
-    ...typography.body,
-    fontWeight: '600',
-    color: colors.text,
+    ...type.headline,
+    color: palette.ink,
     marginTop: spacing.lg,
     textAlign: 'center',
   },
   submessage: {
-    ...typography.caption,
-    color: colors.textSecondary,
-    marginTop: spacing.sm,
+    ...type.footnote,
+    color: palette.text3,
+    marginTop: spacing.xs,
     textAlign: 'center',
   },
 });

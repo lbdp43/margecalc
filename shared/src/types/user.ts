@@ -1,6 +1,9 @@
+export type UserRole = 'user' | 'admin';
+
 export interface User {
   id: string;
   email: string;
+  role: UserRole;
   businessName: string | null;
   isAutoEntrepreneur: boolean;
   defaultTvaRate: number;
@@ -15,6 +18,17 @@ export interface User {
 export interface AuthPayload {
   userId: string;
   email: string;
+  role: UserRole;
+}
+
+export interface SystemParam {
+  id: string;
+  key: string;
+  value: string;
+  label: string;
+  unit: string | null;
+  description: string | null;
+  updatedAt: string;
 }
 
 export interface LoginRequest {
@@ -31,5 +45,6 @@ export interface RegisterRequest {
 
 export interface AuthResponse {
   token: string;
+  refreshToken: string;
   user: User;
 }

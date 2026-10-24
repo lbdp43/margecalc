@@ -1,18 +1,22 @@
 {
   "name": "@margebar/backend",
-  "version": "1.0.0",
+  "version": "4.0.0",
   "main": "dist/index.js",
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
+    "start:prod": "node scripts/baseline.cjs && prisma migrate deploy && tsx prisma/seed.ts && node dist/index.js",
+    "test": "tsx test/scan-extract.test.ts && tsx test/invoice-match.test.ts",
     "db:migrate": "prisma migrate dev",
     "db:seed": "tsx prisma/seed.ts",
     "db:push": "prisma db push"
   },
   "dependencies": {
-    "@margebar/shared": "1.0.0",
+    "@margebar/shared": "4.0.0",
     "@prisma/client": "^5.10.0",
+    "@tesseract.js-data/eng": "^1.0.0",
+    "@tesseract.js-data/fra": "^1.0.0",
     "bcrypt": "^5.1.1",
     "cors": "^2.8.5",
     "dotenv": "^16.4.0",
@@ -22,6 +26,7 @@
     "jsonwebtoken": "^9.0.2",
     "prisma": "^5.10.0",
     "stripe": "^20.4.1",
+    "tesseract.js": "^5.1.1",
     "tsx": "^4.7.0",
     "zod": "^3.22.0"
   },

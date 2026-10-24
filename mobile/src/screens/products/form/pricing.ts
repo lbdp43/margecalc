@@ -1,0 +1,396 @@
+/**
+ * Pure pricing helpers for the product form (no React).
+ *
+ * A service is always stored as its TTC price; the Prix / Marge / Coeff modes
+ * are views on that price. In Marge or Coeff mode the value the user set is
+ * kept (`modeValue`) so « 65 % » stays « 65 % » instead of drifting through
+ * cent rounding, and the price follows it when the purchase price changes.
+ */
+import { calculateServingMargin, Rate, ServingMarginResult } from '@margebar/shared';
+import type { SliderZone } from '../../../components/ui';
+import type { MarginThresholds } from '../../../utils/marginThresholds';
+import { NBSP, clamp, formatCoeff, formatEuro, formatNumber, formatPercent, formatVolumeCl } from '../../../utils/format';
+import type { PriceMode } from '../../../services/draft.service';
+import { suggestedPrice as suggestedPriceFor } from '../../../utils/pricing';
+import { soldWhole } from '../../../utils/servings';
+import { getPriceRounding } from '../../../utils/priceRounding';
+
+export type { PriceMode };
+
+/** Key of the « Autre dose » pseudo-service (a product sold without service types). */
+export const CUSTOM_DOSE = '__dose';
+
+/** Highest selling price of a service (TTC) the form accepts. */
+export const PRICE_MAX = 10_000;
+/** Highest purchase price per container (HT), as the API. */
+export const PURCHASE_MAX = 100_000;
+/** Values typed above this are kept (and reported) instead of being clamped silently. */
+export const TYPING_MAX = 1_000_000_000;
+
+/** « 14 », « 23,3 » — one decimal only when it is not a whole number. */
+export const formatCount = (n: number) => formatNumber(n, 1, { minDigits: 0 });
+
+/**
+ * Servings in a container, as a bar counts them: whole servings, with « ≈ »
+ * when the division leaves a remainder (« ≈ 23 » for 70 cl ÷ 3 cl: 23 full
+ * shots and a drop). Under 2 the fraction is the information (« 1,5 » pichet,
+ * never « ≈ 1 »). Only the label rounds: the gains keep the exact count.
+ */
+export function formatServings(n: number): string {
+  if (!(n > 0) || !isFinite(n)) return formatCount(n);
+  const whole = Math.floor(n + 1e-6);
+  if (n - whole < 0.05) return formatNumber(whole, 0);
+  if (n < 2) return formatCount(n);
+  return `≈${NBSP}${formatNumber(whole, 0)}`;
+}
+
+/** « 14 verres », « ≈ 23 shots », « 1,5 pichet » (French plural from 2). */
+export function servingsText(n: number, noun: Pick<ServiceNoun, 'one' | 'many'>): string {
+  return `${formatServings(n)}${NBSP}${n >= 2 ? noun.many : noun.one}`;
+}
+
+/**
+ * Margin for display: one decimal up to ±100 % (« 69,0 % »), none beyond
+ * (« -757 % »), and absurd values — a typo in a price — read « ≤ -999 % »
+ * instead of « -85 714 185,0 % ».
+ */
+export function formatMargin(n: number): string {
+  if (n < -999) return `≤${NBSP}${formatPercent(-999, 0)}`;
+  return formatPercent(n, Math.abs(n) >= 100 ? 0 : 1);
+}
+
+/** Does the degree change the duties of this fiscal category? (No for wines and ciders, flat per hl.) */
+export function degreeMatters(rate: Pick<Rate, 'calcType' | 'cotisationRate' | 'cotisationCond'> | null | undefined): boolean {
+  if (!rate) return false;
+  return rate.calcType !== 'A' || (rate.cotisationRate > 0 && !!rate.cotisationCond);
+}
+
+/** Typical degree of a product category: the first « + » on an empty degree starts there. */
+export function typicalDegree(categorySlug: string | null | undefined): number | null {
+  if (categorySlug === 'spiritueux') return 40;
+  if (categorySlug === 'vins') return 12.5;
+  if (categorySlug === 'bieres') return 5;
+  return null;
+}
+
+export interface ServiceState {
+  /** TTC price — the only value sent to the API. */
+  price: number;
+  /** False while the price is still our suggestion (it then follows the purchase price). */
+  touched: boolean;
+  mode: PriceMode;
+  /** Last value typed or slid in Marge (%) or Coeff (×) mode; null in Prix mode. */
+  modeValue: number | null;
+}
+
+export const round2 = (n: number) => Math.round(n * 100) / 100;
+
+export function costPerDoseHT(purchaseHT: number, containerCl: number, doseCl: number): number {
+  if (!(containerCl > 0) || !(doseCl > 0) || !(purchaseHT >= 0)) return 0;
+  return (purchaseHT * doseCl) / containerCl;
+}
+
+/** TTC price for a value expressed in `mode`. */
+export function priceFromMode(mode: PriceMode, value: number, costHT: number, tva: number): number {
+  switch (mode) {
+    case 'price':
+      return value;
+    case 'margin': {
+      if (!(costHT > 0)) return 0;
+      const m = Math.min(Math.max(value, 0), 99.9) / 100;
+      return (costHT / (1 - m)) * (1 + tva);
+    }
+    case 'coeff':
+      return costHT * Math.max(value, 0) * (1 + tva);
+  }
+}
+
+/** Value of a TTC price expressed in `mode`. */
+export function modeValueFromPrice(mode: PriceMode, price: number, costHT: number, tva: number): number {
+  const ht = price / (1 + tva);
+  switch (mode) {
+    case 'price':
+      return price;
+    case 'margin':
+      return ht > 0 ? ((ht - costHT) / ht) * 100 : 0;
+    case 'coeff':
+      return costHT > 0 ? ht / costHT : 0;
+  }
+}
+
+/** Lowest price (to the cent) that reaches `marginPct`. */
+export function priceForMargin(costHT: number, tva: number, marginPct: number): number {
+  if (!(costHT > 0)) return 0;
+  const p = (costHT / (1 - Math.min(marginPct, 99.9) / 100)) * (1 + tva);
+  return Math.ceil(p * 100 - 1e-6) / 100;
+}
+
+/**
+ * Suggested price when a service is switched on (RC2: never 0): the objective
+ * price rounded UP to the user's « Arrondi des prix » step (utils/pricing), the
+ * very price the first « Prix conseillés » chip offers. Without a purchase
+ * price: 5,00 €. Never above the input's maximum.
+ */
+export function suggestedPrice(costHT: number, tva: number, goodPct: number, rounding: number = getPriceRounding()): number {
+  if (!(costHT > 0)) return 5;
+  const p = suggestedPriceFor(costHT, tva, goodPct, rounding);
+  return round2(clamp(p ?? 5, 0.1, PRICE_MAX));
+}
+
+/** Margin result of one service (null when it cannot be computed). */
+export function serviceResult(
+  purchaseHT: number,
+  containerCl: number,
+  tva: number,
+  doseCl: number,
+  price: number,
+): ServingMarginResult | null {
+  if (!(price > 0) || !(containerCl > 0) || !(doseCl > 0) || !(purchaseHT >= 0) || !(tva >= 0 && tva < 1)) return null;
+  try {
+    return calculateServingMargin(
+      purchaseHT,
+      containerCl,
+      tva,
+      { id: '', userId: '', name: '', volumeCl: doseCl, icon: '', sortOrder: 0 },
+      price,
+    );
+  } catch {
+    return null;
+  }
+}
+
+function niceCeil(v: number): number {
+  if (v <= 20) return Math.ceil(v);
+  if (v <= 60) return Math.ceil(v / 5) * 5;
+  if (v <= 200) return Math.ceil(v / 10) * 10;
+  return Math.ceil(v / 50) * 50;
+}
+
+export interface PricingSetup {
+  min: number;
+  max: number;
+  /** Slider step. */
+  step: number;
+  /** NumberInput step and typing decimals. */
+  inputStep: number;
+  decimals: number;
+  format: (n: number) => string;
+  suffix: string;
+  marker?: { value: number; label: string };
+  zones?: SliderZone[];
+  formatLabel: (n: number) => string;
+  /** « Prix de vente », « Marge », « Coefficient ». */
+  label: string;
+  /** Accessibility name of the value. */
+  a11y: string;
+}
+
+/**
+ * Ranges, marker and zones for the pricing control. `anchorPrice` widens the
+ * price range for an expensive service (pass a value frozen while dragging so
+ * the track never moves under the finger).
+ */
+export function pricingSetup(
+  mode: PriceMode,
+  costHT: number,
+  tva: number,
+  t: MarginThresholds,
+  anchorPrice: number,
+): PricingSetup {
+  const hasCost = costHT > 0;
+  if (mode === 'margin') {
+    return {
+      min: 0,
+      max: 95,
+      step: 0.5,
+      inputStep: 0.5,
+      decimals: 1,
+      format: (n) => formatPercent(n),
+      suffix: '%',
+      marker: { value: t.good, label: `Objectif ${formatPercent(t.good, 0)}` },
+      zones: [{ to: t.medium, color: 'bad' }, { to: t.good, color: 'warn' }, { color: 'good' }],
+      formatLabel: (n) => formatPercent(n, 0),
+      label: 'Marge',
+      a11y: 'Marge visée',
+    };
+  }
+  if (mode === 'coeff') {
+    const objC = 1 / (1 - t.good / 100);
+    const medC = 1 / (1 - t.medium / 100);
+    return {
+      min: 1,
+      max: Math.max(8, niceCeil(objC * 2.6)),
+      step: 0.05,
+      inputStep: 0.05,
+      decimals: 2,
+      format: (n) => formatCoeff(n),
+      suffix: '×',
+      marker: { value: objC, label: `Objectif ${formatCoeff(objC)}` },
+      zones: [{ to: medC, color: 'bad' }, { to: objC, color: 'warn' }, { color: 'good' }],
+      formatLabel: (n) => `×${formatCount(n)}`,
+      label: 'Coefficient',
+      a11y: 'Coefficient multiplicateur',
+    };
+  }
+  const costTTC = costHT * (1 + tva);
+  const objective = priceForMargin(costHT, tva, t.good);
+  const medium = hasCost ? (costHT / (1 - t.medium / 100)) * (1 + tva) : 0;
+  const min = hasCost ? Math.max(0.5, Math.floor(costTTC * 2) / 2) : 0.5;
+  // The range only widens for a price above it (dragging to the end never rescales the track).
+  const base = niceCeil(Math.max(10, objective * 2.2, costTTC * 5, min + 5));
+  const max = anchorPrice > base ? niceCeil(anchorPrice * 1.15) : base;
+  return {
+    min,
+    max,
+    step: 0.1,
+    inputStep: 0.1,
+    decimals: 2,
+    format: (n) => formatEuro(n),
+    suffix: '€',
+    marker: hasCost && objective <= max ? { value: objective, label: `Objectif ${formatPercent(t.good, 0)} · ${formatEuro(objective)}` } : undefined,
+    zones: hasCost ? [{ to: medium, color: 'bad' }, { to: objective, color: 'warn' }, { color: 'good' }] : undefined,
+    formatLabel: (n) => formatEuro(n, { trimZeros: true }),
+    label: 'Prix de vente',
+    a11y: 'Prix de vente TTC',
+  };
+}
+
+// ─── Words ─────────────────────────────────────────────────────────────────
+
+export interface ServiceNoun {
+  one: string;
+  many: string;
+  /** « ce verre », « cette pinte ». */
+  this: string;
+}
+
+export function serviceNoun(name: string | null | undefined): ServiceNoun {
+  const n = (name ?? '').toLowerCase();
+  if (/shot|shooter/.test(n)) return { one: 'shot', many: 'shots', this: 'ce shot' };
+  if (/pinte/.test(n)) return { one: 'pinte', many: 'pintes', this: 'cette pinte' };
+  if (/demi/.test(n)) return { one: 'demi', many: 'demis', this: 'ce demi' };
+  if (/verre|vin|coupe|ballon/.test(n)) return { one: 'verre', many: 'verres', this: 'ce verre' };
+  if (/canette/.test(n)) return { one: 'canette', many: 'canettes', this: 'cette canette' };
+  if (/bouteille/.test(n)) return { one: 'bouteille', many: 'bouteilles', this: 'cette bouteille' };
+  return { one: 'dose', many: 'doses', this: 'cette dose' };
+}
+
+/** « bouteille », « fût », « contenant ». */
+export function containerNoun(cl: number): string {
+  if (cl >= 1500) return 'fût';
+  if (cl > 150) return 'contenant';
+  return 'bouteille';
+}
+
+/** True when one dose is the whole container (a can, a bottle sold as is). Lives in utils/servings (the kit uses it too). */
+export { soldWhole };
+
+/** « 14 verres par bouteille », « ≈ 23 shots par bouteille », « Vendu à l’unité ». */
+export function dosesSentence(containerCl: number, doseCl: number, noun: ServiceNoun): string | null {
+  if (!(containerCl > 0) || !(doseCl > 0)) return null;
+  if (soldWhole(containerCl, doseCl)) return 'Vendu à l’unité';
+  return `${servingsText(containerCl / doseCl, noun)} par ${containerNoun(containerCl)}`;
+}
+
+/**
+ * French container label: fixes the legacy preset names (« Fut 20L » →
+ * « Fût 20 L », « Jeroboam » → « Jéroboam 3 L ») and appends the volume to
+ * names without one. Non-breaking spaces keep each chip on one line.
+ */
+export function containerLabel(name: string | null | undefined, volumeCl: number): string {
+  let n = (name ?? '').trim();
+  if (!n) return formatVolumeCl(volumeCl);
+  n = n
+    .replace(/^fut\b/i, 'Fût')
+    .replace(/^jeroboam\b/i, 'Jéroboam')
+    .replace(/(\d)\s*l\b/gi, '$1 L')
+    .replace(/(\d)\s*cl\b/gi, '$1 cl');
+  if (!/\d/.test(n)) n = `${n} ${formatVolumeCl(volumeCl)}`;
+  return n.replace(/ /g, NBSP);
+}
+
+/** Fiscal category (duty rate slug) → product category slug. */
+export const FISCAL_TO_PRODUCT_CATEGORY: Record<string, string> = {
+  vin_tranquille: 'vins',
+  vin_mousseux: 'vins',
+  cidre_poire: 'vins',
+  boisson_fermentee: 'vins',
+  prod_interm_vdl_vdn: 'vins',
+  prod_interm_autre: 'spiritueux',
+  biere_legere: 'bieres',
+  biere: 'bieres',
+  petite_brasserie: 'bieres',
+  rhum_dom: 'spiritueux',
+  liqueur: 'spiritueux',
+  spiritueux: 'spiritueux',
+  rhum_hors_dom: 'spiritueux',
+};
+
+/** Product category slug → the most likely fiscal category (for « prix hors droits »). */
+export function defaultFiscalSlug(categorySlug: string | null | undefined): string {
+  if (categorySlug === 'vins') return 'vin_tranquille';
+  if (categorySlug === 'bieres') return 'biere';
+  return 'spiritueux';
+}
+
+/** « TVA 20 % », « TVA 5,5 % », « sans TVA ». */
+export function tvaLabel(tva: number): string {
+  if (!(tva > 0)) return 'sans TVA';
+  const pct = round2(tva * 100);
+  return `TVA ${formatPercent(pct, Number.isInteger(pct) ? 0 : 1)}`;
+}
+
+// ─── Usual service of a category (lot 2, UX audit n° 6) ───────────────────
+
+export interface UsualServices {
+  /** Service keys to switch on (service type ids, or CUSTOM_DOSE). */
+  keys: string[];
+  /** Dose of the CUSTOM_DOSE pseudo-service (à l’unité: the whole container). */
+  customDoseCl: number | null;
+}
+
+type ServiceTypeLike = { id: string; name: string; volumeCl: number; sortOrder: number };
+
+const near = (a: number, b: number) => Math.abs(a - b) < 0.01;
+
+/**
+ * The service a bar usually sells a category in, preselected after a bottle
+ * scan: spirits → « Verre 5 cl » (if the user has it), wines → « Verre de vin
+ * 12 cl », draught beer (a keg) → « Demi » + « Pinte », bottled beer and
+ * softs → à l’unité (the whole container). Null when nothing fits (the user
+ * picks the service). Service types are the user's own (GET /api/servings).
+ */
+export function usualServices(
+  categorySlug: string | null | undefined,
+  containerCl: number | null | undefined,
+  servingTypes: ServiceTypeLike[],
+): UsualServices | null {
+  const cl = containerCl && containerCl > 0 ? containerCl : 0;
+  const fits = (t: ServiceTypeLike) => !(cl > 0) || t.volumeCl <= cl;
+  const sorted = [...servingTypes].filter(fits).sort((a, b) => a.sortOrder - b.sortOrder || a.volumeCl - b.volumeCl);
+  const find = (vol: number, name?: RegExp) => sorted.find((t) => near(t.volumeCl, vol) && (!name || name.test(t.name))) ?? null;
+  const unit = (): UsualServices | null => (cl > 0 ? { keys: [CUSTOM_DOSE], customDoseCl: cl } : null);
+  switch (categorySlug) {
+    case 'spiritueux': {
+      const t = find(5, /verre/i) ?? find(5);
+      return t ? { keys: [t.id], customDoseCl: null } : null;
+    }
+    case 'vins': {
+      const t = find(12, /vin|verre/i) ?? find(12);
+      return t ? { keys: [t.id], customDoseCl: null } : null;
+    }
+    case 'bieres': {
+      if (cl >= 1000) {
+        const demi = find(25, /demi/i) ?? find(25);
+        const pinte = find(50, /pinte/i) ?? find(50);
+        const keys = [demi?.id, pinte?.id].filter((k): k is string => !!k);
+        return keys.length ? { keys, customDoseCl: null } : { keys: [CUSTOM_DOSE], customDoseCl: 25 };
+      }
+      return unit();
+    }
+    case 'softs':
+      return cl > 0 && cl <= 50 ? unit() : cl > 0 ? { keys: [CUSTOM_DOSE], customDoseCl: 25 } : null;
+    default:
+      return null;
+  }
+}

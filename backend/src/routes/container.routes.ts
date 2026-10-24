@@ -1,7 +1,9 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { authenticate } from '../middleware/auth';
+import { userWriteLimiter } from '../middleware/userRateLimit';
 import * as containerService from '../services/container.service';
+import { sendKnownError } from '../utils/validation';
 
 const router = Router();
 
@@ -27,19 +29,19 @@ router.get('/', async (req: Request, res: Response) => {
 });
 
 // POST /api/containers - Create a custom container
-router.post('/', async (req: Request, res: Response) => {
+router.post('/', userWriteLimiter, async (req: Request, res: Response) => {
   try {
     const data = createSchema.parse(req.body);
     const container = await containerService.createContainer(req.user!.userId, data);
     res.status(201).json(container);
   } catch (err: any) {
-    const status = err.name === 'ZodError' ? 400 : 500;
-    res.status(status).json({ error: err.name === 'ZodError' ? err.message : 'Erreur serveur' });
+    if (sendKnownError(res, err)) return;
+    res.status(500).json({ error: 'Erreur serveur' });
   }
 });
 
 // PUT /api/containers/:id - Update a custom container
-router.put('/:id', async (req: Request, res: Response) => {
+router.put('/:id', userWriteLimiter, async (req: Request, res: Response) => {
   try {
     const data = updateSchema.parse(req.body);
     const container = await containerService.updateContainer(req.user!.userId, req.params.id, data);
@@ -49,13 +51,13 @@ router.put('/:id', async (req: Request, res: Response) => {
     }
     res.json(container);
   } catch (err: any) {
-    const status = err.name === 'ZodError' ? 400 : 500;
-    res.status(status).json({ error: err.name === 'ZodError' ? err.message : 'Erreur serveur' });
+    if (sendKnownError(res, err)) return;
+    res.status(500).json({ error: 'Erreur serveur' });
   }
 });
 
 // DELETE /api/containers/:id - Delete a custom container
-router.delete('/:id', async (req: Request, res: Response) => {
+router.delete('/:id', userWriteLimiter, async (req: Request, res: Response) => {
   try {
     const deleted = await containerService.deleteContainer(req.user!.userId, req.params.id);
     if (!deleted) {

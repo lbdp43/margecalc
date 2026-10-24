@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { authenticate } from '../middleware/auth';
 import * as userService from '../services/user.service';
+import { sendKnownError } from '../utils/validation';
 
 const router = Router();
 
@@ -29,8 +30,19 @@ router.patch('/me', async (req: Request, res: Response) => {
     const user = await userService.updateUser(req.user!.userId, data);
     res.json(user);
   } catch (err: any) {
-    const status = err.name === 'ZodError' ? 400 : 500;
-    res.status(status).json({ error: err.name === 'ZodError' ? err.message : 'Erreur serveur' });
+    if (sendKnownError(res, err)) return;
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// Delete all user data (products, recipes, etc.) — keeps the account
+router.delete('/me/data', async (req: Request, res: Response) => {
+  try {
+    await userService.deleteUserData(req.user!.userId);
+    res.json({ success: true });
+  } catch (err) {
+    console.error('[USER] Error deleting user data:', err);
+    res.status(500).json({ error: 'Erreur serveur' });
   }
 });
 

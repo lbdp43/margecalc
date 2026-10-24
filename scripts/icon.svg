@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- Background -->
+  <rect width="1024" height="1024" rx="220" fill="#1B4332"/>
+
+  <!-- Subtle circle -->
+  <circle cx="512" cy="480" r="340" fill="none" stroke="#2D6A4F" stroke-width="12" opacity="0.4"/>
+
+  <!-- Pot -->
+  <!-- Pot rim -->
+  <rect x="370" y="590" width="284" height="40" rx="16" fill="#40916C"/>
+  <!-- Pot body -->
+  <path d="M390,630 L410,740 Q415,760 435,760 L589,760 Q609,760 614,740 L634,630 Z" fill="#2D6A4F"/>
+  <!-- Pot highlight -->
+  <path d="M400,630 L415,720 Q418,735 430,735 L440,735 L420,630 Z" fill="#3A8B6E" opacity="0.5"/>
+
+  <!-- Euro coin on pot -->
+  <circle cx="512" cy="700" r="28" fill="#3A8B6E" stroke="#4CAF7D" stroke-width="3"/>
+  <text x="512" y="712" text-anchor="middle" font-family="Arial, sans-serif" font-weight="bold" font-size="32" fill="#D8F3DC">&#8364;</text>
+
+  <!-- Main stem -->
+  <path d="M512,590 Q510,480 508,350 Q506,280 512,240" fill="none" stroke="#40916C" stroke-width="12" stroke-linecap="round"/>
+
+  <!-- Leaves - Left side -->
+  <!-- Bottom left leaf -->
+  <path d="M508,540 Q440,510 390,530 Q420,490 508,520" fill="#2D6A4F"/>
+  <path d="M508,530 L420,515" fill="none" stroke="#1B4332" stroke-width="1.5" opacity="0.4"/>
+
+  <!-- Mid-left leaf -->
+  <path d="M510,460 Q430,420 370,450 Q410,390 510,440" fill="#40916C"/>
+  <path d="M510,450 L410,425" fill="none" stroke="#2D6A4F" stroke-width="1.5" opacity="0.4"/>
+
+  <!-- Upper-left leaf -->
+  <path d="M510,380 Q450,330 395,355 Q430,300 510,360" fill="#2D6A4F"/>
+  <path d="M510,370 L430,340" fill="none" stroke="#1B4332" stroke-width="1.5" opacity="0.4"/>
+
+  <!-- Top-left small leaf -->
+  <path d="M510,310 Q470,275 440,290 Q460,260 510,295" fill="#40916C"/>
+
+  <!-- Leaves - Right side -->
+  <!-- Bottom right leaf -->
+  <path d="M516,510 Q580,475 640,500 Q610,460 516,490" fill="#40916C"/>
+  <path d="M516,500 L600,482" fill="none" stroke="#2D6A4F" stroke-width="1.5" opacity="0.4"/>
+
+  <!-- Mid-right leaf -->
+  <path d="M514,430 Q590,395 645,420 Q605,365 514,410" fill="#2D6A4F"/>
+  <path d="M514,420 L610,398" fill="none" stroke="#1B4332" stroke-width="1.5" opacity="0.4"/>
+
+  <!-- Upper-right leaf -->
+  <path d="M512,355 Q570,315 620,335 Q585,285 512,340" fill="#40916C"/>
+  <path d="M512,345 L585,320" fill="none" stroke="#2D6A4F" stroke-width="1.5" opacity="0.4"/>
+
+  <!-- Top-right small leaf -->
+  <path d="M512,290 Q555,260 575,275 Q558,248 512,278" fill="#2D6A4F"/>
+
+  <!-- New growth at top (light green) -->
+  <path d="M512,250 Q490,215 465,228 Q485,200 512,230" fill="#D8F3DC"/>
+  <path d="M512,250 Q535,215 558,228 Q538,200 512,230" fill="#B7E4C7"/>
+
+  <!-- Tiny tip -->
+  <ellipse cx="512" cy="215" rx="8" ry="12" fill="#D8F3DC"/>
+
+  <!-- Sparkle / growth dots -->
+  <circle cx="460" cy="200" r="4" fill="#D8F3DC" opacity="0.6"/>
+  <circle cx="570" cy="210" r="3" fill="#D8F3DC" opacity="0.5"/>
+  <circle cx="490" cy="180" r="3" fill="#D8F3DC" opacity="0.4"/>
+</svg>
