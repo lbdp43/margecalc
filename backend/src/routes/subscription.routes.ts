@@ -178,8 +178,19 @@ router.post('/portal', authenticate, async (req: Request, res: Response) => {
 
 // POST /api/subscription/webhook — Stripe webhook handler
 router.post('/webhook', async (req: Request, res: Response) => {
-  const stripe = getStripe();
+  // The app is free: Stripe is usually not configured. Never let getStripe() throw outside a
+  // try (an escaped async rejection would crash the whole process).
+  if (!config.stripeSecretKey || !config.stripeWebhookSecret) {
+    return res.status(503).json({ error: 'Paiement non configuré' });
+  }
+  let stripe: Stripe;
+  try {
+    stripe = getStripe();
+  } catch {
+    return res.status(503).json({ error: 'Paiement non configuré' });
+  }
   const sig = req.headers['stripe-signature'] as string;
+  if (!sig) return res.status(400).json({ error: 'Signature invalide' });
 
   let event: Stripe.Event;
   try {

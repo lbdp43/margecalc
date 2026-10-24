@@ -1,502 +1,533 @@
-import React, { useState, useCallback } from 'react';
-import { View, Text, StyleSheet, TextInput, Image, TouchableOpacity } from 'react-native';
-import { alert, confirm } from '../../utils/alert';
-import { NativeStackScreenProps } from '@react-navigation/native-stack';
+/**
+ * Product detail (Produits › ProductDetail).
+ *
+ *   NavBar (back · title once the name scrolls away · « … » actions)
+ *   with a photo: the whole bottle (contain) over its blurred thumbnail, then the name
+ *   without one: icon tile · name · category · meta · « Ajouter une photo »
+ *   key numbers with count-up: Marge · Coefficient · Gain par dose · Gain par bouteille/fût
+ *   services: Prix TTC / HT · Coût · Gain · margin badge (tap → quick price change)
+ *   Achat & fiscalité facts (« Prix d’achat HT » opens the purchase price sheet,
+ *   lot 2 n° 8) · purchase-price history (sparkline)
+ *   « Prix à vérifier » badge while `priceToReview` (an invoice computed the price ×4)
+ *   Modifier le produit · Supprimer le produit
+ *
+ * Opens instantly from the list cache (placeholder), then refreshes: detail and
+ * history use staleTime 0 + refetchOnMount 'always', and refetch on focus, so an
+ * edit made in the form shows at once (RC3). What the detail learns is merged
+ * back into the list, so the two never disagree. The offline copy never holds
+ * the full photo (list/detailCache).
+ */
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { LayoutChangeEvent, NativeScrollEvent, NativeSyntheticEvent, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Ionicons } from '@expo/vector-icons';
-import { Product, ProductWithMargin, ServingType, ServingMarginResult, calculateServingMargin, MARGIN_COLOR_MAP } from '@margebar/shared';
-import { ScreenWrapper } from '../../components/ui/ScreenWrapper';
-import { YinYangSpinner } from '../../components/ui/YinYangSpinner';
-import { ServingTypeIcon } from '../../components/ui/ServingTypeIcon';
-import { Button } from '../../components/ui/Button';
-import { Card } from '../../components/ui/Card';
-import * as servingService from '../../services/serving.service';
+import { useQueryClient } from '@tanstack/react-query';
+import { calculateServingMargin, ProductWithMargin } from '@margebar/shared';
+import {
+  Button,
+  Card,
+  EmptyState,
+  FadeIn,
+  IconButton,
+  NavBar,
+  ProductActionsSheet,
+  Screen,
+  SectionHeader,
+  ValueRow,
+  categoryIcon,
+  servingLabel,
+  sortedServings,
+  toast,
+  useDelayedLoading,
+} from '../../components/ui';
+import { servingIconName } from '../../components/ui/ServingTypeIcon';
+import { layout, marginColors, palette, type } from '../../theme';
+import { formatCoeff, formatDegree, formatEuro, formatNumber, formatPercent, formatVolumeCl, NBSP, plural } from '../../utils/format';
+import { getMarginZone, useMarginThresholds } from '../../utils/marginThresholds';
+import { doseLabel, soldWhole } from '../../utils/servings';
+import { afterProductDeleted, goToProduct, goToProductList, openProductForm } from '../../navigation/routes';
+import { useOfflineQuery } from '../../hooks/useOfflineQuery';
 import * as productService from '../../services/product.service';
-import { PriceHistoryEntry } from '../../services/product.service';
-import { colors, spacing, borderRadius, typography, shadows, fonts } from '../../theme';
+import type { PriceHistoryEntry } from '../../services/product.service';
+import {
+  DetailIdentity,
+  DetailSkeleton,
+  dosesLabel,
+  EditableValueRow,
+  formatShortDate,
+  KeyTile,
+  keyValueSize,
+  PhotoHero,
+  PriceHistoryCard,
+  ServiceFigures,
+  ServiceRow,
+} from './list/DetailParts';
+import { persistableProduct, pruneDetailCaches, useLeanOfflineQuery } from './list/detailCache';
+import { DOSE_KEY, fixTarget, PriceEditSheet, PriceEditTarget } from './list/PriceEditSheet';
+import { PurchasePriceSheet } from './list/PurchasePriceSheet';
+import { apiStatus, loadErrorMessage, useProductActions } from './list/productActions';
 
 type Props = NativeStackScreenProps<any, 'ProductDetail'>;
 
-export function ProductDetailScreen({ route, navigation }: Props) {
-  const productId = (route.params as any)?.productId as string;
-  const [product, setProduct] = useState<ProductWithMargin | null>(null);
-  const [servingTypes, setServingTypes] = useState<ServingType[]>([]);
-  const [savedServings, setSavedServings] = useState<ServingMarginResult[]>([]);
-  const [prices, setPrices] = useState<Record<string, string>>({});
-  const [priceHistory, setPriceHistory] = useState<PriceHistoryEntry[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const queryClient = useQueryClient();
+/** « bouteille », or « fût » for kegs (10 L and more). */
+function containerNoun(cl: number): string {
+  return cl >= 1000 ? 'fût' : 'bouteille';
+}
 
-  const deleteMutation = useMutation({
-    mutationFn: () => productService.deleteProduct(productId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['products'] });
-      navigation.navigate('ProductList');
-    },
-    onError: () => alert('Erreur', 'Impossible de supprimer le produit'),
+/** A long supplier reads better under its label than squeezed beside it. */
+const LONG_VALUE = 24;
+
+function servicesOf(product: ProductWithMargin): ServiceFigures[] {
+  const list = sortedServings(product);
+  const out: ServiceFigures[] = [];
+  list.forEach((s, i) => {
+    if (!s.servingType) return;
+    try {
+      const r = calculateServingMargin(product.purchasePriceHT, product.containerVolumeCl, product.tvaRate, s.servingType, s.sellingPriceTTC);
+      out.push({
+        key: s.servingTypeId,
+        label: servingLabel(s.servingType.name, s.servingType.volumeCl),
+        // The one service-icon mapping (form chips, Réglages, here).
+        icon: servingIconName(s.servingType.name, s.servingType.volumeCl),
+        priceTTC: r.sellingPriceTTC,
+        priceHT: r.sellingPriceHT,
+        cost: r.costPerServingHT,
+        gain: r.marginPerServingHT,
+        gainPerContainer: r.marginPerContainer,
+        perContainer: r.servingsPerContainer,
+        margin: r.marginPercent,
+        primary: i === 0 && list.length > 1,
+      });
+    } catch {
+      // A service priced at 0 € cannot be computed: skip it rather than crash.
+    }
   });
+  if (out.length) return out;
+  const c = product.computed;
+  // Same name as the card and the quick sheet: « À l’unité » for a can or a bottle sold whole.
+  const whole = soldWhole(product.containerVolumeCl, product.doseVolumeCl);
+  return [
+    {
+      key: 'dose',
+      label: doseLabel(product.containerVolumeCl, product.doseVolumeCl),
+      meta: whole ? `1${NBSP}${containerNoun(product.containerVolumeCl)} de ${formatVolumeCl(product.containerVolumeCl)}` : undefined,
+      icon: categoryIcon(product.category?.slug),
+      priceTTC: c.sellingPriceTTC,
+      priceHT: c.sellingPriceHT,
+      cost: c.costPerDoseHT,
+      gain: c.marginPerDoseHT,
+      gainPerContainer: c.marginPerContainer,
+      perContainer: c.glassesPerContainer,
+      margin: c.marginPercent,
+      primary: false,
+    },
+  ];
+}
 
-  useFocusEffect(
-    useCallback(() => {
-      let mounted = true;
-      const loadData = async () => {
-        setLoading(true);
-        try {
-          const [productRes, typesRes, servingsRes, historyRes] = await Promise.all([
-            productService.getProduct(productId),
-            servingService.getServingTypes(),
-            servingService.getProductServings(productId),
-            productService.getPriceHistory(productId),
-          ]);
-          if (!mounted) return;
-          setProduct(productRes);
-          setServingTypes(typesRes);
-          setSavedServings(servingsRes);
-          setPriceHistory(historyRes);
+/** What the list card shows: when it differs, the list entry is refreshed from the detail. */
+function listSignature(p: ProductWithMargin): string {
+  const servings = (p.servings ?? []).map((s) => `${s.servingTypeId}:${s.sellingPriceTTC}`).join(',');
+  return [p.updatedAt, p.name, p.categoryId, p.purchasePriceHT, p.sellingPriceTTC, p.containerVolumeCl, p.computed?.marginPercent, servings, p.thumbnailUrl?.length ?? 0, p.priceToReview].join('|');
+}
 
-          const priceMap: Record<string, string> = {};
-          for (const s of servingsRes) {
-            priceMap[s.servingType.id] = s.sellingPriceTTC.toFixed(2).replace('.', ',');
-          }
-          setPrices(priceMap);
-        } catch {
-          if (mounted) alert('Erreur', 'Impossible de charger le produit');
-        } finally {
-          if (mounted) setLoading(false);
-        }
-      };
-      loadData();
-      return () => { mounted = false; };
-    }, [productId])
+export function ProductDetailScreen({ route, navigation: nav }: Props) {
+  const navigation = nav as any;
+  const productId = (route.params as { productId?: string } | undefined)?.productId;
+  const queryClient = useQueryClient();
+  const t = useMarginThresholds();
+  const actions = useProductActions();
+  const [deleted, setDeleted] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [actionsOpen, setActionsOpen] = useState(false);
+  const [priceTarget, setPriceTarget] = useState<PriceEditTarget | null>(null);
+  const [purchaseOpen, setPurchaseOpen] = useState(false);
+  const [titleShown, setTitleShown] = useState(false);
+  const [pulling, setPulling] = useState(false);
+  const titleRef = useRef(false);
+  /** Scroll offset past which the name is hidden under the NavBar (measured). */
+  const titleAfter = useRef(Number.POSITIVE_INFINITY);
+  const { width } = useWindowDimensions();
+  // Narrow phones: the tile labels need the room the decorative icons take.
+  const tileIcons = width >= 380;
+  // The content column (Screen gutters), and the text width inside one of the two
+  // tile columns (gap 10, padding 14, border 1).
+  const contentWidth = width - layout.gutter * 2;
+  const tileTextWidth = (contentWidth - 10) / 2 - 30;
+
+  useEffect(() => {
+    pruneDetailCaches();
+  }, []);
+
+  // Open instantly with what the list already knows (no photo yet), then refresh.
+  const fromList = useMemo(
+    () => queryClient.getQueryData<ProductWithMargin[]>(productService.productKeys.list)?.find((p) => p.id === productId),
+    [queryClient, productId],
   );
 
-  const getLocalMargin = (st: ServingType): ServingMarginResult | null => {
-    if (!product) return null;
-    const raw = prices[st.id];
-    if (!raw) return null;
-    const price = parseFloat(raw.replace(',', '.'));
-    if (isNaN(price) || price <= 0) return null;
-    return calculateServingMargin(
-      product.purchasePriceHT,
-      product.containerVolumeCl,
-      product.tvaRate,
-      st,
-      price,
-    );
+  const q = useLeanOfflineQuery<ProductWithMargin>(
+    productService.productKeys.detail(productId ?? ''),
+    () => productService.getProduct(productId as string),
+    persistableProduct,
+    {
+      enabled: !!productId && !deleted,
+      staleTime: 0,
+      refetchOnMount: 'always',
+      placeholderData: fromList,
+    },
+  );
+  const history = useOfflineQuery<PriceHistoryEntry[]>(productService.productKeys.priceHistory(productId ?? ''), () => productService.getPriceHistory(productId as string), {
+    enabled: !!productId && !deleted,
+    staleTime: 0,
+    refetchOnMount: 'always',
+  });
+
+  // Keep the last known product on screen while leaving after a delete.
+  const last = useRef<ProductWithMargin | undefined>(undefined);
+  if (q.data) last.current = q.data;
+  const product = q.data ?? last.current;
+  const isFull = !!q.data && !q.isPlaceholderData && !q.isCachedData;
+
+  // The detail just learnt something the list card does not show yet (a price
+  // changed on another device): update that card, so the two never disagree.
+  useEffect(() => {
+    const d = q.data;
+    if (!d || !isFull || deleted || !q.isFetchedAfterMount) return;
+    const list = queryClient.getQueryData<ProductWithMargin[]>(productService.productKeys.list);
+    const i = list ? list.findIndex((p) => p.id === d.id) : -1;
+    if (!list || i < 0 || listSignature(list[i]) === listSignature(d)) return;
+    const next = [...list];
+    next[i] = { ...list[i], ...persistableProduct(d) };
+    queryClient.setQueryData(productService.productKeys.list, next);
+  }, [q.data, isFull, deleted, q.isFetchedAfterMount, queryClient]);
+
+  // Coming back from the form (or another tab): refresh at once.
+  const refetchRef = useRef(() => {});
+  refetchRef.current = () => {
+    if (deleted || !productId) return;
+    q.refetch();
+    history.refetch();
   };
-
-  const handleSave = async () => {
-    if (!product) return;
-    setSaving(true);
+  const onPull = useCallback(async () => {
+    setPulling(true);
     try {
-      const servings = Object.entries(prices)
-        .map(([servingTypeId, raw]) => ({
-          servingTypeId,
-          sellingPriceTTC: parseFloat(raw.replace(',', '.')),
-        }))
-        .filter((s) => !isNaN(s.sellingPriceTTC) && s.sellingPriceTTC > 0);
-
-      if (servings.length === 0) {
-        alert('Info', 'Entrez au moins un prix de vente');
-        setSaving(false);
+      await Promise.all([q.refetch(), history.refetch()]);
+    } finally {
+      setPulling(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [q.refetch, history.refetch]);
+  const firstFocus = useRef(true);
+  useFocusEffect(
+    useCallback(() => {
+      if (firstFocus.current) {
+        firstFocus.current = false;
         return;
       }
+      refetchRef.current();
+    }, []),
+  );
 
-      const results = await servingService.upsertProductServings(productId, servings);
-      setSavedServings(results);
-      alert('Succès', 'Prix de vente enregistrés');
-    } catch {
-      alert('Erreur', 'Impossible de sauvegarder');
-    } finally {
-      setSaving(false);
+  const onScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const show = e.nativeEvent.contentOffset.y > titleAfter.current;
+    if (show !== titleRef.current) {
+      titleRef.current = show;
+      setTitleShown(show);
     }
-  };
+  }, []);
+  // Show the NavBar title once the name has scrolled under the bar (above
+  // « Ajouter une photo » when there is no photo).
+  const belowName = useRef(0);
+  const onTopLayout = useCallback((e: LayoutChangeEvent) => {
+    const { y, height } = e.nativeEvent.layout;
+    titleAfter.current = y + height - 24 - belowName.current;
+  }, []);
 
-  if (loading) {
-    return (
-      <ScreenWrapper>
-        <View style={styles.loadingContainer}>
-          <YinYangSpinner size={80} message="Chargement du produit…" />
-        </View>
-      </ScreenWrapper>
-    );
+  const edit = useCallback(() => {
+    if (product) openProductForm(navigation, { productId: product.id });
+  }, [navigation, product]);
+  const duplicate = useCallback(() => {
+    if (product) actions.duplicate(product, { onOpen: (id) => goToProduct(navigation, id) });
+  }, [actions, navigation, product]);
+  const remove = useCallback(async () => {
+    if (!product || deleting) return;
+    const ok = await actions.remove(product, { onConfirmed: () => setDeleting(true), beforeCacheUpdate: () => setDeleted(true) });
+    if (ok) afterProductDeleted(navigation);
+    else setDeleting(false);
+  }, [actions, navigation, product, deleting]);
+
+  // A toast left over from an earlier action must not come back after a sheet.
+  const openActions = useCallback(() => {
+    toast.clear();
+    setActionsOpen(true);
+  }, []);
+  const openPrice = useCallback((target: PriceEditTarget) => {
+    toast.clear();
+    setPriceTarget(target);
+  }, []);
+  const openPurchase = useCallback(() => {
+    toast.clear();
+    setPurchaseOpen(true);
+  }, []);
+
+  // « Corriger » (dashboard « À revoir », links): `?prix=conseille` opens the
+  // quick price sheet on the primary price, already set to the suggested price.
+  // The param is cleared once used, so « Retour » or a reload never reopens it.
+  const priceParam = (route.params as { prix?: string } | undefined)?.prix;
+  useEffect(() => {
+    if (!priceParam || !product || deleted) return;
+    const target = priceParam === 'conseille' ? fixTarget(product, t) : { key: undefined };
+    navigation.setParams({ prix: undefined });
+    if (target) openPrice(target);
+  }, [priceParam, product, deleted, t, navigation, openPrice]);
+
+  const services = useMemo(() => (product ? servicesOf(product) : []), [product]);
+  const hasRealServings = !!product?.servings?.length;
+
+  // ── states without a product ──
+  const showSkeleton = useDelayedLoading(!product && (q.isLoading || q.isFetching));
+  const offlineEmpty = useDelayedLoading(!product && !!q.isOffline, 400);
+  // Deleted elsewhere (another tab or device, or a page left mid-undo whose
+  // DELETE went through): the server's 404, or a delete still waiting, wins over
+  // a cached copy, which would otherwise keep showing a product that is gone.
+  const deletePending = !!productId && !deleted && productService.isDeletePending(productId);
+  const gone = !!productId && !deleted && (deletePending || apiStatus(q.error) === 404);
+  const notFound = !productId || gone || (!product && apiStatus(q.error) === 404);
+  const loadError = !product && !!q.error && !q.isFetching && !notFound;
+  // The device's offline copy of a product the server no longer has: dropped,
+  // so the next visit never shows it again.
+  const goneOnServer = gone && apiStatus(q.error) === 404;
+  useEffect(() => {
+    if (goneOnServer && productId) productService.dropOfflineProduct(productId);
+  }, [goneOnServer, productId]);
+
+  const header = (
+    <NavBar
+      title={titleShown && product ? product.name : ''}
+      trailing={
+        product && !deleted && !gone ? (
+          <IconButton icon="ellipsis-horizontal" onPress={openActions} accessibilityLabel="Plus d’actions" testID="detail-more" />
+        ) : null
+      }
+    />
+  );
+
+  if (!product || gone) {
+    let body: React.ReactNode = null;
+    if (notFound) {
+      body = (
+        <EmptyState
+          icon={deletePending ? 'trash-outline' : 'search'}
+          title={deletePending ? 'Produit supprimé' : 'Produit introuvable'}
+          text={deletePending ? 'Il ne fait plus partie de vos produits.' : 'Il a peut-être été supprimé, ou le lien n’est plus valable.'}
+          primary={{ label: 'Voir mes produits', icon: 'grid-outline', onPress: () => goToProductList(navigation) }}
+        />
+      );
+    } else if (offlineEmpty) {
+      body = <EmptyState variant="offline" text="Ce produit s’affichera dès le retour du réseau." />;
+    } else if (loadError) {
+      body = (
+        <EmptyState
+          icon="alert-circle-outline"
+          title="Impossible d’afficher ce produit"
+          text={loadErrorMessage(q.error)}
+          primary={{ label: 'Réessayer', icon: 'refresh', onPress: () => q.refetch() }}
+        />
+      );
+    } else if (showSkeleton) {
+      body = <DetailSkeleton />;
+    }
+    return <Screen header={header}>{body}</Screen>;
   }
 
-  if (!product) {
-    return (
-      <ScreenWrapper>
-        <Text style={styles.error}>Produit non trouvé</Text>
-      </ScreenWrapper>
-    );
-  }
-
-  const servingsPerContainer = (volumeCl: number) =>
-    Math.floor((product.containerVolumeCl / volumeCl) * 100) / 100;
+  const c = product.computed;
+  const zone = getMarginZone(c.marginPercent, t);
+  const noun = containerNoun(product.containerVolumeCl);
+  const primary = services[0];
+  const icon = categoryIcon(product.category?.slug);
+  const meta = [formatVolumeCl(product.containerVolumeCl), product.alcoholDegree > 0 ? formatDegree(product.alcoholDegree) : null, product.supplier || null]
+    .filter(Boolean)
+    .join(' · ');
+  const tva = product.tvaRate * 100;
+  const historyEntries = history.data ?? [];
+  // A photo is known from the detail (imageUrl) or already from the list (thumbnail / hasImage).
+  const hasPhoto = !!(product.imageUrl || product.thumbnailUrl || product.hasImage);
+  const updated = formatShortDate(product.updatedAt);
+  const doses = dosesLabel(c.glassesPerContainer);
+  // A free product (tap water…) has no cost: a coefficient means nothing there.
+  const coeffKnown = c.costPerDoseHT > 0 && isFinite(c.coefficient);
+  const fmtMargin = (n: number) => formatPercent(n);
+  const fmtCoeff = (n: number) => formatCoeff(n);
+  const fmtGain = (n: number) => formatEuro(n, { sign: true });
+  const tileSize = keyValueSize(
+    [fmtMargin(c.marginPercent), coeffKnown ? fmtCoeff(c.coefficient) : '—', fmtGain(c.marginPerDoseHT), fmtGain(c.marginPerContainer)],
+    tileTextWidth,
+  );
+  const supplierLong = (product.supplier ?? '').length > LONG_VALUE;
+  belowName.current = hasPhoto ? 0 : 58; // the tonal button (44) and its margin (14)
 
   return (
-    <ScreenWrapper>
-      {/* Back button */}
-      <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
-        <Ionicons name="arrow-back" size={20} color={colors.primary} />
-        <Text style={styles.backText}>Retour</Text>
-      </TouchableOpacity>
-
-      {/* Product header */}
-      {product.imageUrl && (
-        <Image source={{ uri: product.imageUrl }} style={styles.productImage} resizeMode="cover" />
-      )}
-
-      <View style={styles.headerCard}>
-        <Text style={styles.title}>{product.name}</Text>
-        <View style={styles.metaRow}>
-          <View style={styles.metaChip}>
-            <Ionicons name="pricetag-outline" size={14} color={colors.textSecondary} />
-            <Text style={styles.metaText}>{product.purchasePriceHT.toFixed(2)} € HT</Text>
-          </View>
-          <View style={styles.metaChip}>
-            <Ionicons name="cube-outline" size={14} color={colors.textSecondary} />
-            <Text style={styles.metaText}>{product.containerVolumeCl} cl</Text>
-          </View>
+    <Screen header={header} onScroll={onScroll} refreshing={pulling} onRefresh={onPull}>
+      <FadeIn>
+        <View onLayout={onTopLayout}>
+          {hasPhoto ? (
+            <View style={styles.photo}>
+              <PhotoHero
+                imageUrl={isFull ? product.imageUrl : null}
+                thumbnailUrl={product.thumbnailUrl}
+                name={product.name}
+                pending={!isFull && !q.isOffline && q.isFetching}
+              />
+            </View>
+          ) : null}
+          <DetailIdentity
+            name={product.name}
+            categoryName={product.category?.name}
+            icon={icon}
+            meta={meta}
+            withTile={!hasPhoto}
+            onAddPhoto={!hasPhoto && !deleted ? edit : undefined}
+            priceToReview={!!product.priceToReview}
+            // The quick sheet on the primary price: saving it (even unchanged) confirms it.
+            onReview={deleted ? undefined : () => openPrice({})}
+          />
         </View>
+      </FadeIn>
+
+      <FadeIn delay={60} style={styles.tiles}>
+        <View style={styles.tileRow}>
+          <KeyTile
+            label="Marge"
+            value={c.marginPercent}
+            format={fmtMargin}
+            size={tileSize}
+            zone={zone}
+            highlight
+            icon={tileIcons ? 'pie-chart-outline' : undefined}
+            caption={`objectif ${formatPercent(t.good, 0)}`}
+            a11y={`Marge ${formatNumber(c.marginPercent, 1)} pour cent, ${marginColors[zone].label}, objectif ${formatNumber(t.good, 0)} pour cent`}
+          />
+          <KeyTile
+            label="Coefficient"
+            value={coeffKnown ? c.coefficient : null}
+            format={fmtCoeff}
+            size={tileSize}
+            icon={tileIcons ? 'layers-outline' : undefined}
+            caption={coeffKnown ? 'prix HT ÷ coût' : 'coût nul'}
+            delay={60}
+            a11y={coeffKnown ? `Coefficient ${formatNumber(c.coefficient, 2)}, prix hors taxes divisé par le coût` : 'Coefficient non calculable, coût nul'}
+          />
+        </View>
+        <View style={styles.tileRow}>
+          <KeyTile
+            label="Gain par dose"
+            value={c.marginPerDoseHT}
+            format={fmtGain}
+            size={tileSize}
+            valueColor={marginColors[zone].fg}
+            icon={tileIcons ? 'cash-outline' : undefined}
+            caption={primary ? `HT · ${primary.label}` : 'HT'}
+            delay={120}
+            a11y={`Gain par dose ${formatEuro(c.marginPerDoseHT)} hors taxes${primary ? `, ${primary.label}` : ''}`}
+          />
+          <KeyTile
+            label={`Gain par ${noun}`}
+            value={c.marginPerContainer}
+            format={fmtGain}
+            size={tileSize}
+            icon={tileIcons ? (noun === 'fût' ? 'beer-outline' : 'wine-outline') : undefined}
+            caption={doses}
+            delay={180}
+            a11y={`Gain par ${noun} ${formatEuro(c.marginPerContainer)} hors taxes, ${doses}`}
+          />
+        </View>
+      </FadeIn>
+
+      <FadeIn delay={120}>
+        <SectionHeader
+          title={hasRealServings ? 'Services' : 'Service'}
+          meta={hasRealServings ? plural(services.length, 'service') : 'dose du produit'}
+          style={styles.section}
+        />
+        <Card noPadding style={styles.servicesCard}>
+          {services.map((s, i) => (
+            <ServiceRow
+              key={s.key}
+              s={s}
+              zone={getMarginZone(s.margin, t)}
+              containerNoun={noun}
+              contentWidth={contentWidth}
+              last={i === services.length - 1}
+              // Always the quick sheet, products sold à l’unité included (lot 1 n° 5).
+              onPress={deleted ? undefined : () => openPrice({ key: hasRealServings ? s.key : DOSE_KEY })}
+            />
+          ))}
+        </Card>
+      </FadeIn>
+
+      <FadeIn delay={160}>
+        <SectionHeader title="Achat et fiscalité" style={styles.section} />
+        <Card padding={16} style={styles.factsCard}>
+          {deleted ? (
+            <ValueRow label="Prix d’achat HT" qualifier={`par ${noun}`} value={formatEuro(product.purchasePriceHT)} />
+          ) : (
+            <EditableValueRow
+              label="Prix d’achat HT"
+              qualifier={`par ${noun}`}
+              value={formatEuro(product.purchasePriceHT)}
+              onPress={openPurchase}
+              accessibilityLabel={`Prix d’achat HT par ${noun} : ${formatEuro(product.purchasePriceHT)}. Modifier le prix d’achat`}
+              testID="detail-purchase"
+            />
+          )}
+          <ValueRow label="Contenance" value={formatVolumeCl(product.containerVolumeCl)} />
+          <ValueRow label="Degré d’alcool" value={product.alcoholDegree > 0 ? formatDegree(product.alcoholDegree) : 'Sans alcool'} />
+          <ValueRow label="TVA" value={formatPercent(tva, Number.isInteger(Math.round(tva * 10) / 10) ? 0 : 1)} />
+          <ValueRow
+            label="Fournisseur"
+            value={product.supplier || 'Non renseigné'}
+            valueColor={product.supplier ? undefined : palette.text3}
+            style={supplierLong ? styles.stackedRow : undefined}
+            last
+          />
+        </Card>
+      </FadeIn>
+
+      {historyEntries.length ? (
+        <FadeIn delay={40}>
+          <SectionHeader title="Historique du prix d’achat" meta={plural(historyEntries.length, 'changement')} style={styles.section} />
+          <PriceHistoryCard entries={historyEntries} />
+        </FadeIn>
+      ) : null}
+
+      <View style={styles.actions}>
+        <Button title="Modifier le produit" icon="create-outline" onPress={edit} fullWidth testID="detail-edit" />
+        <Button title="Supprimer le produit" icon="trash-outline" variant="destructive" onPress={remove} loading={deleting} fullWidth testID="detail-delete" />
+        {updated ? <Text style={styles.updated}>Modifié le {updated}</Text> : null}
       </View>
 
-      {/* Serving types with prices */}
-      <Card style={styles.section}>
-        <View style={styles.sectionHeader}>
-          <View style={styles.sectionDot} />
-          <Text style={styles.sectionTitle}>Prix de vente par service</Text>
-        </View>
-        <Text style={styles.sectionDesc}>
-          Entrez le prix TTC pour chaque type de service
-        </Text>
-
-        {servingTypes.map((st) => {
-          const margin = getLocalMargin(st);
-          const nbServings = servingsPerContainer(st.volumeCl);
-
-          return (
-            <View key={st.id} style={styles.servingBlock}>
-              <View style={styles.servingHeader}>
-                <View style={styles.servingNameRow}>
-                  <ServingTypeIcon name={st.name} icon={st.icon} size={36} />
-                  <View>
-                    <Text style={styles.servingName}>{st.name}</Text>
-                    <Text style={styles.servingMeta}>{st.volumeCl} cl · {nbServings.toFixed(1)} / bouteille</Text>
-                  </View>
-                </View>
-                <View style={styles.priceInputWrap}>
-                  <TextInput
-                    style={styles.priceInput}
-                    value={prices[st.id] || ''}
-                    onChangeText={(v) => setPrices((prev) => ({ ...prev, [st.id]: v }))}
-                    keyboardType="numeric"
-                    placeholder="0,00"
-                    placeholderTextColor={colors.tabBarInactive}
-                  />
-                  <Text style={styles.priceCurrency}>€</Text>
-                </View>
-              </View>
-
-              {margin && (
-                <View style={styles.marginGrid}>
-                  <View style={styles.marginItem}>
-                    <Text style={styles.marginLabel}>Coût</Text>
-                    <Text style={styles.marginValue}>{margin.costPerServingHT.toFixed(2)} €</Text>
-                  </View>
-                  <View style={styles.marginItem}>
-                    <Text style={styles.marginLabel}>Marge/dose</Text>
-                    <Text style={[styles.marginValue, { color: MARGIN_COLOR_MAP[margin.colorCode] }]}>
-                      {margin.marginPerServingHT.toFixed(2)} €
-                    </Text>
-                  </View>
-                  <View style={[styles.marginItem, styles.marginItemAccent]}>
-                    <Text style={styles.marginLabel}>Marge</Text>
-                    <Text style={[styles.marginValueBig, { color: MARGIN_COLOR_MAP[margin.colorCode] }]}>
-                      {margin.marginPercent.toFixed(1)}%
-                    </Text>
-                  </View>
-                  <View style={styles.marginItem}>
-                    <Text style={styles.marginLabel}>Gain/bout.</Text>
-                    <Text style={[styles.marginValue, { color: MARGIN_COLOR_MAP[margin.colorCode] }]}>
-                      {margin.marginPerContainer.toFixed(2)} €
-                    </Text>
-                  </View>
-                </View>
-              )}
-            </View>
-          );
-        })}
-      </Card>
-
-      <Button title="Enregistrer les prix" onPress={handleSave} loading={saving} />
-
-      <Button
-        title="Modifier le produit"
-        onPress={() => navigation.navigate('ProductForm', { productId: product.id })}
-        variant="outline"
-        style={styles.editBtn}
+      <ProductActionsSheet
+        product={actionsOpen ? product : null}
+        onClose={() => setActionsOpen(false)}
+        onChangePrice={() => openPrice({})}
+        onEdit={edit}
+        onDuplicate={duplicate}
+        onDelete={remove}
       />
-
-      {priceHistory.length > 0 && (
-        <Card style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <View style={styles.sectionDot} />
-            <Text style={styles.sectionTitle}>Historique des prix</Text>
-          </View>
-          {priceHistory.map((entry) => {
-            const diff = entry.newPrice - entry.oldPrice;
-            const isUp = diff > 0;
-            return (
-              <View key={entry.id} style={styles.historyRow}>
-                <View style={styles.historyInfo}>
-                  <Text style={styles.historyPrice}>
-                    {entry.oldPrice.toFixed(2)} € → {entry.newPrice.toFixed(2)} €
-                  </Text>
-                  <Text style={styles.historyDate}>
-                    {new Date(entry.changedAt).toLocaleDateString('fr-FR')} · {entry.source === 'scan' ? 'Scan' : 'Manuel'}
-                  </Text>
-                </View>
-                <View style={[styles.historyBadge, { backgroundColor: isUp ? colors.marginRed + '12' : colors.marginGreen + '12' }]}>
-                  <Ionicons name={isUp ? 'arrow-up' : 'arrow-down'} size={14} color={isUp ? colors.marginRed : colors.marginGreen} />
-                  <Text style={[styles.historyDiff, { color: isUp ? colors.marginRed : colors.marginGreen }]}>
-                    {Math.abs(diff).toFixed(2)} €
-                  </Text>
-                </View>
-              </View>
-            );
-          })}
-        </Card>
-      )}
-
-      <Button
-        title="Supprimer le produit"
-        onPress={() => {
-          confirm(
-            'Supprimer',
-            `Supprimer "${product.name}" ?`,
-            () => deleteMutation.mutate(),
-            'Supprimer',
-            true,
-          );
-        }}
-        variant="danger"
-        style={styles.deleteBtn}
-        loading={deleteMutation.isPending}
-      />
-
-      <View style={{ height: spacing.xl }} />
-    </ScreenWrapper>
+      <PriceEditSheet product={product} target={priceTarget} onClose={() => setPriceTarget(null)} />
+      <PurchasePriceSheet product={product} open={purchaseOpen} onClose={() => setPurchaseOpen(false)} />
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingTop: spacing.xxl,
-  },
-  backBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-    marginBottom: spacing.md,
-    alignSelf: 'flex-start',
-  },
-  backText: {
-    ...typography.bodySmall,
-    color: colors.primary,
-    fontWeight: '600',
-  },
-  productImage: {
-    width: '100%',
-    height: 200,
-    borderRadius: borderRadius.lg,
-    marginBottom: spacing.md,
-  },
-  headerCard: {
-    marginBottom: spacing.lg,
-  },
-  title: {
-    fontFamily: fonts.serif,
-    fontStyle: 'italic',
-    fontWeight: '500',
-    fontSize: 32,
-    letterSpacing: -0.6,
-    color: colors.text,
-    marginBottom: spacing.sm,
-  },
-  metaRow: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-  },
-  metaChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-    backgroundColor: colors.surface,
-    paddingHorizontal: spacing.sm + 2,
-    paddingVertical: spacing.xs + 2,
-    borderRadius: borderRadius.full,
-  },
-  metaText: {
-    ...typography.caption,
-    color: colors.textSecondary,
-    fontWeight: '600',
-  },
-  error: {
-    ...typography.body,
-    color: colors.marginRed,
-    textAlign: 'center',
-    marginTop: spacing.xl,
-  },
-  section: {
-    marginBottom: spacing.md,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    marginBottom: spacing.xs,
-  },
-  sectionDot: {
-    width: 4,
-    height: 18,
-    borderRadius: 2,
-    backgroundColor: colors.accent,
-  },
-  sectionTitle: {
-    ...typography.h3,
-    fontFamily: fonts.serif,
-    fontStyle: 'italic',
-    fontWeight: '500',
-    color: colors.text,
-    letterSpacing: -0.3,
-  },
-  sectionDesc: {
-    ...typography.caption,
-    color: colors.textSecondary,
-    marginBottom: spacing.md,
-    marginLeft: spacing.md + 4,
-  },
-  servingBlock: {
-    paddingVertical: spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  servingHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: spacing.sm,
-  },
-  servingNameRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-  },
-  servingName: {
-    ...typography.body,
-    fontWeight: '700',
-    color: colors.text,
-  },
-  servingMeta: {
-    ...typography.caption,
-    color: colors.textSecondary,
-    marginTop: 1,
-  },
-  priceInputWrap: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  priceInput: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: borderRadius.md,
-    paddingHorizontal: spacing.sm + 2,
-    paddingVertical: spacing.sm,
-    width: 85,
-    textAlign: 'right',
-    ...typography.body,
-    fontWeight: '700',
-    color: colors.text,
-    backgroundColor: colors.inputBackground,
-  },
-  priceCurrency: {
-    ...typography.body,
-    fontWeight: '600',
-    color: colors.textSecondary,
-    marginLeft: spacing.xs,
-  },
-  marginGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.sm,
-  },
-  marginItem: {
-    flex: 1,
-    minWidth: '40%',
-    backgroundColor: colors.surface,
-    borderRadius: borderRadius.md,
-    padding: spacing.sm + 2,
-    alignItems: 'center',
-  },
-  marginItemAccent: {
-    backgroundColor: colors.light,
-  },
-  marginLabel: {
-    ...typography.caption,
-    color: colors.textSecondary,
-    marginBottom: 3,
-  },
-  marginValue: {
-    ...typography.bodySmall,
-    fontWeight: '700',
-    color: colors.text,
-  },
-  marginValueBig: {
-    ...typography.h3,
-    fontWeight: '800',
-  },
-  editBtn: {
-    marginTop: spacing.sm,
-  },
-  deleteBtn: {
-    marginTop: spacing.lg,
-  },
-  historyRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: spacing.sm + 2,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  historyInfo: {
-    flex: 1,
-  },
-  historyPrice: {
-    ...typography.bodySmall,
-    fontWeight: '700',
-    color: colors.text,
-  },
-  historyDate: {
-    ...typography.caption,
-    color: colors.textSecondary,
-    marginTop: 2,
-  },
-  historyBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: spacing.sm + 2,
-    paddingVertical: spacing.xs + 2,
-    borderRadius: borderRadius.full,
-    gap: 4,
-  },
-  historyDiff: {
-    ...typography.caption,
-    fontWeight: '700',
-  },
+  photo: { marginBottom: 20 },
+  tiles: { marginTop: 20, gap: 10 },
+  tileRow: { flexDirection: 'row', gap: 10 },
+  section: { marginTop: 28, marginBottom: 10 },
+  servicesCard: { overflow: 'hidden' },
+  factsCard: { paddingVertical: 4 },
+  // ValueRow with its value under the label (a long supplier never truncates the label).
+  stackedRow: { flexDirection: 'column', alignItems: 'flex-start', justifyContent: 'center', gap: 2 },
+  actions: { marginTop: 28, gap: 6 },
+  updated: { ...type.footnote, color: palette.text3, textAlign: 'center', marginTop: 6 },
 });

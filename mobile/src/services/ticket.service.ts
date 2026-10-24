@@ -3,11 +3,20 @@ import { api } from './api';
 export type TicketType = 'bug' | 'suggestion' | 'question';
 export type TicketStatus = 'open' | 'resolved';
 
-export const TICKET_TYPE_META: Record<TicketType, { label: string; icon: string; color: string }> = {
-  bug: { label: 'Bug', icon: 'bug-outline', color: '#C0392B' },
-  suggestion: { label: 'Suggestion', icon: 'bulb-outline', color: '#E67E22' },
-  question: { label: 'Question', icon: 'help-circle-outline', color: '#2D6A4F' },
+/**
+ * Display metadata per ticket type (labels in French, Ionicons glyph, icon
+ * tile tone from the D1 kit: `ListRow iconTone`).
+ */
+export const TICKET_TYPE_META: Record<
+  TicketType,
+  { label: string; icon: 'bug-outline' | 'bulb-outline' | 'help-circle-outline'; tone: 'bad' | 'trophy' | 'brand' }
+> = {
+  bug: { label: 'Bug', icon: 'bug-outline', tone: 'bad' },
+  suggestion: { label: 'Idée', icon: 'bulb-outline', tone: 'trophy' },
+  question: { label: 'Question', icon: 'help-circle-outline', tone: 'brand' },
 };
+
+export const TICKET_MESSAGE_MAX = 4000;
 
 export interface CreateTicketPayload {
   type: TicketType;
@@ -57,7 +66,7 @@ export async function getMyTickets(): Promise<MyTicket[]> {
 }
 
 export async function getTicketScreenshot(id: string): Promise<string | null> {
-  const res = await api.get<{ screenshotBase64: string | null }>(`/tickets/${id}/screenshot`);
+  const res = await api.get<{ screenshotBase64: string | null }>(`/tickets/${id}/screenshot`, { timeout: 30000 });
   return res.data.screenshotBase64;
 }
 

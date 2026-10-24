@@ -31,6 +31,8 @@ model User {
   scanUsages               ScanUsage[]
   tickets                  Ticket[]
   monthlyLogins            UserMonthlyLogin[]
+  categories               Category[]
+  invoiceAliases           InvoiceAlias[]
 }
 
 model UserMonthlyLogin {
@@ -104,13 +106,21 @@ model CustomContainer {
   @@index([userId])
 }
 
+/// userId null = built-in category shared by every account (seeded / created by an admin);
+/// otherwise a private category of that user (visible to them only).
+/// Built-in names and slugs are unique (partial unique indexes in migration 0005_user_categories).
 model Category {
   id        String    @id @default(uuid())
-  name      String    @unique
-  slug      String    @unique
+  userId    String?
+  user      User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  slug      String
   icon      String    @default("")
   sortOrder Int       @default(0)
   products  Product[]
+
+  @@unique([userId, slug])
+  @@index([userId])
 }
 
 model Product {
@@ -130,15 +140,41 @@ model Product {
   tvaRate             Float              @default(0.20)
   alcoholDegree       Float              @default(0)
   supplier            String?
+  /// Full photo as a data URI (~640 px JPEG, <= 300 000 chars). Never sent in product lists.
   imageUrl            String?
+  /// Small photo as a data URI (~160 px, <= 40 000 chars). Sent in product lists.
+  thumbnailUrl        String?
+  /// True when the selling price was derived by an invoice import (purchase ×4) and the owner
+  /// has not set a selling price since. Cleared by any selling/serving price write
+  /// (PUT /products/:id, PUT /products/:id/servings, POST /products/prices/batch).
+  priceToReview       Boolean            @default(false)
   createdAt           DateTime           @default(now())
   updatedAt           DateTime           @updatedAt
   priceHistory        PriceHistory[]
   servings            ProductServing[]
   recipeIngredients   RecipeIngredient[]
+  invoiceAliases      InvoiceAlias[]
 
   @@index([userId])
   @@index([categoryId])
+}
+
+/// Invoice label remembered for a supplier: the next invoice line from the same supplier with the
+/// same normalised name and container matches this product ('alias', see invoiceMatch.service.ts).
+/// supplierKey = normaliseSupplier(supplier); nameKey = "<normalised name>|<container cl>".
+model InvoiceAlias {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  supplierKey String
+  nameKey     String
+  productId   String
+  product     Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([userId, supplierKey, nameKey])
+  @@index([productId])
 }
 
 model ServingType {

@@ -1,665 +1,438 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import {
-  View, Text, StyleSheet, TouchableOpacity, Modal, TextInput,
-  ScrollView, KeyboardAvoidingView, Platform, Image,
-} from 'react-native';
+/**
+ * FeedbackModal — « Aide & retours » (Réglages, dashboard header).
+ *
+ *   <FeedbackModal visible={open} onClose={() => setOpen(false)} screenName="Tableau de bord" />
+ *   <FeedbackModal visible={open} onClose={…} initialTab="mine" />   // « Mes demandes »
+ *
+ * A full-height BottomSheet with two views:
+ * - « Nouveau message »: type chips (Bug · Idée · Question), the message, an
+ *   optional screenshot; « Envoyer » closes the sheet and shows a toast.
+ * - « Mes demandes »: the user's requests with the team's replies. Showing
+ *   the list marks every reply as read (the replies are visible right away);
+ *   the « Nouvelle réponse » badge stays on them until the sheet closes.
+ *
+ * Browser/Android back closes the sheet first, and it closes when its screen
+ * loses focus (`useSheetLifecycle`, shared with the Réglages sheets).
+ */
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Image, Platform, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
 import { Ionicons } from '@expo/vector-icons';
-import { alert } from '../../utils/alert';
+import { useQueryClient } from '@tanstack/react-query';
 import * as ticketService from '../../services/ticket.service';
-import { TICKET_TYPE_META } from '../../services/ticket.service';
-import type { TicketType, MyTicket } from '../../services/ticket.service';
-import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
+import { TICKET_MESSAGE_MAX, TICKET_TYPE_META } from '../../services/ticket.service';
+import type { MyTicket, TicketType } from '../../services/ticket.service';
+import { palette, radius, type } from '../../theme';
+import { haptics } from '../../theme/haptics';
+import { formatNumber } from '../../utils/format';
+import { SETTINGS_KEYS, useMyTickets } from '../../screens/settings/parts/data';
+import { formatCompactDate, formatLongDate, readableError } from '../../screens/settings/parts/helpers';
+import { ErrorLine, Sheet } from '../../screens/settings/parts/ui';
+import { Button, IconButton } from './Button';
+import { Chip } from './Chip';
+import { EmptyState } from './EmptyState';
+import { SegmentedControl } from './SegmentedControl';
+import { Skeleton } from './Skeleton';
+import { TextField } from './TextField';
+import { Badge } from './Badge';
+import { PressableScale } from './PressableScale';
+import { FadeIn, SwapFade } from './motion';
+import { toast } from './Toast';
 
-interface FeedbackModalProps {
+export interface FeedbackModalProps {
   visible: boolean;
   onClose: () => void;
+  /** Screen the user came from (stored with the ticket). */
   screenName?: string;
+  /** Which view opens first (default « Nouveau message »). */
+  initialTab?: 'new' | 'mine';
 }
 
 type Tab = 'new' | 'mine';
 
-const TYPE_OPTIONS: Array<{ value: TicketType; label: string; icon: string }> = [
-  { value: 'bug', label: 'Bug', icon: 'bug-outline' },
-  { value: 'suggestion', label: 'Suggestion', icon: 'bulb-outline' },
-  { value: 'question', label: 'Question', icon: 'help-circle-outline' },
-];
+const TYPES: TicketType[] = ['bug', 'suggestion', 'question'];
 
-export const FeedbackModal = React.memo(function FeedbackModal({
-  visible,
-  onClose,
-  screenName,
-}: FeedbackModalProps) {
-  const [tab, setTab] = useState<Tab>('new');
+const PLACEHOLDERS: Record<TicketType, string> = {
+  bug: 'Que s’est-il passé ? Sur quel écran, après quelle action ?',
+  suggestion: 'Quelle fonction vous ferait gagner du temps ?',
+  question: 'Posez votre question, nous répondons dans l’app.',
+};
 
-  // === New ticket state ===
-  const [type, setType] = useState<TicketType>('bug');
+const MINE_KEY = [...SETTINGS_KEYS.mine];
+const UNREAD_KEY = [...SETTINGS_KEYS.unread];
+const shortDate = formatCompactDate;
+
+export const FeedbackModal = React.memo(function FeedbackModal({ visible, onClose, screenName, initialTab = 'new' }: FeedbackModalProps) {
+  const qc = useQueryClient();
+  const { width } = useWindowDimensions();
+  const [tab, setTab] = useState<Tab>(initialTab);
+
+  // new message
+  const [kind, setKind] = useState<TicketType>('bug');
   const [message, setMessage] = useState('');
-  const [screenshotBase64, setScreenshotBase64] = useState<string | null>(null);
-  const [screenshotPreview, setScreenshotPreview] = useState<string | null>(null);
+  const [shot, setShot] = useState<{ dataUri: string; preview: string } | null>(null);
+  const [processing, setProcessing] = useState(false);
   const [sending, setSending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  // === My tickets state ===
-  const [myTickets, setMyTickets] = useState<MyTicket[]>([]);
-  const [loadingMine, setLoadingMine] = useState(false);
-  const [expandedId, setExpandedId] = useState<string | null>(null);
+  /** Replies marked read while this sheet is open: they keep their badge until it closes. */
+  const [fresh, setFresh] = useState<Set<string>>(() => new Set());
+  const marking = useRef(new Set<string>());
 
-  const resetForm = () => {
-    setType('bug');
-    setMessage('');
-    setScreenshotBase64(null);
-    setScreenshotPreview(null);
-  };
-
-  const loadMine = useCallback(async () => {
-    setLoadingMine(true);
-    try {
-      const list = await ticketService.getMyTickets();
-      setMyTickets(list);
-    } catch {
-      // silent
-    } finally {
-      setLoadingMine(false);
-    }
-  }, []);
-
-  // Reload "my tickets" whenever the modal is opened and the user switches to that tab.
   useEffect(() => {
-    if (visible && tab === 'mine') {
-      loadMine();
+    if (visible) {
+      setTab(initialTab);
+      setError(null);
+    } else {
+      setFresh(new Set());
     }
-  }, [visible, tab, loadMine]);
+  }, [visible, initialTab]);
 
-  const handleClose = () => {
-    if (sending) return;
-    resetForm();
-    setTab('new');
-    setExpandedId(null);
-    onClose();
+  const mine = useMyTickets(visible);
+  const unreadCount = useMemo(() => (mine.data ?? []).filter((t) => t.adminReply && !t.readByUser).length, [mine.data]);
+
+  // « Mes demandes » shows every reply in full: showing the list reads them.
+  useEffect(() => {
+    if (!visible || tab !== 'mine' || !mine.data) return;
+    const ids = mine.data.filter((t) => t.adminReply && !t.readByUser && !marking.current.has(t.id)).map((t) => t.id);
+    if (!ids.length) return;
+    ids.forEach((id) => marking.current.add(id));
+    setFresh((prev) => new Set([...prev, ...ids]));
+    Promise.allSettled(ids.map((id) => ticketService.markTicketRead(id))).then((results) => {
+      const done = new Set(ids.filter((_, i) => results[i].status === 'fulfilled'));
+      ids.forEach((id) => {
+        if (!done.has(id)) marking.current.delete(id); // retried next time
+      });
+      if (!done.size) return;
+      qc.setQueryData<MyTicket[]>(MINE_KEY, (prev) => prev?.map((t) => (done.has(t.id) ? { ...t, readByUser: true } : t)));
+      qc.invalidateQueries({ queryKey: UNREAD_KEY });
+    });
+  }, [visible, tab, mine.data, qc]);
+
+  const reset = () => {
+    setKind('bug');
+    setMessage('');
+    setShot(null);
+    setError(null);
   };
 
-  const handlePickScreenshot = async () => {
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) {
-      alert('Permission requise', "Autorisez l'acces a la galerie pour joindre une capture.");
-      return;
-    }
-    const picked = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      quality: 0.8,
-    });
-    if (picked.canceled || !picked.assets?.[0]) return;
+  const close = useCallback(() => {
+    if (sending) return;
+    qc.invalidateQueries({ queryKey: UNREAD_KEY });
+    onClose();
+  }, [sending, onClose, qc]);
 
-    const asset = picked.assets[0];
+  const pickScreenshot = async () => {
+    setError(null);
     try {
-      const compressed = await ImageManipulator.manipulateAsync(
-        asset.uri,
-        [{ resize: { width: 1200 } }],
-        { compress: 0.6, format: ImageManipulator.SaveFormat.JPEG, base64: true },
-      );
-      if (!compressed.base64) {
-        alert('Erreur', 'Impossible de lire la capture.');
+      if (Platform.OS !== 'web') {
+        const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (!permission.granted) {
+          setError('Autorisez l’accès à vos photos pour joindre une capture d’écran.');
+          return;
+        }
+      }
+      const picked = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.9 });
+      if (picked.canceled || !picked.assets?.[0]) return;
+      setProcessing(true);
+      const asset = picked.assets[0];
+      const width = asset.width && asset.width < 1200 ? asset.width : 1200;
+      const out = await ImageManipulator.manipulateAsync(asset.uri, [{ resize: { width } }], {
+        compress: 0.6,
+        format: ImageManipulator.SaveFormat.JPEG,
+        base64: true,
+      });
+      if (!out.base64) throw new Error('no base64');
+      const dataUri = `data:image/jpeg;base64,${out.base64}`;
+      if (dataUri.length > 2 * 1024 * 1024) {
+        setError('Capture trop volumineuse (2 Mo maximum). Choisissez une image plus petite.');
         return;
       }
-      setScreenshotBase64(`data:image/jpeg;base64,${compressed.base64}`);
-      setScreenshotPreview(compressed.uri);
+      setShot({ dataUri, preview: out.uri });
+      haptics.select();
     } catch {
-      alert('Erreur', 'Impossible de traiter la capture.');
+      setError('La capture n’a pas pu être lue. Essayez une autre image.');
+    } finally {
+      setProcessing(false);
     }
   };
 
-  const handleRemoveScreenshot = () => {
-    setScreenshotBase64(null);
-    setScreenshotPreview(null);
-  };
-
-  const handleSend = async () => {
-    if (!message.trim()) {
-      alert('Message requis', 'Decrivez le probleme ou la suggestion.');
+  const send = async () => {
+    const text = message.trim();
+    if (!text) {
+      haptics.warning();
+      setError('Écrivez votre message avant de l’envoyer.');
       return;
     }
     setSending(true);
+    setError(null);
     try {
-      await ticketService.createTicket({
-        type,
-        message: message.trim(),
-        screenName: screenName || null,
-        screenshotBase64,
-      });
-      resetForm();
-      // Switch to "Mes tickets" tab so the user sees their just-sent ticket.
-      setTab('mine');
-      await loadMine();
-      alert('Merci !', 'Votre retour a bien ete envoye. Nous allons le regarder.');
-    } catch (err: any) {
-      alert('Erreur', err?.response?.data?.error || "Impossible d'envoyer le ticket.");
-    } finally {
+      await ticketService.createTicket({ type: kind, message: text, screenName: screenName || null, screenshotBase64: shot?.dataUri ?? null });
+      haptics.success();
+      reset();
+      qc.invalidateQueries({ queryKey: MINE_KEY });
+      setSending(false);
+      onClose();
+      toast.success('Merci ! Votre message a bien été envoyé.');
+    } catch (err) {
+      haptics.warning();
+      setError(readableError(err, 'Le message n’a pas pu être envoyé. Réessayez.').message);
       setSending(false);
     }
   };
 
-  const handleExpandTicket = async (ticket: MyTicket) => {
-    const willExpand = expandedId !== ticket.id;
-    setExpandedId(willExpand ? ticket.id : null);
-    // Mark as read when expanding a ticket with an unread admin reply.
-    if (willExpand && ticket.adminReply && !ticket.readByUser) {
-      try {
-        await ticketService.markTicketRead(ticket.id);
-        setMyTickets((prev) =>
-          prev.map((t) => (t.id === ticket.id ? { ...t, readByUser: true } : t)),
-        );
-      } catch {
-        // silent
-      }
+  const footer =
+    tab === 'new' ? (
+      <Button
+        title="Envoyer"
+        icon="send"
+        onPress={send}
+        loading={sending}
+        disabled={processing}
+        testID="feedback-send"
+      />
+    ) : undefined;
+
+  return (
+    <Sheet
+      visible={visible}
+      onClose={close}
+      title="Aide & retours"
+      subline="L’équipe vous répond ici, dans l’app."
+      snap="full"
+      footer={footer}
+      testID="feedback-sheet"
+    >
+      <SegmentedControl
+        options={[
+          { key: 'new', label: 'Nouveau message' },
+          { key: 'mine', label: 'Mes demandes', hint: unreadCount ? `· ${unreadCount}` : undefined },
+        ]}
+        value={tab}
+        onChange={(k) => setTab(k as Tab)}
+        accessibilityLabel="Aide et retours"
+        style={{ marginBottom: 20 }}
+      />
+      <SwapFade value={tab}>
+        {tab === 'new' ? (
+          <View style={{ gap: 20 }}>
+            <View>
+              <Text style={styles.label}>Type de message</Text>
+              <View style={styles.chips}>
+                {TYPES.map((t) => (
+                  <Chip
+                    key={t}
+                    label={TICKET_TYPE_META[t].label}
+                    icon={width >= 380 ? TICKET_TYPE_META[t].icon : undefined}
+                    selected={kind === t}
+                    onPress={() => setKind(t)}
+                  />
+                ))}
+              </View>
+            </View>
+            <TextField
+              label="Votre message"
+              meta={`${formatNumber(message.length)} / ${formatNumber(TICKET_MESSAGE_MAX)}`}
+              value={message}
+              onChangeText={(t) => {
+                setMessage(t);
+                if (error) setError(null);
+              }}
+              placeholder={PLACEHOLDERS[kind]}
+              multiline
+              maxLength={TICKET_MESSAGE_MAX}
+              height={144}
+              fieldStyle={styles.multiField}
+              inputStyle={styles.multiInput}
+              textAlignVertical="top"
+              testID="feedback-message"
+            />
+            <View>
+              <Text style={styles.label}>Capture d’écran · facultatif</Text>
+              {shot ? (
+                <View style={styles.shotRow}>
+                  <Image source={{ uri: shot.preview }} style={styles.shotThumb} resizeMode="cover" accessibilityLabel="Capture jointe" />
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Text style={styles.shotTitle}>Capture jointe</Text>
+                    <Text style={styles.shotMeta}>Elle sera envoyée avec votre message.</Text>
+                  </View>
+                  <IconButton icon="trash-outline" variant="sunken" color={palette.bad} onPress={() => setShot(null)} accessibilityLabel="Retirer la capture" />
+                </View>
+              ) : (
+                <Button
+                  title={processing ? 'Préparation…' : 'Joindre une capture d’écran'}
+                  variant="secondary"
+                  icon="image-outline"
+                  onPress={pickScreenshot}
+                  loading={processing}
+                  testID="feedback-screenshot"
+                />
+              )}
+            </View>
+            <ErrorLine message={error} style={{ marginTop: -8 }} />
+          </View>
+        ) : (
+          <MyRequests
+            loading={mine.isLoading}
+            error={mine.error ? readableError(mine.error, 'Vos demandes n’ont pas pu être chargées.').message : null}
+            tickets={mine.data}
+            fresh={fresh}
+            onRetry={() => mine.refetch()}
+            onWrite={() => setTab('new')}
+          />
+        )}
+      </SwapFade>
+    </Sheet>
+  );
+});
+
+// ─── « Mes demandes » ──────────────────────────────────────────────────────
+function MyRequests({
+  loading,
+  error,
+  tickets,
+  fresh,
+  onRetry,
+  onWrite,
+}: {
+  loading: boolean;
+  error: string | null;
+  tickets?: MyTicket[];
+  fresh: Set<string>;
+  onRetry: () => void;
+  onWrite: () => void;
+}) {
+  if (!tickets && loading) {
+    return (
+      <View style={{ gap: 10 }}>
+        {[0, 1, 2].map((i) => (
+          <View key={i} style={styles.ticket}>
+            <Skeleton width="40%" height={12} />
+            <Skeleton width="92%" height={12} style={{ marginTop: 10 }} />
+            <Skeleton width="70%" height={12} style={{ marginTop: 8 }} />
+          </View>
+        ))}
+      </View>
+    );
+  }
+  if (!tickets && error) {
+    return <EmptyState surface="surface" icon="cloud-offline-outline" title="Chargement impossible" text={error} primary={{ label: 'Réessayer', icon: 'refresh', onPress: onRetry }} />;
+  }
+  if (!tickets?.length) {
+    return (
+      <EmptyState
+        surface="surface"
+        icon="chatbubbles-outline"
+        title="Aucune demande pour l’instant"
+        text="Vos messages et les réponses de l’équipe apparaîtront ici."
+        primary={{ label: 'Écrire un message', icon: 'create-outline', onPress: onWrite }}
+      />
+    );
+  }
+  return (
+    <View style={{ gap: 10 }}>
+      {tickets.map((t, i) => (
+        <FadeIn key={t.id} index={i}>
+          <TicketCard ticket={t} isNew={fresh.has(t.id) || (!!t.adminReply && !t.readByUser)} />
+        </FadeIn>
+      ))}
+    </View>
+  );
+}
+
+const TicketCard = React.memo(function TicketCard({ ticket, isNew }: { ticket: MyTicket; isNew: boolean }) {
+  const [expanded, setExpanded] = useState(false);
+  const [screenshot, setScreenshot] = useState<string | null>(ticket.screenshotBase64);
+  const meta = TICKET_TYPE_META[ticket.type] ?? TICKET_TYPE_META.bug;
+  const unread = isNew;
+
+  const toggle = () => {
+    const next = !expanded;
+    setExpanded(next);
+    if (next && !screenshot && ticket.hasScreenshot) {
+      ticketService.getTicketScreenshot(ticket.id).then(setScreenshot).catch(() => {});
     }
   };
 
-  if (!visible) return null;
-
   return (
-    <Modal visible transparent animationType="slide" onRequestClose={handleClose}>
-      <KeyboardAvoidingView
-        style={styles.overlay}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
-        <View style={styles.sheet}>
-          <View style={styles.header}>
-            <View style={styles.headerTextWrap}>
-              <Text style={styles.title}>Retour beta</Text>
-              <Text style={styles.subtitle}>Beta MargeBar Pro — merci pour vos retours !</Text>
-            </View>
-            <TouchableOpacity
-              onPress={handleClose}
-              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-              disabled={sending}
-            >
-              <Ionicons name="close" size={24} color={colors.textSecondary} />
-            </TouchableOpacity>
+    <PressableScale
+      onPress={toggle}
+      scaleTo="card"
+      accessibilityLabel={`${meta.label}, ${formatLongDate(ticket.createdAt)}, ${ticket.status === 'resolved' ? 'résolu' : 'en cours'}${unread ? ', nouvelle réponse' : ''}. ${expanded ? 'Réduire' : 'Afficher le détail'}`}
+      accessibilityState={{ expanded }}
+      style={[styles.ticket, unread && styles.ticketUnread]}
+      testID="my-ticket"
+    >
+      <View style={styles.ticketHead}>
+        <Badge variant="neutral" icon={meta.icon} label={meta.label} size="sm" />
+        <Text style={styles.ticketDate}>{shortDate(ticket.createdAt)}</Text>
+        {unread ? (
+          <Badge variant="brand" label="Nouvelle réponse" size="sm" />
+        ) : ticket.status === 'resolved' ? (
+          <Badge zone="green" label="Résolu" size="sm" />
+        ) : null}
+      </View>
+      <Text style={styles.ticketMessage} numberOfLines={expanded ? undefined : 3}>
+        {ticket.message}
+      </Text>
+      {expanded && screenshot ? <Image source={{ uri: screenshot }} style={styles.ticketShot} resizeMode="contain" accessibilityLabel="Capture envoyée" /> : null}
+      {ticket.adminReply ? (
+        <View style={styles.reply}>
+          <View style={styles.replyHead}>
+            <Ionicons name="chatbubble-ellipses" size={15} color={palette.em700} />
+            <Text style={styles.replyTitle}>Réponse de l’équipe</Text>
+            {ticket.repliedAt ? <Text style={styles.replyDate}>{shortDate(ticket.repliedAt)}</Text> : null}
           </View>
-
-          {/* Tabs */}
-          <View style={styles.tabs}>
-            <TouchableOpacity
-              style={[styles.tab, tab === 'new' && styles.tabActive]}
-              onPress={() => setTab('new')}
-            >
-              <Text style={[styles.tabText, tab === 'new' && styles.tabTextActive]}>Nouveau</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.tab, tab === 'mine' && styles.tabActive]}
-              onPress={() => setTab('mine')}
-            >
-              <Text style={[styles.tabText, tab === 'mine' && styles.tabTextActive]}>
-                Mes tickets{myTickets.length > 0 ? ` (${myTickets.length})` : ''}
-              </Text>
-            </TouchableOpacity>
-          </View>
-
-          {tab === 'new' ? (
-            <>
-              <ScrollView
-                style={styles.body}
-                contentContainerStyle={styles.bodyContent}
-                keyboardShouldPersistTaps="handled"
-              >
-                {/* Type selector */}
-                <Text style={styles.label}>Type</Text>
-                <View style={styles.typeRow}>
-                  {TYPE_OPTIONS.map((opt) => {
-                    const active = type === opt.value;
-                    return (
-                      <TouchableOpacity
-                        key={opt.value}
-                        style={[styles.typeBtn, active && styles.typeBtnActive]}
-                        onPress={() => setType(opt.value)}
-                        activeOpacity={0.7}
-                      >
-                        <Ionicons
-                          name={opt.icon as any}
-                          size={16}
-                          color={active ? colors.white : colors.primary}
-                        />
-                        <Text style={[styles.typeBtnText, active && styles.typeBtnTextActive]}>
-                          {opt.label}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-
-                {/* Message */}
-                <Text style={styles.label}>Description</Text>
-                <TextInput
-                  style={styles.textArea}
-                  value={message}
-                  onChangeText={setMessage}
-                  placeholder="Decrivez le probleme, la suggestion ou votre question..."
-                  placeholderTextColor={colors.textSecondary}
-                  multiline
-                  textAlignVertical="top"
-                  maxLength={4000}
-                />
-                <Text style={styles.helperText}>{message.length} / 4000</Text>
-
-                {/* Screenshot */}
-                <Text style={styles.label}>Capture d'ecran (optionnelle)</Text>
-                {screenshotPreview ? (
-                  <View style={styles.screenshotPreviewWrap}>
-                    <Image source={{ uri: screenshotPreview }} style={styles.screenshotPreview} resizeMode="contain" />
-                    <TouchableOpacity
-                      style={styles.screenshotRemoveBtn}
-                      onPress={handleRemoveScreenshot}
-                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                    >
-                      <Ionicons name="close-circle" size={24} color={colors.marginRed} />
-                    </TouchableOpacity>
-                  </View>
-                ) : (
-                  <TouchableOpacity
-                    style={styles.screenshotBtn}
-                    onPress={handlePickScreenshot}
-                    activeOpacity={0.7}
-                  >
-                    <Ionicons name="image-outline" size={20} color={colors.primary} />
-                    <Text style={styles.screenshotBtnText}>Capture d'ecran</Text>
-                  </TouchableOpacity>
-                )}
-                <Text style={styles.screenshotHint}>
-                  Prenez une capture avec votre appareil ({Platform.OS === 'web' ? 'ex : Cmd+Shift+4 sur Mac' : 'boutons volume + marche'}), puis selectionnez-la ici.
-                </Text>
-
-                {screenName && (
-                  <Text style={styles.contextText}>
-                    Page : <Text style={{ fontWeight: '700' }}>{screenName}</Text>
-                  </Text>
-                )}
-              </ScrollView>
-
-              <View style={styles.footer}>
-                <TouchableOpacity
-                  style={[styles.sendBtn, (sending || !message.trim()) && styles.sendBtnDisabled]}
-                  onPress={handleSend}
-                  disabled={sending || !message.trim()}
-                  activeOpacity={0.8}
-                >
-                  <Ionicons name="send" size={18} color={colors.white} style={{ marginRight: spacing.sm }} />
-                  <Text style={styles.sendBtnText}>{sending ? 'Envoi...' : 'Envoyer'}</Text>
-                </TouchableOpacity>
-              </View>
-            </>
-          ) : (
-            <ScrollView
-              style={styles.body}
-              contentContainerStyle={styles.bodyContent}
-              keyboardShouldPersistTaps="handled"
-            >
-              {loadingMine && myTickets.length === 0 ? (
-                <Text style={styles.emptyText}>Chargement...</Text>
-              ) : myTickets.length === 0 ? (
-                <Text style={styles.emptyText}>
-                  Vous n'avez pas encore envoye de ticket. Rendez-vous dans l'onglet « Nouveau » pour nous faire un retour.
-                </Text>
-              ) : (
-                myTickets.map((t) => {
-                  const meta = TICKET_TYPE_META[t.type] || TICKET_TYPE_META.bug;
-                  const isExpanded = expandedId === t.id;
-                  const hasUnreadReply = !!t.adminReply && !t.readByUser;
-                  return (
-                    <TouchableOpacity
-                      key={t.id}
-                      style={[
-                        styles.myTicket,
-                        hasUnreadReply && styles.myTicketUnread,
-                      ]}
-                      onPress={() => handleExpandTicket(t)}
-                      activeOpacity={0.8}
-                    >
-                      <View style={styles.myTicketHeader}>
-                        <Ionicons name={meta.icon as any} size={16} color={meta.color} />
-                        <Text style={[styles.myTicketType, { color: meta.color }]}>{meta.label}</Text>
-                        <Text style={styles.myTicketDate}>
-                          {new Date(t.createdAt).toLocaleDateString('fr-FR')}
-                        </Text>
-                        {hasUnreadReply && <View style={styles.unreadDot} />}
-                      </View>
-                      <Text
-                        style={styles.myTicketMessage}
-                        numberOfLines={isExpanded ? undefined : 2}
-                      >
-                        {t.message}
-                      </Text>
-
-                      {isExpanded && t.screenshotBase64 && (
-                        <Image
-                          source={{ uri: t.screenshotBase64 }}
-                          style={styles.myTicketScreenshot}
-                          resizeMode="contain"
-                        />
-                      )}
-
-                      {/* Admin reply */}
-                      {t.adminReply ? (
-                        <View style={styles.replyCard}>
-                          <View style={styles.replyHeader}>
-                            <Ionicons name="chatbubble-ellipses" size={14} color={colors.primary} />
-                            <Text style={styles.replyTitle}>Reponse de l'equipe</Text>
-                            {t.repliedAt && (
-                              <Text style={styles.replyDate}>
-                                {new Date(t.repliedAt).toLocaleDateString('fr-FR')}
-                              </Text>
-                            )}
-                          </View>
-                          <Text
-                            style={styles.replyText}
-                            numberOfLines={isExpanded ? undefined : 3}
-                          >
-                            {t.adminReply}
-                          </Text>
-                        </View>
-                      ) : (
-                        <View style={styles.waitingReply}>
-                          <Ionicons name="time-outline" size={12} color={colors.textSecondary} />
-                          <Text style={styles.waitingReplyText}>
-                            {t.status === 'resolved' ? 'Resolu' : 'En attente de reponse...'}
-                          </Text>
-                        </View>
-                      )}
-                    </TouchableOpacity>
-                  );
-                })
-              )}
-            </ScrollView>
-          )}
+          <Text style={styles.replyText} numberOfLines={expanded ? undefined : 3}>
+            {ticket.adminReply}
+          </Text>
         </View>
-      </KeyboardAvoidingView>
-    </Modal>
+      ) : (
+        <View style={styles.waiting}>
+          <Ionicons name="time-outline" size={14} color={palette.text3} />
+          <Text style={styles.waitingText}>{ticket.status === 'resolved' ? 'Demande traitée' : 'En attente de réponse'}</Text>
+        </View>
+      )}
+    </PressableScale>
   );
 });
 
 const styles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    backgroundColor: colors.overlay,
-    justifyContent: 'flex-end',
-  },
-  sheet: {
-    backgroundColor: colors.background,
-    borderTopLeftRadius: borderRadius.xl,
-    borderTopRightRadius: borderRadius.xl,
-    maxHeight: '90%',
-    ...shadows.lg,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.lg,
-    paddingBottom: spacing.md,
-  },
-  headerTextWrap: {
-    flex: 1,
-  },
-  title: {
-    ...typography.h3,
-    color: colors.primary,
-  },
-  subtitle: {
-    ...typography.caption,
-    color: colors.textSecondary,
-    marginTop: 2,
-  },
-  tabs: {
-    flexDirection: 'row',
-    paddingHorizontal: spacing.lg,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  tab: {
-    flex: 1,
-    paddingVertical: spacing.sm,
-    alignItems: 'center',
-    borderBottomWidth: 2,
-    borderBottomColor: 'transparent',
-  },
-  tabActive: {
-    borderBottomColor: colors.primary,
-  },
-  tabText: {
-    ...typography.bodySmall,
-    fontWeight: '600',
-    color: colors.textSecondary,
-  },
-  tabTextActive: {
-    color: colors.primary,
-    fontWeight: '700',
-  },
-  body: {
-    maxHeight: 500,
-  },
-  bodyContent: {
-    padding: spacing.lg,
-    paddingBottom: spacing.md,
-  },
-  label: {
-    ...typography.bodySmall,
-    fontWeight: '700',
-    color: colors.text,
-    marginBottom: spacing.sm,
-    marginTop: spacing.sm,
-  },
-  typeRow: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-    marginBottom: spacing.sm,
-  },
-  typeBtn: {
-    flex: 1,
+  label: { ...type.label, color: palette.text2, marginBottom: 8 },
+  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  multiField: { alignItems: 'stretch', paddingTop: 12, paddingBottom: 12 },
+  multiInput: { height: '100%', textAlignVertical: 'top', lineHeight: 22 },
+  shotRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 4,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.xs,
-    borderRadius: borderRadius.md,
+    gap: 12,
+    padding: 10,
+    borderRadius: radius.md,
     borderWidth: 1,
-    borderColor: colors.primary,
-    backgroundColor: colors.cardBackground,
+    borderColor: palette.line,
   },
-  typeBtnActive: {
-    backgroundColor: colors.primary,
-  },
-  typeBtnText: {
-    ...typography.bodySmall,
-    fontWeight: '600',
-    color: colors.primary,
-  },
-  typeBtnTextActive: {
-    color: colors.white,
-  },
-  textArea: {
-    backgroundColor: colors.cardBackground,
+  shotThumb: { width: 56, height: 56, borderRadius: 12, backgroundColor: palette.surface2 },
+  shotTitle: { ...type.headline, color: palette.ink },
+  shotMeta: { ...type.footnote, color: palette.text3 },
+  ticket: {
+    borderRadius: radius.lg,
     borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: borderRadius.md,
-    padding: spacing.md,
-    minHeight: 120,
-    ...typography.body,
-    color: colors.text,
+    borderColor: palette.line,
+    backgroundColor: palette.surface,
+    padding: 14,
+    gap: 10,
   },
-  helperText: {
-    ...typography.caption,
-    color: colors.textSecondary,
-    textAlign: 'right',
-    marginTop: spacing.xs,
-  },
-  screenshotBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.sm,
-    paddingVertical: spacing.md,
-    borderRadius: borderRadius.md,
-    borderWidth: 1,
-    borderColor: colors.primary,
-    borderStyle: 'dashed',
-    backgroundColor: colors.light,
-  },
-  screenshotBtnText: {
-    ...typography.bodySmall,
-    fontWeight: '700',
-    color: colors.primary,
-  },
-  screenshotHint: {
-    ...typography.caption,
-    color: colors.textSecondary,
-    marginTop: spacing.xs,
-    lineHeight: 16,
-  },
-  screenshotPreviewWrap: {
-    position: 'relative',
-    borderRadius: borderRadius.md,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.cardBackground,
-  },
-  screenshotPreview: {
-    width: '100%',
-    height: 180,
-  },
-  screenshotRemoveBtn: {
-    position: 'absolute',
-    top: spacing.xs,
-    right: spacing.xs,
-    backgroundColor: colors.cardBackground,
-    borderRadius: borderRadius.full,
-  },
-  contextText: {
-    ...typography.caption,
-    color: colors.textSecondary,
-    marginTop: spacing.md,
-    fontStyle: 'italic',
-  },
-  footer: {
-    padding: spacing.lg,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-    backgroundColor: colors.cardBackground,
-  },
-  sendBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.primary,
-    borderRadius: borderRadius.md,
-    paddingVertical: spacing.md,
-    ...shadows.md,
-  },
-  sendBtnDisabled: {
-    opacity: 0.5,
-  },
-  sendBtnText: {
-    ...typography.button,
-    color: colors.white,
-  },
-  emptyText: {
-    ...typography.bodySmall,
-    color: colors.textSecondary,
-    textAlign: 'center',
-    paddingVertical: spacing.lg,
-    paddingHorizontal: spacing.md,
-    lineHeight: 20,
-  },
-  myTicket: {
-    backgroundColor: colors.cardBackground,
-    borderRadius: borderRadius.md,
-    padding: spacing.md,
-    marginBottom: spacing.sm,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  myTicketUnread: {
-    borderColor: colors.accent,
-    backgroundColor: colors.light,
-  },
-  myTicketHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    marginBottom: spacing.xs,
-  },
-  myTicketType: {
-    ...typography.caption,
-    fontWeight: '700',
-    marginLeft: 4,
-  },
-  myTicketDate: {
-    ...typography.caption,
-    color: colors.textSecondary,
-    marginLeft: 'auto',
-  },
-  unreadDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: colors.accent,
-    marginLeft: spacing.xs,
-  },
-  myTicketMessage: {
-    ...typography.bodySmall,
-    color: colors.text,
-    marginBottom: spacing.xs,
-    lineHeight: 19,
-  },
-  myTicketScreenshot: {
-    width: '100%',
-    height: 200,
-    borderRadius: borderRadius.sm,
-    backgroundColor: colors.background,
-    marginBottom: spacing.sm,
-    marginTop: spacing.xs,
-  },
-  replyCard: {
-    backgroundColor: colors.light,
-    borderRadius: borderRadius.sm,
-    padding: spacing.sm + 2,
-    marginTop: spacing.sm,
-    borderLeftWidth: 3,
-    borderLeftColor: colors.primary,
-  },
-  replyHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    marginBottom: spacing.xs,
-  },
-  replyTitle: {
-    ...typography.caption,
-    fontWeight: '700',
-    color: colors.primary,
-    marginLeft: 4,
-    flex: 1,
-  },
-  replyDate: {
-    ...typography.caption,
-    color: colors.textSecondary,
-  },
-  replyText: {
-    ...typography.bodySmall,
-    color: colors.text,
-    lineHeight: 19,
-  },
-  waitingReply: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    marginTop: spacing.xs,
-  },
-  waitingReplyText: {
-    ...typography.caption,
-    color: colors.textSecondary,
-    fontStyle: 'italic',
-  },
+  ticketUnread: { borderColor: palette.em300 },
+  ticketHead: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
+  ticketDate: { ...type.footnote, color: palette.text3, flex: 1 },
+  ticketMessage: { ...type.callout, color: palette.ink },
+  ticketShot: { width: '100%', height: 220, borderRadius: radius.sm, backgroundColor: palette.surface2 },
+  reply: { backgroundColor: palette.em50, borderRadius: radius.md, padding: 12, gap: 6 },
+  replyHead: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  replyTitle: { ...type.footnoteStrong, color: palette.em700 },
+  replyDate: { ...type.footnote, color: palette.text3, marginLeft: 'auto' },
+  replyText: { ...type.callout, color: palette.ink },
+  waiting: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  waitingText: { ...type.footnote, color: palette.text3 },
 });

@@ -10,12 +10,31 @@ import Svg, {
   LinearGradient,
   Stop,
 } from 'react-native-svg';
-import { colors, spacing, typography } from '../../theme';
+import { useReducedMotion } from 'react-native-reanimated';
+import { palette, spacing, type } from '../../theme';
 
-const AnimatedRect = Animated.createAnimatedComponent(Rect);
-const AnimatedEllipse = Animated.createAnimatedComponent(Ellipse);
-const AnimatedCircle = Animated.createAnimatedComponent(Circle);
-const AnimatedPath = Animated.createAnimatedComponent(Path);
+/**
+ * Beer mug filling — the full-screen / first-load loader requested by the
+ * owner, in the emerald palette. Use Skeletons for lists and cards, and the
+ * Button's built-in spinner for actions.
+ *
+ *   <YinYangSpinner size={80} message="Chargement des produits…" />
+ */
+
+// Animated.createAnimatedComponent passes `collapsable={false}`, which
+// react-native-svg forwards to the DOM on web (React warning). Strip it.
+function stripCollapsable<P extends object>(Component: React.ComponentType<P>) {
+  const Wrapped = React.forwardRef<any, P & { collapsable?: boolean }>(function Stripped(props, ref) {
+    const { collapsable: _c, ...rest } = props as any;
+    return <Component ref={ref} {...(rest as P)} />;
+  });
+  return Wrapped;
+}
+
+const AnimatedRect = Animated.createAnimatedComponent(stripCollapsable(Rect as any)) as any;
+const AnimatedEllipse = Animated.createAnimatedComponent(stripCollapsable(Ellipse as any)) as any;
+const AnimatedCircle = Animated.createAnimatedComponent(stripCollapsable(Circle as any)) as any;
+const AnimatedPath = Animated.createAnimatedComponent(stripCollapsable(Path as any)) as any;
 
 interface YinYangSpinnerProps {
   size?: number;
@@ -41,88 +60,44 @@ export function YinYangSpinner({
   const foamWobble = useRef(new Animated.Value(0)).current;
   const fadeMessage = useRef(new Animated.Value(0)).current;
   const dripAnim = useRef(new Animated.Value(0)).current;
+  // Reduce motion: a static, filled mug (no loops), message shown at once.
+  const reduce = useReducedMotion();
 
   useEffect(() => {
+    if (reduce) {
+      fillLevel.setValue(1);
+      foamScale.setValue(1);
+      dripAnim.setValue(0);
+      foamWobble.setValue(0.5);
+      fadeMessage.setValue(1);
+      [bubble1, bubble2, bubble3, bubble4, bubble5, bubble6, bubble7, bubble8].forEach((b) => b.setValue(0));
+      return undefined;
+    }
+    // Every timing is `isInteraction: false` (and the pauses too: the stock
+    // Animated.delay registers an interaction). Otherwise the spinner keeps an
+    // InteractionManager handle open, which stalls FlatList windowing and
+    // onEndReached app-wide. Every loop handle is kept and stopped on unmount.
+    const t = (value: Animated.Value, toValue: number, duration: number, easing?: (v: number) => number) =>
+      Animated.timing(value, { toValue, duration, easing, useNativeDriver: false, isInteraction: false });
+    const pause = (ms: number) =>
+      Animated.timing(new Animated.Value(0), { toValue: 0, delay: ms, duration: 0, useNativeDriver: false, isInteraction: false });
+
     const fill = Animated.loop(
       Animated.sequence([
-        // Fill the glass
-        Animated.timing(fillLevel, {
-          toValue: 1,
-          duration: 2800,
-          easing: Easing.out(Easing.cubic),
-          useNativeDriver: false,
-        }),
-        // Foam appears
-        Animated.timing(foamScale, {
-          toValue: 1,
-          duration: 700,
-          easing: Easing.out(Easing.back(1.5)),
-          useNativeDriver: false,
-        }),
-        // Drip starts
-        Animated.timing(dripAnim, {
-          toValue: 1,
-          duration: 800,
-          easing: Easing.in(Easing.ease),
-          useNativeDriver: false,
-        }),
-        // Hold
-        Animated.delay(600),
-        // Reset
-        Animated.parallel([
-          Animated.timing(fillLevel, {
-            toValue: 0,
-            duration: 400,
-            useNativeDriver: false,
-          }),
-          Animated.timing(foamScale, {
-            toValue: 0,
-            duration: 400,
-            useNativeDriver: false,
-          }),
-          Animated.timing(dripAnim, {
-            toValue: 0,
-            duration: 200,
-            useNativeDriver: false,
-          }),
-        ]),
-        Animated.delay(300),
+        t(fillLevel, 1, 2800, Easing.out(Easing.cubic)), // fill the glass
+        t(foamScale, 1, 700, Easing.out(Easing.back(1.5))), // foam appears
+        t(dripAnim, 1, 800, Easing.in(Easing.ease)), // drip starts
+        pause(600), // hold
+        Animated.parallel([t(fillLevel, 0, 400), t(foamScale, 0, 400), t(dripAnim, 0, 200)]), // reset
+        pause(300),
       ]),
     );
 
     const makeBubble = (anim: Animated.Value, delay: number, duration: number) =>
-      Animated.loop(
-        Animated.sequence([
-          Animated.delay(delay),
-          Animated.timing(anim, {
-            toValue: 1,
-            duration,
-            easing: Easing.out(Easing.ease),
-            useNativeDriver: false,
-          }),
-          Animated.timing(anim, {
-            toValue: 0,
-            duration: 0,
-            useNativeDriver: false,
-          }),
-        ]),
-      );
+      Animated.loop(Animated.sequence([pause(delay), t(anim, 1, duration, Easing.out(Easing.ease)), t(anim, 0, 0)]));
 
     const wobble = Animated.loop(
-      Animated.sequence([
-        Animated.timing(foamWobble, {
-          toValue: 1,
-          duration: 1000,
-          easing: Easing.inOut(Easing.ease),
-          useNativeDriver: false,
-        }),
-        Animated.timing(foamWobble, {
-          toValue: 0,
-          duration: 1000,
-          easing: Easing.inOut(Easing.ease),
-          useNativeDriver: false,
-        }),
-      ]),
+      Animated.sequence([t(foamWobble, 1, 1000, Easing.inOut(Easing.ease)), t(foamWobble, 0, 1000, Easing.inOut(Easing.ease))]),
     );
 
     const fade = Animated.timing(fadeMessage, {
@@ -130,29 +105,28 @@ export function YinYangSpinner({
       duration: 600,
       delay: 300,
       useNativeDriver: true,
+      isInteraction: false,
     });
 
-    fill.start();
-    makeBubble(bubble1, 0, 1400).start();
-    makeBubble(bubble2, 250, 1100).start();
-    makeBubble(bubble3, 500, 1300).start();
-    makeBubble(bubble4, 150, 1500).start();
-    makeBubble(bubble5, 400, 1000).start();
-    makeBubble(bubble6, 700, 1200).start();
-    makeBubble(bubble7, 100, 1350).start();
-    makeBubble(bubble8, 550, 1150).start();
-    wobble.start();
-    fade.start();
+    const loops: Animated.CompositeAnimation[] = [
+      fill,
+      makeBubble(bubble1, 0, 1400),
+      makeBubble(bubble2, 250, 1100),
+      makeBubble(bubble3, 500, 1300),
+      makeBubble(bubble4, 150, 1500),
+      makeBubble(bubble5, 400, 1000),
+      makeBubble(bubble6, 700, 1200),
+      makeBubble(bubble7, 100, 1350),
+      makeBubble(bubble8, 550, 1150),
+      wobble,
+      fade,
+    ];
+    loops.forEach((a) => a.start());
 
     return () => {
-      fill.stop();
-      [bubble1, bubble2, bubble3, bubble4, bubble5, bubble6, bubble7, bubble8].forEach(b =>
-        b.stopAnimation(),
-      );
-      wobble.stop();
-      fade.stop();
+      loops.forEach((a) => a.stop());
     };
-  }, [fillLevel, foamScale, dripAnim, bubble1, bubble2, bubble3, bubble4, bubble5, bubble6, bubble7, bubble8, foamWobble, fadeMessage]);
+  }, [reduce, fillLevel, foamScale, dripAnim, bubble1, bubble2, bubble3, bubble4, bubble5, bubble6, bubble7, bubble8, foamWobble, fadeMessage]);
 
   // ────────── DIMENSIONS ──────────
   // All coordinates are relative to size for scalability
@@ -189,12 +163,12 @@ export function YinYangSpinner({
   const baseL = mugCx - baseW / 2;
 
   // ────────── COLORS ──────────
-  const beerBody = colors.accent;     // #40916C
-  const beerDark = colors.secondary;  // #2D6A4F
-  const outline = colors.primary;     // #1B4332
-  const foamWhite = '#EDF5F0';
-  const foamCream = colors.light;     // #D8F3DC
-  const baseTint = colors.light;      // #D8F3DC
+  const beerBody = palette.em500;     // bright emerald liquid
+  const beerDark = palette.em700;     // depth
+  const outline = palette.em800;      // mug outline
+  const foamWhite = '#FFFFFF';
+  const foamCream = palette.em50;
+  const baseTint = palette.em100;
 
   // ────────── INTERPOLATIONS ──────────
   const beerY = fillLevel.interpolate({
@@ -204,12 +178,6 @@ export function YinYangSpinner({
   const beerHeight = fillLevel.interpolate({
     inputRange: [0, 1],
     outputRange: [0, innerB - innerT - mugH * 0.05],
-  });
-
-  // Foam Y follows fill level
-  const foamY = fillLevel.interpolate({
-    inputRange: [0, 1],
-    outputRange: [innerB, mugT - 2 * s],
   });
 
   // Drip lengths (foam running down outside of glass)
@@ -430,10 +398,9 @@ export function YinYangSpinner({
         {/* Foam cloud inner highlight bumps */}
         <AnimatedEllipse
           cx={fMid - 12 * s}
-          cy={foamY.interpolate({
-            inputRange: [innerB, mugT - 2 * s],
+          cy={fillLevel.interpolate({
+            inputRange: [0, 1],
             outputRange: [innerB, fTop + 14 * s],
-            extrapolate: 'clamp',
           })}
           rx={foamWobble.interpolate({
             inputRange: [0, 1],
@@ -451,10 +418,9 @@ export function YinYangSpinner({
         />
         <AnimatedEllipse
           cx={fMid + 10 * s}
-          cy={foamY.interpolate({
-            inputRange: [innerB, mugT - 2 * s],
+          cy={fillLevel.interpolate({
+            inputRange: [0, 1],
             outputRange: [innerB, fTop + 12 * s],
-            extrapolate: 'clamp',
           })}
           rx={foamWobble.interpolate({
             inputRange: [0, 1],
@@ -565,16 +531,15 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.xl,
   },
   message: {
-    ...typography.body,
-    fontWeight: '600',
-    color: colors.text,
+    ...type.headline,
+    color: palette.ink,
     marginTop: spacing.lg,
     textAlign: 'center',
   },
   submessage: {
-    ...typography.caption,
-    color: colors.textSecondary,
-    marginTop: spacing.sm,
+    ...type.footnote,
+    color: palette.text3,
+    marginTop: spacing.xs,
     textAlign: 'center',
   },
 });
